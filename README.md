@@ -9,9 +9,20 @@
 - To ensure things are working, open up a terminal, and run `cargo --help` and `rustc --help`.
 - Also, installing [Windows Terminal](https://apps.microsoft.com/store/detail/windows-terminal/9N0DX20HK701) will save you so much time later on, it's just much cleaner and easier to use than Git Bash or Command Prompt.
 
+## Setting up Protocol Lib
+- Download the protoc compiler from [the Github Repo](https://github.com/protocolbuffers/protobuf/releases).
+- Look for version `21.5`, and select the `protoc` for your operating system. Download and extract the folder.
+- In `C:\Users\<name>`, create a folder `.protoc\`, and copy the folder `protoc-21.5-win64` there.
+- Update your Path environment variable to include `C:\Users\<name>\.protoc\protoc-21.5-win64\bin`.
+- Here's a GeeksForGeeks on [how to install it on Windows](https://www.geeksforgeeks.org/how-to-install-protocol-buffers-on-windows/)
+- Here's the [tutorial for Mac](https://grpc.io/docs/protoc-installation/)
+- After your installation, you should be able to run `protoc -h` on your terminal.
+
 ## Setting up the Project
 - Rust uses a cool package manager called `cargo`. Here are the main commands you need to know:
-    - `cargo run`: Compile and run your code
+    - `cargo run --bin <target>`: Compile and run your code for the given target. Here, that's either `gql` or `gql-client`.
+        - Targets allow us to have different 'main's that are built and run.
+        - Running without the `--bin` argument will run the `gql` server by default.
     - `cargo build --release`: Compile your code, optionally with optimizations enabled.
     - `cargo test`: Run all the tests
     - `cargo clean`: Remove binaries and build artifacts
@@ -28,10 +39,12 @@
 - Open the project folder `gql_db` in VS Code
 - In the extensions market place, first install [`rust-analyzer`](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 - Then, to help with debugging, install: [`cpp-tools`](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools).
+- For protocol libraries, install: [`vscode-proto3`](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
 - Ensure that the `main.rs` file shows errors when removing semi-colons and etc.
 - For more help, refer to [this article](https://code.visualstudio.com/docs/languages/rust). 
 
 ## Resources to Use
+- [Setting up a gRPC server-client](https://betterprogramming.pub/how-to-create-grpc-server-client-in-rust-4e37692229f0)
 - [The Rust Book](https://doc.rust-lang.org/stable/book/)
 - [Cargo (Package Management) Guide](https://doc.rust-lang.org/cargo/guide)
 - [rustup documentation](https://rust-lang.github.io/rustup/index.html)
