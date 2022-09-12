@@ -41,6 +41,7 @@
 - Then, to help with debugging, install: [`cpp-tools`](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools).
 - For protocol libraries, install: [`vscode-proto3`](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
 - Ensure that the `main.rs` file shows errors when removing semi-colons and etc.
+- If an error comes up "build script failed", also create a new environment variable `PROTOC`, pointing to `C:\Users\<name>\.protoc\protoc-21.5-win64\bin\protoc.exe`
 - For more help, refer to [this article](https://code.visualstudio.com/docs/languages/rust). 
 
 ## Resources to Use
