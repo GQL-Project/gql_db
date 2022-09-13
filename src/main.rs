@@ -1,58 +1,16 @@
-use std::sync::Mutex;
-use todo::todo_server::{Todo, TodoServer};
-use todo::{CreateTodoRequest, CreateTodoResponse, GetTodosResponse, TodoItem};
-use tonic::{transport::Server, Request, Response, Status};
+use crate::server::connection::database_server::DatabaseServer;
+use server::Connection;
+use tonic::transport::Server;
 
-pub mod todo {
-    tonic::include_proto!("todo");
-}
-
-#[derive(Debug, Default)]
-pub struct TodoService {
-    todos: Mutex<Vec<TodoItem>>,
-}
-
-#[tonic::async_trait]
-impl Todo for TodoService {
-    async fn get_todos(&self, _: Request<()>) -> Result<Response<GetTodosResponse>, Status> {
-        let message = GetTodosResponse {
-            todos: self.todos.lock().unwrap().to_vec(),
-        };
-
-        Ok(Response::new(message))
-    }
-
-    async fn create_todo(
-        &self,
-        request: Request<CreateTodoRequest>,
-    ) -> Result<Response<CreateTodoResponse>, Status> {
-        let payload = request.into_inner();
-
-        let todo_item = TodoItem {
-            name: payload.name,
-            description: payload.description,
-            priority: payload.priority,
-            completed: false,
-        };
-
-        self.todos.lock().unwrap().push(todo_item.clone());
-
-        let message = CreateTodoResponse {
-            todo: Some(todo_item),
-            status: true,
-        };
-
-        Ok(Response::new(message))
-    }
-}
+mod server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse().unwrap();
-    let todo_service = TodoService::default();
+    let db_service = Connection::default();
 
     Server::builder()
-        .add_service(TodoServer::new(todo_service))
+        .add_service(DatabaseServer::new(db_service))
         .serve(addr)
         .await?;
 

@@ -1,29 +1,28 @@
-use todo::todo_client::TodoClient;
-use todo::CreateTodoRequest;
+use connection::database_client::DatabaseClient;
+use connection::QueryRequest;
 
-pub mod todo {
-    tonic::include_proto!("todo");
+pub mod connection {
+    tonic::include_proto!("connection");
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = TodoClient::connect("http://[::1]:50051").await?;
+    let mut client = DatabaseClient::connect("http://[::1]:50051").await?;
 
     let request = tonic::Request::new(());
 
-    let response = client.get_todos(request).await?;
+    let response = client.connect_db(request).await?;
 
-    println!("{:?}", response.into_inner().todos);
+    println!("{:?}", response.into_inner().id);
 
-    let create_request = tonic::Request::new(CreateTodoRequest {
-        name: "test name".to_string(),
-        description: "test description".to_string(),
-        priority: 1,
+    let create_request = tonic::Request::new(QueryRequest {
+        id: String::from("10"),
+        query: String::from("select * from tables"),
     });
 
-    let create_response = client.create_todo(create_request).await?;
+    let create_response = client.run_query(create_request).await?;
 
-    println!("{:?}", create_response.into_inner().todo);
+    println!("{:?}", create_response.into_inner().column_names);
 
     Ok(())
 }

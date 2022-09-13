@@ -1,6 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
-        .compile(&["proto/todo.proto"], &["proto"])
+        .compile(&["proto/connection.proto"], &["proto"])
         .unwrap();
     Ok(())
 }

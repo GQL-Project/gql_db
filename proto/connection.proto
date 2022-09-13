@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+package connection;
+
+/* 
+ * This allows us to form a general implementation for all platforms.
+ * Messages are the data objects passed between the client and server.
+ * Services are functions that can be called on the server.
+*/
+
+/* Request/Argument Types */
+
+// Arguments used for queries and any updates.
+message QueryRequest {
+    string id = 10;
+    string query = 11;
+}
+
+/* Response/Return Types */
+
+// Result from connecting for the first-time
+message ConnectResult {
+    string id = 12;
+}
+
+// Result from executing an SQL Query
+message QueryResult {
+    repeated string column_names = 3;
+    repeated RowValue row_values = 4;
+}
+
+// Result from executing an SQL Update or Version Control Command 
+message UpdateResult {
+    bool success = 1;
+    optional string message = 2;
+}
+
+// Value of one row
+message RowValue {
+    repeated CellValue cell_values = 5;
+}
+
+// Value of one 'cell'
+message CellValue {
+    oneof cell_type {
+        string col_string = 6;
+        int32 col_i32 = 7;
+        google.protobuf.Timestamp col_time = 8;
+        float col_float = 9;
+        double col_double = 16;
+        int64 col_i64 = 17;
+        bool col_bool = 18;
+    }
+}
+
+// Services are the "functions" exposed by the server.
+service Database {
+    // We can optionally have a VC query function here, or just parse that within Update
+    rpc ConnectDB(google.protobuf.Empty) returns (ConnectResult);
+    rpc RunQuery(QueryRequest) returns (QueryResult);
+    rpc RunUpdate(QueryRequest) returns (UpdateResult);
+}
