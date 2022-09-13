@@ -1,4 +1,3 @@
-use std::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 use connection::database_server::Database;
@@ -8,16 +7,14 @@ pub mod connection {
     tonic::include_proto!("connection");
 }
 
-// Shared fields across all isntances go here.
+// Shared fields across all instances go here.
 #[derive(Debug, Default)]
-pub struct Connection {
-    clients: Mutex<Vec<String>>,
-}
+pub struct Connection {}
 
 #[tonic::async_trait]
 impl Database for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
-        let message = ConnectResult { id: 10.to_string(), };
+        let message = ConnectResult { id: 10.to_string() };
         Ok(Response::new(message))
     }
 
