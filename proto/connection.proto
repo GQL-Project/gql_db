@@ -60,6 +60,7 @@ message CellValue {
 service Database {
     // We can optionally have a VC query function here, or just parse that within Update
     rpc ConnectDB(google.protobuf.Empty) returns (ConnectResult);
+    rpc DisconnectDB(ConnectResult) returns (google.protobuf.Empty);
     rpc RunQuery(QueryRequest) returns (QueryResult);
     rpc RunUpdate(QueryRequest) returns (UpdateResult);
 }
