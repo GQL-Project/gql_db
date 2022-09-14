@@ -37,7 +37,7 @@ impl Database for Connection {
         let payload = request.into_inner();
         let message = UpdateResult {
             success: true,
-            message: Some(payload.id),
+            message: payload.id,
         };
         Ok(Response::new(message))
     }

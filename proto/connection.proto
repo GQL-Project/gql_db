@@ -35,7 +35,7 @@ message QueryResult {
 // Result from executing an SQL Update or Version Control Command 
 message UpdateResult {
     bool success = 1;
-    optional string message = 2;
+    string message = 2;
 }
 
 // Value of one row
