@@ -44,8 +44,12 @@
 - If an error comes up "build script failed", also create a new environment variable `PROTOC`, pointing to `C:\Users\<name>\.protoc\protoc-21.5-win64\bin\protoc.exe`
 - For more help, refer to [this article](https://code.visualstudio.com/docs/languages/rust). 
 
+## Tips
+- Making changes to the `.proto` files will probably require you to run `cargo clean` and then `cargo build`. 
+
 ## Resources to Use
 - [Setting up a gRPC server-client](https://betterprogramming.pub/how-to-create-grpc-server-client-in-rust-4e37692229f0)
 - [The Rust Book](https://doc.rust-lang.org/stable/book/)
 - [Cargo (Package Management) Guide](https://doc.rust-lang.org/cargo/guide)
 - [rustup documentation](https://rust-lang.github.io/rustup/index.html)
+- [Rust Project File Structure](https://medium.com/codex/rust-modules-and-project-structure-832404a33e2e)

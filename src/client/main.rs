@@ -1,13 +1,13 @@
-use connection::database_client::DatabaseClient;
+use connection::database_connection_client::DatabaseConnectionClient;
 use connection::QueryRequest;
 
 pub mod connection {
-    tonic::include_proto!("connection");
+    tonic::include_proto!("db_connection");
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = DatabaseClient::connect("http://[::1]:50051").await?;
+    let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
 
     let request = tonic::Request::new(());
 

@@ -3,7 +3,7 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
-package connection;
+package db_connection;
 
 /* 
  * This allows us to form a general implementation for all platforms.
@@ -57,7 +57,7 @@ message CellValue {
 }
 
 // Services are the "functions" exposed by the server.
-service Database {
+service DatabaseConnection {
     // We can optionally have a VC query function here, or just parse that within Update
     rpc ConnectDB(google.protobuf.Empty) returns (ConnectResult);
     rpc DisconnectDB(ConnectResult) returns (google.protobuf.Empty);
