@@ -14,8 +14,8 @@ pub fn to_query_result(column_names: Vec<String>, row_values: Vec<Vec<ValueType>
     }
 }
 
-pub fn to_update_result(success: bool, message: String) -> UpdateResult {
-    UpdateResult { success, message }
+pub fn to_update_result(message: String) -> UpdateResult {
+    UpdateResult { message }
 }
 
 pub fn to_row_value(row_values: Vec<ValueType>) -> RowValue {

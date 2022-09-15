@@ -33,7 +33,7 @@ impl DatabaseConnection for Connection {
         // Instead of having the result type be checked each time, it's checked once here.
         // Hence, future functions will get a Result<T, String> argument, but accessing the
         // value inside Ok is just a simple (and safe!) ?.
-        let result = parser::parse(&request.query, true);
+        let result = parser::parse(&request.query, false);
         /* Creating Result */
         match result {
             Ok(tree) => {
@@ -51,8 +51,15 @@ impl DatabaseConnection for Connection {
     ) -> Result<Response<UpdateResult>, Status> {
         let request = request.into_inner();
         /* SQL Pipeline Begins Here */
-        let result = (true, request.query);
+        let result = parser::parse(&request.query, true);
         /* Creating Result */
-        Ok(Response::new(to_update_result(result.0, result.1)))
+        match result {
+            Ok(tree) => { 
+                Ok(Response::new(to_update_result(tree)))
+            }
+            Err(err) => {
+                Err(Status::cancelled(&err))
+            }
+        }
     }
 }
