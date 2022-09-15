@@ -3,6 +3,7 @@ use db_connection::*;
 use tonic::{Request, Response, Status};
 
 use crate::server::connection::Connection;
+use crate::parser::parser;
 use crate::util::convert::*;
 
 pub mod db_connection {
@@ -13,12 +14,13 @@ pub mod db_connection {
 #[tonic::async_trait]
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
-        let id = self.connect_db();
+        let id = rand::random::<i64>().to_string();
+        self.add_client(id.clone());
         Ok(Response::new(to_connect_result(id)))
     }
 
     async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<()>, Status> {
-        self.disconnect_db(request.into_inner().id);
+        self.remove_client(request.into_inner().id);
         Ok(Response::new(()))
     }
 
@@ -27,8 +29,20 @@ impl DatabaseConnection for Connection {
         request: Request<QueryRequest>,
     ) -> Result<Response<QueryResult>, Status> {
         let request = request.into_inner();
-        let result = self.run_query(request.id, request.query);
-        Ok(Response::new(to_query_result(result.0, result.1)))
+        /* SQL Pipeline Begins Here */
+        // Instead of having the result type be checked each time, it's checked once here.
+        // Hence, future functions will get a Result<T, String> argument, but accessing the
+        // value inside Ok is just a simple (and safe!) ?.
+        let result = parser::parse(&request.query, true);
+        /* Creating Result */
+        match result {
+            Ok(tree) => {
+                Ok(Response::new(to_query_result(vec![tree], vec![])))
+            }
+            Err(err) => {
+                Err(Status::cancelled(&err))
+            }
+        }
     }
 
     async fn run_update(
@@ -36,7 +50,9 @@ impl DatabaseConnection for Connection {
         request: Request<QueryRequest>,
     ) -> Result<Response<UpdateResult>, Status> {
         let request = request.into_inner();
-        let result = self.run_update(request.id, request.query);
+        /* SQL Pipeline Begins Here */
+        let result = (true, request.query);
+        /* Creating Result */
         Ok(Response::new(to_update_result(result.0, result.1)))
     }
 }
