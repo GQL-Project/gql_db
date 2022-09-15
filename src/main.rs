@@ -4,6 +4,7 @@ use tonic::transport::Server;
 
 mod server;
 mod util;
+mod parser;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

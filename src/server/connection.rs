@@ -1,4 +1,5 @@
 use crate::util::valuetype::*;
+use crate::parser::*;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Default)]
@@ -22,8 +23,9 @@ impl Connection {
         self.remove_client(id);
     }
 
+    // Function to run a query, returns an empty vector if the query fails.
     pub fn run_query(&self, id: String, query: String) -> (Vec<String>, Vec<Vec<ValueType>>) {
-        // TODO: Make wrapper functions to make <Vec<String>>, Vec<<String>> into this format.
+        
         (vec![String::from("id"), String::from("name")], vec![vec![ValueType::ValI32(1), ValueType::ValString(String::from("test"))]])
     }
 
