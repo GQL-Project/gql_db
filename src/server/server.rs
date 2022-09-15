@@ -2,8 +2,8 @@ use db_connection::database_connection_server::DatabaseConnection;
 use db_connection::*;
 use tonic::{Request, Response, Status};
 
-use crate::server::connection::Connection;
 use crate::parser::parser;
+use crate::server::connection::Connection;
 use crate::util::convert::*;
 
 pub mod db_connection {
@@ -14,8 +14,7 @@ pub mod db_connection {
 #[tonic::async_trait]
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
-        let id = rand::random::<i64>().to_string();
-        self.add_client(id.clone());
+        let id = self.new_client();
         Ok(Response::new(to_connect_result(id)))
     }
 
@@ -36,12 +35,8 @@ impl DatabaseConnection for Connection {
         let result = parser::parse(&request.query, false);
         /* Creating Result */
         match result {
-            Ok(tree) => {
-                Ok(Response::new(to_query_result(vec![tree], vec![])))
-            }
-            Err(err) => {
-                Err(Status::cancelled(&err))
-            }
+            Ok(tree) => Ok(Response::new(to_query_result(vec![tree], vec![]))),
+            Err(err) => Err(Status::cancelled(&err)),
         }
     }
 
@@ -54,12 +49,10 @@ impl DatabaseConnection for Connection {
         let result = parser::parse(&request.query, true);
         /* Creating Result */
         match result {
-            Ok(tree) => { 
-                Ok(Response::new(to_update_result(tree)))
-            }
-            Err(err) => {
-                Err(Status::cancelled(&err))
-            }
+            Ok(tree) => Ok(Response::new(to_update_result(tree))),
+            Err(err) => Err(Status::cancelled(&err)),
         }
     }
 }
+
+// Note: unit-testing servers is tricky, so it's done in the integration tests.
