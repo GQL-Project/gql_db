@@ -1,5 +1,4 @@
-use super::server::db_connection::cell_value::CellType::*;
-use super::server::db_connection::*;
+use crate::util::valuetype::*;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Default)]
@@ -23,25 +22,13 @@ impl Connection {
         self.remove_client(id);
     }
 
-    pub fn run_query(&self, id: String, query: String) -> QueryResult {
+    pub fn run_query(&self, id: String, query: String) -> (Vec<String>, Vec<Vec<ValueType>>) {
         // TODO: Make wrapper functions to make <Vec<String>>, Vec<<String>> into this format.
-        QueryResult {
-            column_names: vec![String::from("id"), String::from("name")],
-            row_values: vec![RowValue {
-                cell_values: vec![CellValue {
-                    cell_type: Some(ColString {
-                        0: String::from("hi"),
-                    }),
-                }],
-            }],
-        }
+        (vec![String::from("id"), String::from("name")], vec![vec![ValueType::ValI32(1), ValueType::ValString(String::from("test"))]])
     }
 
-    pub fn run_update(&self, id: String, query: String) -> UpdateResult {
-        UpdateResult {
-            success: true,
-            message: query,
-        }
+    pub fn run_update(&self, id: String, query: String) -> (bool, String) {
+        (true, "Success".to_string())
     }
 
     /* Client Management Methods */

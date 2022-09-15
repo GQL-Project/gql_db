@@ -1,11 +1,11 @@
 use prost_types::Timestamp;
 
-enum ValueType {
-    ColString(String),
-    ColI32(i32),
-    ColFloat(f32),
-    ColTimestamp(Timestamp),
-    ColI64(i64),
-    ColDouble(f64),
-    ColBool(bool),
+pub enum ValueType {
+    ValString(String),
+    ValI32(i32),
+    ValFloat(f32),
+    ValTimestamp(Timestamp),
+    ValI64(i64),
+    ValDouble(f64),
+    ValBool(bool),
 }

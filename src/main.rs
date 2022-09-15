@@ -3,6 +3,7 @@ use server::server::db_connection::database_connection_server::DatabaseConnectio
 use tonic::transport::Server;
 
 mod server;
+mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
