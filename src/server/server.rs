@@ -55,4 +55,45 @@ impl DatabaseConnection for Connection {
     }
 }
 
-// Note: unit-testing servers is tricky, so it's done in the integration tests.
+// Integration tests go here.
+mod tests {
+    // This import's needed, probably a bug in the language server.
+    #[allow(unused_imports)]
+    use super::*;
+    // Tests to test async functions
+    #[tokio::test]
+    async fn connect_db() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn disconnect_db() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let result = conn
+            .disconnect_db(Request::new(result.unwrap().into_inner()))
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_query() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result = conn
+            .run_query(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "SELECT * FROM test_table;".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
+}
