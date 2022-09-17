@@ -1,6 +1,7 @@
 [package]
 name = "gql_db"
 version = "0.1.0"
+description = "A SQL database server, with integrated Version Control"
 edition = "2021"
 default-run = "gql"
 
@@ -21,6 +22,7 @@ prost = "0.11.0"
 prost-types = "0.11.0"
 tokio = { version = "1.21.0", features = ["full"] }
 rand = "0.8.5"
+clap = { version = "3.2.22", features = ["derive"] }
 
 [build-dependencies]
 tonic-build = "0.8.0"
