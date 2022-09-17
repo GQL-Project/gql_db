@@ -6,6 +6,7 @@ use clap::Parser;
 mod server;
 mod util;
 mod parser;
+mod fileio;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = "None")]

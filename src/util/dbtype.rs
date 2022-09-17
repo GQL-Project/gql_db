@@ -10,3 +10,15 @@ pub enum ValueType {
     ValDouble(f64),
     ValBool(bool),
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnType {
+    // Strings have a given length value (in bytes).
+    String(u16),
+    I32,
+    Timestamp,
+    I64,
+    Float,
+    Double,
+    Bool,
+}
