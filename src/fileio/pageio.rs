@@ -66,3 +66,39 @@ pub fn write_string(page: &mut Page, offset: usize, value: &str) {
     let size = value.len();
     page[offset..offset + size].copy_from_slice(value.as_bytes());
 }
+
+#[cfg(test)]
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_io() {}
+
+    #[test]
+    fn test_pages_u8() {
+        let mut page = [0; PAGE_SIZE];
+        write_type::<u8>(&mut page, 0, 241);
+        assert_eq!(read_type::<u8>(&page, 0), 241);
+        assert_eq!(read_type::<u8>(&page, 1), 0);
+        write_type::<u8>(&mut page, 436, 241);
+        assert_eq!(read_type::<u8>(&page, 436), 241);
+    }
+
+    #[test]
+    fn test_pages_u16() {
+        let mut page = [0; PAGE_SIZE];
+        write_type::<u16>(&mut page, 0, 1241);
+        assert_eq!(read_type::<u16>(&page, 0), 1241);
+        assert_eq!(read_type::<u16>(&page, 2), 0);
+        write_type::<u16>(&mut page, 2456, 30321);
+        assert_eq!(read_type::<u16>(&page, 2456), 30321);
+    }
+
+    #[test]
+    fn test_pages_str() {
+        let mut page = [0; PAGE_SIZE];
+        write_type::<[char; 5]>(&mut page, 0, ['A', 'B', 'C', 'D', 'E']);
+        assert_eq!(read_type::<[char; 5]>(&page, 0), ['A', 'B', 'C', 'D', 'E']);
+    }
+}
