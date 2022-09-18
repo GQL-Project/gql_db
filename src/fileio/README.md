@@ -15,6 +15,7 @@
 ## Constraints:
 - All types are of fixed length. 
 - The total size of a row in the schema cannot be more than 4096 bytes.
+- Strings are not allowed to have null characters.
 - Columns can only have names of 60 characters or less.
 - Schemas are restricted to 60 columns for each table.
 

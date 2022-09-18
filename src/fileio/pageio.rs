@@ -1,4 +1,5 @@
 use positioned_io::{RandomAccessFile, ReadAt, Size, WriteAt};
+use std::cmp::min;
 use std::fs::{File, OpenOptions};
 use std::io::Error;
 
@@ -46,13 +47,13 @@ pub fn read_type<T: Sized>(page: &Page, offset: usize) -> T {
     let size = std::mem::size_of::<T>();
     let mut buf = vec![0u8; size];
     buf.copy_from_slice(&page[offset..offset + size]);
-    // Get the value from the buffer, and return it
     unsafe { std::ptr::read(buf.as_ptr() as *const T) }
 }
 
 pub fn read_string(page: &Page, offset: usize, size: usize) -> String {
     let mut buf = vec![0u8; size];
     buf.copy_from_slice(&page[offset..offset + size]);
+    buf.retain(|&x| x != 0);
     String::from_utf8(buf).unwrap()
 }
 
@@ -60,13 +61,14 @@ pub fn write_type<T: Sized>(page: &mut Page, offset: usize, value: T) {
     let size = std::mem::size_of::<T>();
     let mut buf = vec![0u8; size];
     unsafe { std::ptr::write(buf.as_mut_ptr() as *mut T, value) };
-    // Write the value to the buffer
     page[offset..offset + size].copy_from_slice(&buf);
 }
 
-pub fn write_string(page: &mut Page, offset: usize, value: &str) {
-    let size = value.len();
-    page[offset..offset + size].copy_from_slice(value.as_bytes());
+pub fn write_string(page: &mut Page, offset: usize, value: &str, len: usize) {
+    let mut buf = vec![0u8; len];
+    let size = min(len, value.len());
+    buf[..size].copy_from_slice(&value.as_bytes()[..size]);
+    page[offset..offset + len].copy_from_slice(&buf);
 }
 
 #[cfg(test)]
@@ -120,9 +122,14 @@ mod tests {
     #[test]
     fn test_pages_strings() {
         let mut page = [0; PAGE_SIZE];
-        write_string(&mut page, 0, "Hello World");
-        assert_eq!(read_string(&page, 0, 11), "Hello World");
-        write_string(&mut page, 100, "Huge String");
-        assert_eq!(read_string(&page, 100, 11), "Huge String");
+        // Works with exact length strings
+        write_string(&mut page, 0, "Test", 5);
+        assert_eq!(read_string(&page, 0, 5), "Test");
+        // Works with strings that are shorter than the length
+        write_string(&mut page, 0, "Hello", 10);
+        assert_eq!(read_string(&page, 0, 10), "Hello");
+        // Truncate large strings to fit in the buffer
+        write_string(&mut page, 0, "Hello, World!", 10);
+        assert_eq!(read_string(&page, 0, 10), "Hello, Wor");
     }
 }
