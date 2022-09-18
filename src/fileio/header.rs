@@ -1,13 +1,13 @@
 use std::io::Error;
 
 use super::pageio::*;
-use crate::util::dbtype::ColumnType;
+use crate::util::dbtype::Column;
 pub struct Header {
     pub num_pages: u32,
     pub schema: Schema,
 }
 
-pub type SchemaCol = (String, ColumnType);
+pub type SchemaCol = (String, Column);
 pub type Schema = Vec<SchemaCol>;
 
 pub fn read_schema(page: &Page) -> Result<Schema, String> {
@@ -18,7 +18,7 @@ pub fn read_schema(page: &Page) -> Result<Schema, String> {
     for _ in 0..num_cols {
         let typeid: u16 = read_type(&page, offset)?;
         let colname = read_string(&page, offset + 2, 50)?;
-        schema.push((colname, ColumnType::decode_type(typeid)));
+        schema.push((colname, Column::decode_type(typeid)));
         offset += 34;
     }
     Ok(schema)

@@ -1,8 +1,8 @@
-use crate::util::dbtype::ValueType;
+use crate::util::dbtype::Value;
 
 use super::{header::*, pageio::*};
 
-pub type Row = Vec<ValueType>;
+pub type Row = Vec<Value>;
 
 // Note that read and write rows and write to the page, not the file.
 pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Result<Option<Row>, String> {
@@ -39,4 +39,5 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
 }
