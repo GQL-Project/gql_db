@@ -104,22 +104,11 @@ mod tests {
     #[test]
     fn test_read_write_large_header() {
         let schema = vec![
-            ("col1".to_string(), Column::I32),
-            ("col2".to_string(), Column::String(50)),
-            ("col3".to_string(), Column::Float),
-            ("col4".to_string(), Column::String(100)),
-            ("col5".to_string(), Column::String(200)),
-            ("col6".to_string(), Column::String(300)),
-            ("col7".to_string(), Column::String(400)),
-            ("col8".to_string(), Column::String(500)),
-            ("col9".to_string(), Column::String(600)),
-            ("col10".to_string(), Column::String(700)),
-            ("col11".to_string(), Column::String(800)),
-            ("col12".to_string(), Column::String(900)),
-            ("col13".to_string(), Column::String(1000)),
-            ("col14".to_string(), Column::String(1100)),
-            ("col15".to_string(), Column::String(1200)),
-            ("col16".to_string(), Column::String(1300))
+            ("column name 345".to_string(), Column::I32),
+            ("a string column of 50".to_string(), Column::String(50)),
+            ("a float column of 32 bytes".to_string(), Column::Float),
+            ("a small boolean column".to_string(), Column::Bool),
+            ("a huge timestamp column".to_string(), Column::Timestamp)
         ];
         let header = Header {
             num_pages: 245,
