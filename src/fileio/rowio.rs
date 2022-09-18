@@ -24,7 +24,7 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
     let mut offset = (rownum as usize) * schema_size(schema);
     write_type::<u8>(page, offset, 1)?;
     offset += 1;
-    // This looks complicated, but all it's doing is just zipping 
+    // This looks complicated, but all it's doing is just zipping
     // the schema with the row, and then writing each cell.
     schema
         .iter()
@@ -34,4 +34,35 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
             offset += celltype.size();
             Ok(())
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::dbtype::{Column, Value};
+
+    #[test]
+    fn test_page_rows() {
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut page = [0u8; PAGE_SIZE];
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("John".to_string()),
+            Value::I32(20),
+        ];
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Jane".to_string()),
+            Value::I32(21),
+        ];
+        write_row(&schema, &mut page, &row1, 0).unwrap();
+        write_row(&schema, &mut page, &row2, 1).unwrap();
+        assert_eq!(read_row(&schema, &page, 0).unwrap(), Some(row1));
+        assert_eq!(read_row(&schema, &page, 1).unwrap(), Some(row2));
+        assert_eq!(read_row(&schema, &page, 2).unwrap(), None);
+    }
 }
