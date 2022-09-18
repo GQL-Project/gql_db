@@ -1,5 +1,5 @@
-use crate::util::dbtype::ColumnType;
 use super::pageio::*;
+use crate::util::dbtype::ColumnType;
 pub struct Header {
     pub num_pages: u32,
     pub schema: Schema,
@@ -19,8 +19,5 @@ pub fn read_header(file: String) -> Header {
     let buf = read_page(0, &file).unwrap();
     let num_pages = read_type::<u32>(&buf, 0);
     let schema = read_schema(&buf);
-    Header {
-        num_pages,
-        schema,
-    }
+    Header { num_pages, schema }
 }

@@ -1,11 +1,21 @@
 use positioned_io::{RandomAccessFile, ReadAt, Size, WriteAt};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Error;
 
 pub const PAGE_SIZE: usize = 4096;
 pub type Page = [u8; PAGE_SIZE]; // Array of Size 4KB
 
-/// Reads page at given page number from given file
+// Creates file with given name and size of Page Size
+pub fn create_file(path: &String) -> Result<(), Error> {
+    let file = File::create(path)?;
+    file.set_len(PAGE_SIZE as u64)?;
+    Ok(())
+}
+
+/* File IO on the Pages */
+
+// We read and write only in multiples of Page Size
+// For more details, refer to fileio/README.md
 pub fn read_page(page_num: u64, path: &String) -> Result<Page, Error> {
     let mut buf = [0; PAGE_SIZE];
     let f = RandomAccessFile::open(path)?;
@@ -13,7 +23,7 @@ pub fn read_page(page_num: u64, path: &String) -> Result<Page, Error> {
     Ok(buf)
 }
 
-// It's memory efficient to just reuse our old buffer
+// It's memory efficient to just reuse our old buffer (when possible)
 pub fn load_page(page_num: u64, path: &String, page: &mut Page) -> Result<(), Error> {
     let f = RandomAccessFile::open(path)?;
     f.read_at(page_num * PAGE_SIZE as u64, page)?;
@@ -21,7 +31,7 @@ pub fn load_page(page_num: u64, path: &String, page: &mut Page) -> Result<(), Er
 }
 
 pub fn write_page(page_num: u64, path: &String, page: &Page) -> Result<(), Error> {
-    let file = File::open(path)?;
+    let file = OpenOptions::new().write(true).open(path)?;
     let file_size = file.size()?.expect("File size is not available");
     if page_num * PAGE_SIZE as u64 > file_size {
         file.set_len((page_num + 1) * PAGE_SIZE as u64)?;
@@ -31,15 +41,7 @@ pub fn write_page(page_num: u64, path: &String, page: &Page) -> Result<(), Error
     Ok(())
 }
 
-pub fn create_file(path: &String) -> Result<(), Error> {
-    let file = File::create(path)?;
-    file.set_len(PAGE_SIZE as u64)?;
-    Ok(())
-}
-
-/// Read and Write operations for a page
-/// These operations are implemented to be independent of the underlying
-/// endianness of the system.
+/* Making reads and writes on the Pages */
 pub fn read_type<T: Sized>(page: &Page, offset: usize) -> T {
     let size = std::mem::size_of::<T>();
     let mut buf = vec![0u8; size];
@@ -68,12 +70,25 @@ pub fn write_string(page: &mut Page, offset: usize, value: &str) {
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
 
     #[test]
-    fn test_file_io() {}
+    fn test_file_io() {
+        let path = "test_file_io".to_string();
+        create_file(&path).unwrap();
+        let mut page = [0u8; PAGE_SIZE];
+        write_type::<u32>(&mut page, 0, 1);
+        write_type::<u32>(&mut page, 4, 2);
+        write_page(0, &path, &page).unwrap();
+        write_type::<u32>(&mut page, 0, 12);
+        write_type::<u32>(&mut page, 4, 9564);
+        load_page(0, &path, &mut page).unwrap();
+        assert_eq!(read_type::<u32>(&page, 0), 1);
+        assert_eq!(read_type::<u32>(&page, 4), 2);
+        // Clean up by removing file
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn test_pages_u8() {
@@ -96,9 +111,18 @@ mod tests {
     }
 
     #[test]
-    fn test_pages_str() {
+    fn test_pages_array() {
         let mut page = [0; PAGE_SIZE];
         write_type::<[char; 5]>(&mut page, 0, ['A', 'B', 'C', 'D', 'E']);
         assert_eq!(read_type::<[char; 5]>(&page, 0), ['A', 'B', 'C', 'D', 'E']);
+    }
+
+    #[test]
+    fn test_pages_strings() {
+        let mut page = [0; PAGE_SIZE];
+        write_string(&mut page, 0, "Hello World");
+        assert_eq!(read_string(&page, 0, 11), "Hello World");
+        write_string(&mut page, 100, "Huge String");
+        assert_eq!(read_string(&page, 100, 11), "Huge String");
     }
 }
