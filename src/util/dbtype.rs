@@ -109,7 +109,7 @@ impl Column {
             Column::Double => size_of::<f64>(),
             Column::Bool => size_of::<bool>(),
             Column::Timestamp => size_of::<i32>(),
-            Column::String(x) => (*x as usize) * size_of::<char>(),
+            Column::String(x) => (*x as usize) * size_of::<u8>(),
         }
     }
 }

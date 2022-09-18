@@ -35,9 +35,3 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
             Ok(())
         })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-}

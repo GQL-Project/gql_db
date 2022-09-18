@@ -51,10 +51,10 @@ pub fn read_type<T: Sized>(page: &Page, offset: usize) -> Result<T, String> {
     Ok(unsafe { std::ptr::read(buf.as_ptr() as *const T) })
 }
 
-pub fn read_string(page: &Page, offset: usize, size: usize) -> Result<String, String> {
-    let mut buf = vec![0u8; size];
-    check_bounds(offset, size)?;
-    buf.copy_from_slice(&page[offset..offset + size]);
+pub fn read_string(page: &Page, offset: usize, len: usize) -> Result<String, String> {
+    let mut buf = vec![0u8; len];
+    check_bounds(offset, len)?;
+    buf.copy_from_slice(&page[offset..offset + len]);
     buf.retain(|&x| x != 0);
     String::from_utf8(buf).map_err(|_| "Invalid UTF-8".to_string())
 }
