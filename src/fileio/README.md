@@ -16,7 +16,7 @@
 - All types are of fixed length. 
 - The total size of a row in the schema cannot be more than 4096 bytes.
 - Columns can only have names of 60 characters or less.
-- Schemas are restricted to 60 columns.
+- Schemas are restricted to 60 columns for each table.
 
 ### Header Page Format:
 - We first have a `uint32` counting how many pages are present in the file. Everytime pages are added, we update this value.
@@ -32,9 +32,13 @@
         - 4: Timestamp (32 bits)
 
 ### Page Format:
-- The page format is fairly simple: it contains all of the rows sequentially, with each row having an additional byte.
-- If a row is removed, the byte is set to 1, allowing for us to use this location for insertion later on, and skip it while performing scans.
+- The page format is fairly simple: it contains all of the rows sequentially, with each row having an additional byte in the beginning.
+- If a row is removed, the byte is set to 0, allowing for us to use this location for insertion later on, and skip it while performing scans.
 - Strings of length `n` will have space for all `n` characters, even if it is not initally using the entire space.
+
+## Concurrency Considerations
+- File reads using positioned-io can be done concurrently, as long as no file writes are done at the same time.
+- In other words, we can have multiple threads reading from the same file, but as one thread writes, all other threads must wait.
 
 ### Future Implementation Ideas:
 - Creating a free list for pages

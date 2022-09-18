@@ -56,9 +56,9 @@ impl DatabaseConnection for Connection {
 }
 
 // Integration tests go here.
+#[cfg(test)]
 mod tests {
     // This import's needed, probably a bug in the language server.
-    #[allow(unused_imports)]
     use super::*;
     // Tests to test async functions
     #[tokio::test]
