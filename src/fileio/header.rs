@@ -54,7 +54,7 @@ pub fn write_header(file: String, header: &Header) -> Result<(), String> {
 }
 
 pub fn schema_size(schema: &Schema) -> usize {
-    let mut size = 0;
+    let mut size = 1; // 1 byte for the check byte
     for (_, coltype) in schema {
         size += coltype.size();
     }

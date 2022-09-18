@@ -1,9 +1,7 @@
 use core::mem::size_of;
 use prost_types::Timestamp;
 
-use crate::fileio::{
-    pageio::{read_string, read_type, write_string, write_type, Page},
-};
+use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueType {
@@ -87,7 +85,7 @@ impl ColumnType {
         }
     }
 
-    pub fn write(&self, row: ValueType, page: &mut Page, offset: usize) -> Result<(), String> {
+    pub fn write(&self, row: &ValueType, page: &mut Page, offset: usize) -> Result<(), String> {
         match (self, row) {
             (ColumnType::I32, ValueType::ValI32(x)) => write_type(page, offset, x),
             (ColumnType::I64, ValueType::ValI64(x)) => write_type(page, offset, x),
