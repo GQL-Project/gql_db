@@ -2,3 +2,4 @@
 #![allow(dead_code)]
 pub mod pageio;
 pub mod header;
+pub mod rowio;
