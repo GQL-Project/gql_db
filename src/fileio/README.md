@@ -16,14 +16,14 @@
 - All types are of fixed length. 
 - The total size of a row in the schema cannot be more than 4096 bytes.
 - Strings are not allowed to have null characters.
-- Columns can only have names of 60 characters or less.
+- Columns can only have names of 50 characters or less.
 - Schemas are restricted to 60 columns for each table.
 
 ### Header Page Format:
 - We first have a `uint32` counting how many pages are present in the file. Everytime pages are added, we update this value.
     - To reduce the times needed for this to occur, we double the number of pages in the file after each IO.
 - We then have a `uint8` counting the number of elements in the schema, telling us how many records to scan.
-- Each schema shape is represented as a `uint16`, followed by the name, terminated by `'\0'`:
+- Each schema shape is represented as a `uint16` for the type, followed by a 32 character name:
     - If the first bit is 1, we have a string of size `n ^ (1 << 15)` bytes
     - If the first bit is 0, for the given values of `n`, we have:
         - 0: Int32
@@ -31,6 +31,7 @@
         - 2: Float32
         - 3: Double64
         - 4: Timestamp (32 bits)
+        - 5: Boolean
 
 ### Page Format:
 - The page format is fairly simple: it contains all of the rows sequentially, with each row having an additional byte in the beginning.
