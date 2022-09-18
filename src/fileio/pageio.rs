@@ -158,7 +158,11 @@ mod tests {
         let mut page = [0; PAGE_SIZE];
         write_type::<u8>(&mut page, 0, 241).unwrap();
         assert_eq!(read_type::<u8>(&page, 1).unwrap(), 0);
-        write_type::<u8>(&mut page, 5000, 241).unwrap();
-        assert_eq!(read_type::<u8>(&page, 5000).unwrap(), 0);
+        assert_eq!(write_type::<u8>(&mut page, 5000, 241).unwrap_err(), "Offset is out of bounds");
+        assert_eq!(read_type::<u8>(&page, 5000).unwrap_err(), "Offset is out of bounds");
+        write_type::<u16>(&mut page, 4094, 1241).unwrap();
+        assert_eq!(read_type::<u16>(&page, 4094).unwrap(), 1241);
+        assert_eq!(write_type::<u32>(&mut page, 4094, 155241).unwrap_err(), "Offset is out of bounds");
+        assert_eq!(read_type::<u32>(&page, 4094).unwrap_err(), "Offset is out of bounds");
     }
 }

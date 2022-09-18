@@ -24,6 +24,8 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
     let mut offset = (rownum as usize) * schema_size(schema);
     write_type::<u8>(page, offset, 1)?;
     offset += 1;
+    // This looks complicated, but all it's doing is just zipping 
+    // the schema with the row, and then writing each cell.
     schema
         .iter()
         .zip(row.iter())
@@ -32,4 +34,9 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
             offset += celltype.size();
             Ok(())
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
