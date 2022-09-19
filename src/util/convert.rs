@@ -18,6 +18,12 @@ pub fn to_update_result(message: String) -> UpdateResult {
     UpdateResult { message }
 }
 
+/// Converts the parameters into a VersionControlResult that is suitable to be
+/// returned to the client.
+pub fn to_vc_cmd_result(message: String) -> VersionControlResult {
+    VersionControlResult { message }
+}
+
 pub fn to_row_value(row_values: Vec<Value>) -> RowValue {
     RowValue {
         cell_values: row_values.into_iter().map(to_value).collect(),

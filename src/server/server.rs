@@ -53,6 +53,23 @@ impl DatabaseConnection for Connection {
             Err(err) => Err(Status::cancelled(&err)),
         }
     }
+
+    /// This is a method that gets run every time the client runs a version control command.
+    /// It automatically parses the command, executes it, and returns the result.
+    async fn run_version_control_command(
+        &self,
+        request: Request<QueryRequest>,
+    ) -> Result<Response<VersionControlResult>, Status> {
+        let request = request.into_inner();
+        /* VC Command Pipeline Begins Here */
+        let result = parser::parse_vc_cmd(&request.query);
+
+        /* Creating Result */
+        match result {
+            Ok(tree) => Ok(Response::new(to_vc_cmd_result(tree))),
+            Err(err) => Err(Status::cancelled(&err)),
+        }
+    }
 }
 
 // Integration tests go here.

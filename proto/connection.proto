@@ -32,8 +32,13 @@ message QueryResult {
     repeated RowValue row_values = 4;
 }
 
-// Result from executing an SQL Update or Version Control Command 
+// Result from executing an SQL Update Command 
 message UpdateResult {
+    string message = 2;
+}
+
+// Result from executing a Version Control Command
+message VersionControlResult {
     string message = 2;
 }
 
@@ -62,4 +67,5 @@ service DatabaseConnection {
     rpc DisconnectDB(ConnectResult) returns (google.protobuf.Empty);
     rpc RunQuery(QueryRequest) returns (QueryResult);
     rpc RunUpdate(QueryRequest) returns (UpdateResult);
+    rpc RunVersionControlCommand(QueryRequest) returns (VersionControlResult);
 }
