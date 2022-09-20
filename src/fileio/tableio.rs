@@ -1,12 +1,12 @@
-use crate::util::row::RowInfo;
+use crate::util::row::{Row, RowInfo};
 
 use super::{
     header::{read_header, schema_size, Schema},
     pageio::{check_bounds, read_page, write_page, Page},
-    rowio::{read_row, write_row},
+    rowio::{insert_row, read_row, write_row},
 };
 
-struct Table {
+pub struct Table {
     pub schema: Schema,
     pub page: Box<Page>,
     pub path: String,
@@ -70,7 +70,9 @@ impl Iterator for Table {
     }
 }
 
-fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
+/// This function is helpful when doing Updates
+/// It allows us to rewrite a specific row from the table.
+pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
     // To reduce page updates, we sort the rows by page number.
     rows.sort();
     let mut pagenum = rows[0].pagenum;
@@ -83,9 +85,31 @@ fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
         }
         write_row(&table.schema, &mut page, &row.row, row.rownum)?;
     }
-    // Write the last
+    // Write the last page
     write_page(pagenum as u64, &table.path, page.as_mut())?;
+    Ok(())
+}
 
+/// This function is helpful when doing Inserts
+/// It allows us to insert a row into the table, allocating space when needed
+pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<(), String> {
+    let mut pagenum = 1;
+    let mut page = read_page(pagenum, &table.path)?;
+    for row in rows {
+        while insert_row(&table.schema, page.as_mut(), &row)?.is_none() {
+            write_page(pagenum as u64, &table.path, page.as_mut())?;
+            pagenum += 1;
+            if pagenum > table.maxpages {
+                // Allocate a new page
+                page = Box::new([0; 4096]);
+                table.maxpages += 1;
+            } else {
+                page = read_page(pagenum, &table.path)?;
+            }
+        }
+    }
+    // Write the last page
+    write_page(pagenum as u64, &table.path, page.as_mut())?;
     Ok(())
 }
 
@@ -107,8 +131,8 @@ mod tests {
         let path = "test_read_table.db".to_string();
         let table = create_table(&path);
         // Zip iterator with index
-        for (i, row) in table.enumerate() {
-            let row = row.row;
+        for (i, rowinfo) in table.enumerate() {
+            let row = rowinfo.row;
             if i <= 68 {
                 assert_eq!(row[0], Value::I32(1));
                 assert_eq!(row[1], Value::String("John Constantine".to_string()));
