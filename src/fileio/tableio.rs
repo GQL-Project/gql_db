@@ -1,7 +1,9 @@
+use crate::util::row::RowInfo;
+
 use super::{
     header::{read_header, schema_size, Schema},
-    pageio::{check_bounds, read_page, Page},
-    rowio::{read_row, Row},
+    pageio::{check_bounds, read_page, write_page, Page},
+    rowio::{read_row, write_row},
 };
 
 struct Table {
@@ -42,7 +44,7 @@ impl Table {
 ///    println!("{:?}", row);
 /// }
 impl Iterator for Table {
-    type Item = Row;
+    type Item = RowInfo;
 
     // This iterator should only return None when the table is exhausted.
     fn next(&mut self) -> Option<Self::Item> {
@@ -60,8 +62,32 @@ impl Iterator for Table {
             row = read_row(&self.schema, &self.page, self.rownum);
             self.rownum += 1;
         }
-        row
+        Some(RowInfo {
+            row: row.unwrap(), // Safe to unwrap because we checked for None above.
+            pagenum: self.pagenum,
+            rownum: self.rownum - 1,
+        })
     }
+}
+
+fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
+    // To reduce page updates, we sort the rows by page number.
+    rows.sort();
+    let map_err = |_| "Error reading page";
+    let mut pagenum = rows[0].pagenum;
+    let mut page = read_page(pagenum, &table.path).map_err(map_err)?;
+    for row in rows {
+        if pagenum != row.pagenum {
+            write_page(pagenum as u64, &table.path, page.as_mut()).map_err(map_err)?;
+            pagenum = row.pagenum;
+            page = read_page(pagenum, &table.path).map_err(map_err)?;
+        }
+        write_row(&table.schema, &mut page, &row.row, row.rownum)?;
+    }
+    // Write the last
+    write_page(pagenum as u64, &table.path, page.as_mut()).map_err(map_err)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -83,6 +109,7 @@ mod tests {
         let table = create_table(&path);
         // Zip iterator with index
         for (i, row) in table.enumerate() {
+            let row = row.row;
             if i <= 68 {
                 assert_eq!(row[0], Value::I32(1));
                 assert_eq!(row[1], Value::String("John Constantine".to_string()));
