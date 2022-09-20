@@ -7,6 +7,7 @@ mod server;
 mod util;
 mod parser;
 mod fileio;
+mod executor;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = "None")]

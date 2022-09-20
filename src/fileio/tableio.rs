@@ -4,7 +4,8 @@ use super::{
     rowio::{read_row, Row},
 };
 
-struct Table {
+#[derive(Clone)]
+pub struct Table {
     pub schema: Schema,
     pub page: Box<Page>,
     pub path: String,
