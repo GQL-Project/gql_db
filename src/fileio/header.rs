@@ -40,7 +40,6 @@ pub fn write_schema(page: &mut Page, schema: &Schema) -> Result<(), String> {
 pub fn read_header(file: &String) -> Result<Header, String> {
     let buf = read_page(0, &file).map_err(map_error)?;
     let num_pages = read_type(&buf, 0)?;
-    println!("{:}", num_pages);
     let schema = read_schema(&buf)?;
     Ok(Header { num_pages, schema })
 }
@@ -68,7 +67,7 @@ fn map_error(err: Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::dbtype::{Column};
+    use crate::util::dbtype::Column;
 
     #[test]
     fn test_schema_size() {
@@ -108,7 +107,7 @@ mod tests {
             ("a string column of 50".to_string(), Column::String(50)),
             ("a float column of 32 bytes".to_string(), Column::Float),
             ("a small boolean column".to_string(), Column::Bool),
-            ("a huge timestamp column".to_string(), Column::Timestamp)
+            ("a huge timestamp column".to_string(), Column::Timestamp),
         ];
         let header = Header {
             num_pages: 245,

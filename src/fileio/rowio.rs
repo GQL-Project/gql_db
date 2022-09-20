@@ -43,7 +43,7 @@ pub fn insert_row(schema: &Schema, page: &mut Page, row: &Row) -> Result<Option<
     let mut rownum = 0;
     let mut offset = 0;
     let size = schema_size(schema);
-    while offset + size <= PAGE_SIZE {
+    while check_bounds(offset, size).is_ok() {
         let check: u8 = read_type(page, offset)?;
         if check == 0 {
             write_row(schema, page, row, rownum)?;
