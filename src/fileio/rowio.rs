@@ -65,4 +65,31 @@ mod tests {
         assert_eq!(read_row(&schema, &page, 1).unwrap(), Some(row2));
         assert_eq!(read_row(&schema, &page, 2).unwrap(), None);
     }
+
+    #[test]
+    fn test_out_of_bounds() {
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut page = [0u8; PAGE_SIZE];
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("John".to_string()),
+            Value::I32(20),
+        ];
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Jane".to_string()),
+            Value::I32(21),
+        ];
+        // 59 * 68 = 4012, which is just under the page size.
+        write_row(&schema, &mut page, &row1, 68).unwrap();
+        // 59 * 69 > 4096, which should fail
+        assert!(write_row(&schema, &mut page, &row2, 69).is_err());
+        assert_eq!(read_row(&schema, &page, 68).unwrap(), Some(row1));
+        // Unlike "empty" rows, out-of-bounds rows should return an error.
+        assert!(read_row(&schema, &page, 69).is_err());
+    }
 }
