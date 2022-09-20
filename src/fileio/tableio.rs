@@ -20,7 +20,7 @@ impl Table {
     // Construct a new table.
     pub fn new(path: String) -> Result<Table, String> {
         let header = read_header(&path)?;
-        let page = read_page(1, &path).map_err(|e| e.to_string())?;
+        let page = read_page(1, &path)?;
         Ok(Table {
             size: schema_size(&header.schema),
             schema: header.schema,
@@ -73,19 +73,18 @@ impl Iterator for Table {
 fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
     // To reduce page updates, we sort the rows by page number.
     rows.sort();
-    let map_err = |_| "Error reading page";
     let mut pagenum = rows[0].pagenum;
-    let mut page = read_page(pagenum, &table.path).map_err(map_err)?;
+    let mut page = read_page(pagenum, &table.path)?;
     for row in rows {
         if pagenum != row.pagenum {
-            write_page(pagenum as u64, &table.path, page.as_mut()).map_err(map_err)?;
+            write_page(pagenum as u64, &table.path, page.as_mut())?;
             pagenum = row.pagenum;
-            page = read_page(pagenum, &table.path).map_err(map_err)?;
+            page = read_page(pagenum, &table.path)?;
         }
         write_row(&table.schema, &mut page, &row.row, row.rownum)?;
     }
     // Write the last
-    write_page(pagenum as u64, &table.path, page.as_mut()).map_err(map_err)?;
+    write_page(pagenum as u64, &table.path, page.as_mut())?;
 
     Ok(())
 }

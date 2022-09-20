@@ -17,29 +17,34 @@ pub fn create_file(path: &String) -> Result<(), Error> {
 
 // We read and write only in multiples of Page Size
 // For more details, refer to fileio/README.md
-pub fn read_page(page_num: u32, path: &String) -> Result<Box<Page>, Error> {
+pub fn read_page(page_num: u32, path: &String) -> Result<Box<Page>, String> {
     let mut buf = Box::new([0; PAGE_SIZE]);
-    let f = RandomAccessFile::open(path)?;
-    f.read_at((page_num * PAGE_SIZE as u32) as u64, buf.as_mut())?;
+    let f = RandomAccessFile::open(path).map_err(map_error)?;
+    f.read_at((page_num * PAGE_SIZE as u32) as u64, buf.as_mut())
+        .map_err(map_error)?;
     Ok(buf)
 }
 
 // It's memory efficient to just reuse our old buffer (when possible)
-pub fn load_page(page_num: u64, path: &String, page: &mut Page) -> Result<(), Error> {
-    let f = RandomAccessFile::open(path)?;
-    f.read_at(page_num * PAGE_SIZE as u64, page)?;
+pub fn load_page(page_num: u64, path: &String, page: &mut Page) -> Result<(), String> {
+    let f = RandomAccessFile::open(path).map_err(map_error)?;
+    f.read_at(page_num * PAGE_SIZE as u64, page)
+        .map_err(map_error)?;
     Ok(())
 }
 
-pub fn write_page(page_num: u64, path: &String, page: &Page) -> Result<(), Error> {
-    let file = OpenOptions::new().write(true).open(path)?;
-    let file_size = file.size()?.expect("File size is not available");
-    if page_num * PAGE_SIZE as u64 > file_size {
-        file.set_len((page_num + 1) * PAGE_SIZE as u64)?;
-    }
-    let mut f = RandomAccessFile::try_new(file)?;
-    f.write_at(page_num * PAGE_SIZE as u64, page)?;
-    Ok(())
+pub fn write_page(page_num: u64, path: &String, page: &Page) -> Result<(), String> {
+    || -> Result<(), Error> {
+        let file = OpenOptions::new().write(true).open(path)?;
+        let file_size = file.size()?.expect("File size is not available");
+        if page_num * PAGE_SIZE as u64 > file_size {
+            file.set_len((page_num + 1) * PAGE_SIZE as u64)?;
+        }
+        let mut f = RandomAccessFile::try_new(file)?;
+        f.write_at(page_num * PAGE_SIZE as u64, page)?;
+        Ok(())
+    }()
+    .map_err(map_error)
 }
 
 /* Making reads and writes on the Pages */
@@ -84,6 +89,10 @@ pub fn check_bounds(offset: usize, size: usize) -> Result<(), String> {
     } else {
         Err("Offset is out of bounds".to_string())
     }
+}
+
+fn map_error(err: Error) -> String {
+    format!("IO Error: {}", err)
 }
 
 #[cfg(test)]
