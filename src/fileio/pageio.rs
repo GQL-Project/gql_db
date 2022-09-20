@@ -71,7 +71,7 @@ pub fn write_type<T: Sized>(page: &mut Page, offset: usize, value: T) -> Result<
 pub fn write_string(page: &mut Page, offset: usize, value: &str, len: usize) -> Result<(), String> {
     let mut buf = vec![0u8; len];
     let size = min(len, value.len());
-    check_bounds(offset, size)?;
+    check_bounds(offset, len)?;
     buf[..size].copy_from_slice(&value.as_bytes()[..size]);
     page[offset..offset + len].copy_from_slice(&buf);
     Ok(())

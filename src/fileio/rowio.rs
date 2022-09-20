@@ -4,22 +4,24 @@ use super::{header::*, pageio::*};
 
 pub type Row = Vec<Value>;
 
-// Note that read and write rows and write to the page, not the file.
-pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Result<Option<Row>, String> {
+// Here, instead of returning an Error if the row is too large, we just return None
+pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Option<Row> {
     let mut row = Row::new();
     let mut offset = (rownum as usize) * schema_size(schema);
-    let check: u8 = read_type(page, offset)?;
+    let check: u8 = read_type(page, offset).ok()?;
     if check == 0 {
-        return Ok(None);
+        return None;
     }
+    assert!(check == 1, "Malformed Row");
     offset += 1;
     for (_, celltype) in schema {
-        row.push(celltype.read(page, offset)?);
+        row.push(celltype.read(page, offset).ok()?);
         offset += celltype.size();
     }
-    Ok(Some(row))
+    Some(row)
 }
 
+// This needs to have an error if the row is too big to fit in the page.
 pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Result<(), String> {
     let mut offset = (rownum as usize) * schema_size(schema);
     write_type::<u8>(page, offset, 1)?;
@@ -34,6 +36,23 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
             offset += celltype.size();
             Ok(())
         })
+}
+
+// Locates the first free row in the page, and returns the row number, or None if the page is full.
+pub fn insert_row(schema: &Schema, page: &mut Page, row: &Row) -> Result<Option<u16>, String> {
+    let mut rownum = 0;
+    let mut offset = 0;
+    let size = schema_size(schema);
+    while offset + size <= PAGE_SIZE {
+        let check: u8 = read_type(page, offset)?;
+        if check == 0 {
+            write_row(schema, page, row, rownum)?;
+            return Ok(Some(rownum));
+        }
+        rownum += 1;
+        offset += size;
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -61,9 +80,34 @@ mod tests {
         ];
         write_row(&schema, &mut page, &row1, 0).unwrap();
         write_row(&schema, &mut page, &row2, 1).unwrap();
-        assert_eq!(read_row(&schema, &page, 0).unwrap(), Some(row1));
-        assert_eq!(read_row(&schema, &page, 1).unwrap(), Some(row2));
-        assert_eq!(read_row(&schema, &page, 2).unwrap(), None);
+        assert_eq!(read_row(&schema, &page, 0), Some(row1));
+        assert_eq!(read_row(&schema, &page, 1), Some(row2));
+        assert_eq!(read_row(&schema, &page, 2), None);
+    }
+
+    #[test]
+    fn test_insert() {
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut page = [0u8; PAGE_SIZE];
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("John".to_string()),
+            Value::I32(20),
+        ];
+        // Fill up the page with rows.
+        for i in 0..(PAGE_SIZE / schema_size(&schema)) {
+            assert_eq!(
+                insert_row(&schema, &mut page, &row1).unwrap(),
+                Some(i as u16)
+            );
+        }
+        // Attempting to allocate another row here now should fail.
+        assert_eq!(insert_row(&schema, &mut page, &row1).unwrap(), None);
+        assert_eq!(read_row(&schema, &page, 10), Some(row1));
     }
 
     #[test]
@@ -88,8 +132,7 @@ mod tests {
         write_row(&schema, &mut page, &row1, 68).unwrap();
         // 59 * 69 > 4096, which should fail
         assert!(write_row(&schema, &mut page, &row2, 69).is_err());
-        assert_eq!(read_row(&schema, &page, 68).unwrap(), Some(row1));
-        // Unlike "empty" rows, out-of-bounds rows should return an error.
-        assert!(read_row(&schema, &page, 69).is_err());
+        assert_eq!(read_row(&schema, &page, 68), Some(row1));
+        assert_eq!(read_row(&schema, &page, 69), None);
     }
 }
