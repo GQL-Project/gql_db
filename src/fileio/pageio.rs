@@ -17,10 +17,10 @@ pub fn create_file(path: &String) -> Result<(), Error> {
 
 // We read and write only in multiples of Page Size
 // For more details, refer to fileio/README.md
-pub fn read_page(page_num: u64, path: &String) -> Result<Page, Error> {
-    let mut buf = [0; PAGE_SIZE];
+pub fn read_page(page_num: u64, path: &String) -> Result<Box<Page>, Error> {
+    let mut buf = Box::new([0; PAGE_SIZE]);
     let f = RandomAccessFile::open(path)?;
-    f.read_at(page_num * PAGE_SIZE as u64, &mut buf)?;
+    f.read_at(page_num * PAGE_SIZE as u64, buf.as_mut())?;
     Ok(buf)
 }
 
