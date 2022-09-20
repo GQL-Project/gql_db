@@ -66,5 +66,71 @@ impl Iterator for Table {
 
 #[cfg(test)]
 mod tests {
-    // TODO: Write tests for the table iterator.
+
+    use super::*;
+    use crate::{
+        fileio::{
+            header::{write_header, Header},
+            pageio::{create_file, write_page, PAGE_SIZE},
+            rowio::insert_row,
+        },
+        util::dbtype::{Column, Value},
+    };
+
+    #[test]
+    fn test_read_iterator() {
+        let path = "test_read_table.db".to_string();
+        let table = create_table(&path);
+        // Zip iterator with index
+        for (i, row) in table.enumerate() {
+            if i <= 68 {
+                assert_eq!(row[0], Value::I32(1));
+                assert_eq!(row[1], Value::String("John Constantine".to_string()));
+                assert_eq!(row[2], Value::I32(20));
+            } else {
+                assert_eq!(row[0], Value::I32(2));
+                assert_eq!(row[1], Value::String("Adam Sandler".to_string()));
+                assert_eq!(row[2], Value::I32(40));
+            }
+        }
+        clean_table(&path);
+    }
+
+    fn create_table(path: &String) -> Table {
+        // Creates a file table
+        create_file(path).unwrap();
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let header = Header {
+            num_pages: 2,
+            schema: schema.clone(),
+        };
+        write_header(path, &header).unwrap();
+        let row = vec![
+            Value::I32(1),
+            Value::String("John Constantine".to_string()),
+            Value::I32(20),
+        ];
+        let mut page = [0u8; PAGE_SIZE];
+        while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
+        write_page(1, path, &page).unwrap();
+
+        let row = vec![
+            Value::I32(2),
+            Value::String("Adam Sandler".to_string()),
+            Value::I32(40),
+        ];
+        let mut page = [0u8; PAGE_SIZE];
+        while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
+        write_page(2, path, &page).unwrap();
+        // Clean up by removing file
+        Table::new(path.to_string()).unwrap()
+    }
+
+    fn clean_table(path: &String) {
+        std::fs::remove_file(path).unwrap();
+    }
 }

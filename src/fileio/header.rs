@@ -40,7 +40,6 @@ pub fn write_schema(page: &mut Page, schema: &Schema) -> Result<(), String> {
 pub fn read_header(file: &String) -> Result<Header, String> {
     let buf = read_page(0, &file).map_err(map_error)?;
     let num_pages = read_type(&buf, 0)?;
-    println!("{:}", num_pages);
     let schema = read_schema(&buf)?;
     Ok(Header { num_pages, schema })
 }
