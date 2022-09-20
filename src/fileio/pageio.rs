@@ -78,7 +78,7 @@ pub fn write_string(page: &mut Page, offset: usize, value: &str, len: usize) -> 
 }
 
 // Why return a Result instead of a boolean? We can instantly return in its callees, using the `?` operator
-fn check_bounds(offset: usize, size: usize) -> Result<(), String> {
+pub fn check_bounds(offset: usize, size: usize) -> Result<(), String> {
     if (offset + size) <= PAGE_SIZE {
         Ok(())
     } else {

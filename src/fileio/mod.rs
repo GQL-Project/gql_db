@@ -3,3 +3,4 @@
 pub mod pageio;
 pub mod header;
 pub mod rowio;
+pub mod tableio;
