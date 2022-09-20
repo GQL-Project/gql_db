@@ -19,35 +19,35 @@ pub fn read_schema(page: &Page) -> Result<Schema, String> {
         let typeid: u16 = read_type(&page, offset)?;
         let colname = read_string(&page, offset + 2, 50)?;
         schema.push((colname, Column::decode_type(typeid)));
-        offset += 34;
+        offset += 54;
     }
     Ok(schema)
 }
 
 pub fn write_schema(page: &mut Page, schema: &Schema) -> Result<(), String> {
-    write_type::<u8>(page, 4, schema.len() as u8)?;
+    write_type(page, 4, schema.len() as u8)?;
     let mut offset = 5;
     for (colname, coltype) in schema {
         write_type::<u16>(page, offset, coltype.encode_type())?;
         write_string(page, offset + 2, colname, 50)?;
-        offset += 34;
+        offset += 54;
     }
     Ok(())
 }
 
-
 // Not sure if it's better to have a file or the page passed in,
 // this can be changed later on.
-pub fn read_header(file: String) -> Result<Header, String> {
+pub fn read_header(file: &String) -> Result<Header, String> {
     let buf = read_page(0, &file).map_err(map_error)?;
-    let num_pages = read_type::<u32>(&buf, 0)?;
+    let num_pages = read_type(&buf, 0)?;
+    println!("{:}", num_pages);
     let schema = read_schema(&buf)?;
     Ok(Header { num_pages, schema })
 }
 
-pub fn write_header(file: String, header: &Header) -> Result<(), String> {
+pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
     let mut buf = [0u8; PAGE_SIZE];
-    write_type::<u32>(&mut buf, 0, header.num_pages)?;
+    write_type(&mut buf, 0, header.num_pages)?;
     write_schema(&mut buf, &header.schema)?;
     write_page(0, &file, &buf).map_err(map_error)?;
     Ok(())
@@ -63,4 +63,64 @@ pub fn schema_size(schema: &Schema) -> usize {
 
 fn map_error(err: Error) -> String {
     format!("IO Error: {}", err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::dbtype::{Column};
+
+    #[test]
+    fn test_schema_size() {
+        let schema = vec![
+            ("col1".to_string(), Column::I32),
+            ("col2".to_string(), Column::String(50)),
+            ("col3".to_string(), Column::Float),
+        ];
+        assert_eq!(schema_size(&schema), 1 + 4 + 50 + 4);
+    }
+
+    #[test]
+    fn test_read_write_header() {
+        let schema = vec![
+            ("col1".to_string(), Column::I32),
+            ("col2".to_string(), Column::String(50)),
+            ("col3".to_string(), Column::Float),
+        ];
+        let header = Header {
+            num_pages: 10,
+            schema,
+        };
+        let path = "test.db".to_string();
+        create_file(&path).unwrap();
+        write_header(&path, &header).unwrap();
+        let header2 = read_header(&path).unwrap();
+        assert_eq!(header.num_pages, header2.num_pages);
+        assert_eq!(header.schema, header2.schema);
+        // Clean up
+        std::fs::remove_file("test.db").unwrap();
+    }
+
+    #[test]
+    fn test_read_write_large_header() {
+        let schema = vec![
+            ("column name 345".to_string(), Column::I32),
+            ("a string column of 50".to_string(), Column::String(50)),
+            ("a float column of 32 bytes".to_string(), Column::Float),
+            ("a small boolean column".to_string(), Column::Bool),
+            ("a huge timestamp column".to_string(), Column::Timestamp)
+        ];
+        let header = Header {
+            num_pages: 245,
+            schema,
+        };
+        let path = "test1.db".to_string();
+        create_file(&path).unwrap();
+        write_header(&path, &header).unwrap();
+        let header2 = read_header(&path).unwrap();
+        assert_eq!(header.num_pages, header2.num_pages);
+        assert_eq!(header.schema, header2.schema);
+        // Clean up
+        std::fs::remove_file("test1.db").unwrap();
+    }
 }

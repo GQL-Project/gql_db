@@ -87,12 +87,12 @@ impl Column {
 
     pub fn write(&self, row: &Value, page: &mut Page, offset: usize) -> Result<(), String> {
         match (self, row) {
-            (Column::I32, Value::I32(x)) => write_type(page, offset, x),
-            (Column::I64, Value::I64(x)) => write_type(page, offset, x),
-            (Column::Float, Value::Float(x)) => write_type(page, offset, x),
-            (Column::Double, Value::Double(x)) => write_type(page, offset, x),
-            (Column::Bool, Value::Bool(x)) => write_type(page, offset, x),
-            (Column::Timestamp, Value::Timestamp(x)) => write_type(page, offset, x),
+            (Column::I32, Value::I32(x)) => write_type(page, offset, *x),
+            (Column::I64, Value::I64(x)) => write_type(page, offset, *x),
+            (Column::Float, Value::Float(x)) => write_type(page, offset, *x),
+            (Column::Double, Value::Double(x)) => write_type(page, offset, *x),
+            (Column::Bool, Value::Bool(x)) => write_type(page, offset, *x),
+            (Column::Timestamp, Value::Timestamp(x)) => write_type(page, offset, x.clone()),
             (Column::String(size), Value::String(x)) => {
                 write_string(page, offset, &x, *size as usize)
             }
@@ -109,7 +109,7 @@ impl Column {
             Column::Double => size_of::<f64>(),
             Column::Bool => size_of::<bool>(),
             Column::Timestamp => size_of::<i32>(),
-            Column::String(x) => (*x as usize) * size_of::<char>(),
+            Column::String(x) => (*x as usize) * size_of::<u8>(),
         }
     }
 }
