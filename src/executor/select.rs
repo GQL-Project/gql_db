@@ -10,32 +10,6 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         return Err("Malformed SELECT Command".to_string());
     }
 
-    /*
-    // The names of all the columns we are going to select from the tables.
-    // The names are stored as <table_name>.<column_name>
-    let mut column_names: Vec<String> = Vec::new();
-
-    // We are getting all the columns from the tables
-    if columns.get(0).unwrap() == &"*".to_string() {
-        for table in tables {
-            let db_path = format!("{}/{}.db", database, table);
-            let header = header::read_header(&db_path)?;
-            for (colname, _) in header.schema {
-                let full_colname = format!("{}.{}", table, colname);
-                column_names.push(full_colname);
-            }
-        }
-    }
-    // We are only getting the columns specified by the columns parameter
-    else {
-        for colname in columns {
-            column_names.push(colname.to_string());
-        }
-    }
-
-    // Now all column names we want are stored in column_names
-    */
-
     // Whether the select statement used '*' to select columns or not
     let is_star_cols: bool = column_names.get(0).unwrap().eq(&"*".to_string());
 
@@ -66,7 +40,6 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
             for desired_column in column_names {
                 let index = table_column_names.iter().position(|x| x.eq(desired_column));
                 if index.is_none() {
-                    println!("FAILED");
                     return Err(format!("Column {} does not exist in table {}", desired_column, table_name));
                 }
                 table_column_indices.push(index.unwrap());
@@ -87,7 +60,6 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         }
     }
     // We have to select columns from multiple tables
-    // SELECT * FROM test_table, test_table2
     else {
         // Read in the tables into a vector of tuples where they are represented as (table, alias)
         let mut tables: Vec<(Table, String)> = Vec::new();
@@ -96,12 +68,12 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
             tables.push((Table::new(table_path)?, alias.clone()));
         }
 
+        // Create an iterator of table iterators using the cartesion product of the tables :)
+        let table_iterator = tables.iter()
+            .map(|x| x.0.clone()).multi_cartesian_product();
+
         // We need to take all the columns
         if is_star_cols {
-            // Create an iterator of table iterators using the cartesion product of the tables :)
-            let table_iterator = tables.iter()
-                .map(|x| x.0.clone()).multi_cartesian_product();
-
             // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
             for table_rows in table_iterator {
                 // Accumulate all the cells across the vector of rows into a single vector
@@ -114,7 +86,42 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         }
         // We need to take a subset of columns
         else {
+            // Get the names of all the columns in the tables along with their aliases in
+            // the format <alias>.<column_name> and store them in a vector.
+            let table_column_names: Vec<String> = tables.iter()
+                .map(|x| x.0.schema.iter()
+                    .map(|y| format!("{}.{}", x.1, y.0))
+                    .collect::<Vec<String>>())
+                .flatten()
+                .collect::<Vec<String>>();
 
+            // Get the indices of the columns we want to select
+            let mut table_column_indices: Vec<usize> = Vec::new();
+            for desired_column in column_names {
+                let index = table_column_names.iter().position(|x| x.eq(desired_column));
+                if index.is_none() {
+                    println!("Failed");
+                    return Err(format!("Column {} does not exist in any of the tables", desired_column));
+                }
+                table_column_indices.push(index.unwrap());
+            }
+
+            // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
+            for table_rows in table_iterator {
+                // Flatten the entire output row, but it includes all columns from all tables
+                let output_row: Vec<Value> = table_rows.into_iter().flatten().collect();
+
+                // Iterate through the output row and only select the columns we want
+                let mut selected_cells: Vec<Value> = Vec::new();
+                for (i, row_cell) in output_row.iter().enumerate() {
+                    if table_column_indices.contains(&i) {
+                        selected_cells.push(row_cell.clone());
+                    }
+                }
+
+                // Append the selected_cells row to our result
+                selected_rows.push(selected_cells.clone());
+            }
         }
     }
 
