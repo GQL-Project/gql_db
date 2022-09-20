@@ -42,17 +42,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     command = command.replace(";", "");
     command = command.replace("\n", " ");
 
-    println!("This is the command {}", command);
+    //println!("This is the command {}", command);
 
     let request = QueryRequest {
         id: String::from(response.id.clone()),
         query: String::from(command),
     };
 
-
-
     let get_response = client.run_query(Request::new(request.clone())).await?;
     println!("{:?}", get_response.into_inner().column_names);
+
+    //println!("{:?}", &response.id);
+    //println!("{:?}", get_response.into_inner().row_values);
 
     client
         .disconnect_db(Request::new(ConnectResult { id: request.id }))
