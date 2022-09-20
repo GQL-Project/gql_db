@@ -17,10 +17,10 @@ pub fn create_file(path: &String) -> Result<(), Error> {
 
 // We read and write only in multiples of Page Size
 // For more details, refer to fileio/README.md
-pub fn read_page(page_num: u64, path: &String) -> Result<Box<Page>, Error> {
+pub fn read_page(page_num: u32, path: &String) -> Result<Box<Page>, Error> {
     let mut buf = Box::new([0; PAGE_SIZE]);
     let f = RandomAccessFile::open(path)?;
-    f.read_at(page_num * PAGE_SIZE as u64, buf.as_mut())?;
+    f.read_at((page_num * PAGE_SIZE as u32) as u64, buf.as_mut())?;
     Ok(buf)
 }
 
@@ -158,11 +158,23 @@ mod tests {
         let mut page = [0; PAGE_SIZE];
         write_type::<u8>(&mut page, 0, 241).unwrap();
         assert_eq!(read_type::<u8>(&page, 1).unwrap(), 0);
-        assert_eq!(write_type::<u8>(&mut page, 5000, 241).unwrap_err(), "Offset is out of bounds");
-        assert_eq!(read_type::<u8>(&page, 5000).unwrap_err(), "Offset is out of bounds");
+        assert_eq!(
+            write_type::<u8>(&mut page, 5000, 241).unwrap_err(),
+            "Offset is out of bounds"
+        );
+        assert_eq!(
+            read_type::<u8>(&page, 5000).unwrap_err(),
+            "Offset is out of bounds"
+        );
         write_type::<u16>(&mut page, 4094, 1241).unwrap();
         assert_eq!(read_type::<u16>(&page, 4094).unwrap(), 1241);
-        assert_eq!(write_type::<u32>(&mut page, 4094, 155241).unwrap_err(), "Offset is out of bounds");
-        assert_eq!(read_type::<u32>(&page, 4094).unwrap_err(), "Offset is out of bounds");
+        assert_eq!(
+            write_type::<u32>(&mut page, 4094, 155241).unwrap_err(),
+            "Offset is out of bounds"
+        );
+        assert_eq!(
+            read_type::<u32>(&page, 4094).unwrap_err(),
+            "Offset is out of bounds"
+        );
     }
 }

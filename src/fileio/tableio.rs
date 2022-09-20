@@ -8,7 +8,7 @@ struct Table {
     pub schema: Schema,
     pub page: Box<Page>,
     pub path: String,
-    pub pagenum: u64,
+    pub pagenum: u32,
     pub rownum: u16,
     pub maxpages: u32,
     pub size: usize,
@@ -39,7 +39,7 @@ impl Table {
 /// We can now perform iteration over the table like:
 /// table = Table::new("test.db");
 /// for row in table {
-///    println!("{:?}", row); 
+///    println!("{:?}", row);
 /// }
 impl Iterator for Table {
     type Item = Row;
@@ -49,7 +49,7 @@ impl Iterator for Table {
         let mut row = None;
         // Keep reading rows until we find one that isn't empty, or we run out of rows.
         while row.is_none() {
-            if self.pagenum > self.maxpages as u64 {
+            if self.pagenum > self.maxpages {
                 return None;
             }
             if check_bounds(self.get_offset(), self.size).is_err() {

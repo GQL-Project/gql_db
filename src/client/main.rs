@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         id: String::from(response.id.clone()),
         query: String::from("select * from tables"),
     };
-    
+
     let get_response = client.run_query(Request::new(request.clone())).await?;
     println!("{:?}", get_response.into_inner().column_names);
 
