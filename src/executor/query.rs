@@ -47,8 +47,8 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
     // This is where the fun begins... ;)
     let table_column_names: Vec<(String, Column, String)> = tables.iter()
-        .map(|x| x.0.schema.iter()
-            .map(|y| (format!("{}.{}", x.1, y.0.clone()), 
+        .map(|x: &(Table, String)| x.0.schema.iter()
+            .map(|y: &(String, Column)| (format!("{}.{}", x.1, y.0.clone()), 
                                          y.1.clone(), 
                                          y.0.clone()))
             .collect::<Vec<(String, Column, String)>>())
@@ -64,8 +64,6 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
 
         // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
         for table_rows in table_iterator {
-            //println!("HERE");
-            //println!("Table Rows: {:?}", table_rows.get(0).unwrap().row.clone());
             // Accumulate all the cells across the vector of rows into a single vector
             let mut selected_cells: Vec<Value> = Vec::new();
             table_rows.iter().for_each(|x| selected_cells.extend(x.row.clone()));
@@ -111,9 +109,6 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
             selected_rows.push(selected_cells.clone());
         }
     }
-
-    println!("Selected Schema: {:?}", selected_schema);
-    println!("Selected Rows: {:?}", selected_rows);
 
     Ok((selected_schema, selected_rows))
 }
