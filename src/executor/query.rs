@@ -223,6 +223,7 @@ mod tests {
         ];
         insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
         
+        // Run the SELECT query
         let result = select(&columns.to_owned(),
                                                              &tables, 
                                                              new_db.clone()).unwrap();
@@ -303,6 +304,7 @@ mod tests {
         ];
         insert_rows(&mut table1, [row1, row2, row3].to_vec()).unwrap();
         
+        // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -378,6 +380,7 @@ mod tests {
         ];
         insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
         
+        // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -406,5 +409,88 @@ mod tests {
         // Assert that the fourth row is correct
         assert_eq!(result.1[3][0], Value::I32(2));
         assert_eq!(result.1[3][1], Value::String("Britain".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_column_select() {
+        // This tests
+        // SELECT id, name, age, invalid_column FROM select_test_db.test_table1;
+
+        let columns = ["id".to_string(), "name".to_string(), "age".to_string(), "invalid_column".to_string()];
+        let tables = [("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let mut table1: Table = create_table("test_table1".to_string(), schema1.clone(), new_db.clone()).unwrap();
+
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("Robert Downey Jr.".to_string()),
+            Value::I32(40),
+        ];
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Tom Holland".to_string()),
+            Value::I32(20),
+        ];
+        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+
+        // Run the SELECT query
+        let result = select(&columns.to_owned(), &tables, new_db.clone());
+
+        // Verify that SELECT failed
+        assert!(result.is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_table_select() {
+        // This tests
+        // SELECT id, name, age FROM select_test_db.test_table1, select_test_db.test_table2;
+
+        let columns = ["id".to_string(), "name".to_string(), "age".to_string()];
+        let tables = [("test_table1".to_string(), "".to_string()),
+                                             ("test_table2".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let mut table1: Table = create_table("test_table1".to_string(), schema1.clone(), new_db.clone()).unwrap();
+
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("Robert Downey Jr.".to_string()),
+            Value::I32(40),
+        ];
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Tom Holland".to_string()),
+            Value::I32(20),
+        ];
+        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+
+        // Run the SELECT query
+        let result = select(&columns.to_owned(), &tables, new_db.clone());
+
+        // Verify that SELECT failed
+        assert!(result.is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
     }
 }
