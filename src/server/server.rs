@@ -5,6 +5,7 @@ use tonic::{Request, Response, Status};
 use crate::parser::parser;
 use crate::server::connection::Connection;
 use crate::util::convert::*;
+use crate::executor::query;
 
 pub mod db_connection {
     tonic::include_proto!("db_connection");
@@ -35,7 +36,12 @@ impl DatabaseConnection for Connection {
         let result = parser::parse(&request.query, false);
         /* Creating Result */
         match result {
-            Ok(tree) => Ok(Response::new(to_query_result(vec![tree], vec![]))),
+            Ok(tree) => {
+                // Execute the query represented by the AST.
+                query::execute(&tree.clone(), false).map_err(|e| Status::internal(e))?;
+
+                Ok(Response::new(to_query_result(vec![tree], vec![])))
+            },
             Err(err) => Err(Status::cancelled(&err)),
         }
     }

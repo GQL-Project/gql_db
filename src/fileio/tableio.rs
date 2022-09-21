@@ -1,11 +1,14 @@
 use crate::util::row::{Row, RowInfo};
 
 use super::{
-    header::{read_header, schema_size, Schema},
-    pageio::{check_bounds, load_page, read_page, write_page, Page, PAGE_SIZE},
-    rowio::{insert_row, read_row, write_row},
+    header::*,
+    pageio::*,
+    rowio::*,
+    pageio::*,
+    databaseio::*,
 };
 
+#[derive(Clone)]
 pub struct Table {
     pub schema: Schema,
     pub page: Box<Page>,
@@ -78,6 +81,30 @@ impl Iterator for Table {
         rowinfo
     }
 }
+
+
+/// Creates a new table within the given database named <table_name>.db 
+/// with the given schema.
+pub fn create_table(table_name: String, schema: Schema, database: Database) -> Result<Table, String> {
+    // Create a table file
+    let table_path = database.get_database_path() + "/" + &table_name + ".db";
+    create_file(&table_path).map_err(|e| e.to_string())?;
+
+    // Write the header
+    let header = Header {
+        num_pages: 2,
+        schema: schema.clone(),
+    };
+    write_header(&table_path, &header)?;
+
+    // Write a blank page to the table
+    let page = [0u8; PAGE_SIZE];
+    write_page(1, &table_path, &page).unwrap();
+
+    // Return the table
+    Ok(Table::new(table_path.to_string())?)
+}
+
 
 /// This function is helpful when doing Updates
 /// It allows us to rewrite a specific row from the table.
