@@ -224,8 +224,6 @@ mod tests {
 
         for (i, rowinfo) in table.enumerate() {
             let row = rowinfo.row;
-            print!("{:}: {:?} {:?} ", i, rowinfo.pagenum, rowinfo.rownum);
-            println!("{:?}", row);
 
             if i < 69 {
                 assert_eq!(row[0], Value::I32(1));
