@@ -61,7 +61,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         for table_rows in table_iterator {
             // Accumulate all the cells across the vector of rows into a single vector
             let mut selected_cells: Vec<Value> = Vec::new();
-            table_rows.iter().for_each(|x| selected_cells.extend(x.clone()));
+            table_rows.iter().for_each(|x| selected_cells.extend(x.row.clone()));
 
             // Append the selected_cells row to our result
             selected_rows.push(selected_cells.clone());
@@ -86,7 +86,10 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
         for table_rows in table_iterator {
             // Flatten the entire output row, but it includes all columns from all tables
-            let output_row: Vec<Value> = table_rows.into_iter().flatten().collect();
+            let mut output_row: Vec<Value> = Vec::new();
+            for row_info in table_rows {
+                output_row.extend(row_info.row.clone());
+            }
 
             // Iterate through the output row and only select the columns we want
             let mut selected_cells: Vec<Value> = Vec::new();

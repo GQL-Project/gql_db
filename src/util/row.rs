@@ -2,6 +2,7 @@ use super::dbtype::Value;
 
 pub type Row = Vec<Value>;
 
+#[derive(Clone)]
 pub struct RowInfo {
     pub row: Row,
     pub pagenum: u32,
