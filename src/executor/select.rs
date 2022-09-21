@@ -1,11 +1,11 @@
 use std::fmt::format;
 use std::collections::HashMap;
 use itertools::Itertools;
-use crate::{fileio::{*, header::Header, tableio::Table}, util::dbtype::Value};
+use crate::{fileio::{*, header::Header, tableio::Table, databaseio::*}, util::dbtype::Value};
 
 /// This method implements the SQL Select statement. It takes in the column and table names where table_names
 /// is an array of tuples where the first element is the table name and the second element is the alias.
-pub fn select(column_names: &[String], table_names: &[(String, String)], database_name: &String) -> Result<String, String> {
+pub fn select(column_names: &[String], table_names: &[(String, String)], database: Database) -> Result<String, String> {
     if table_names.len() == 0 || column_names.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
     }
@@ -19,7 +19,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     if table_names.len() == 1 {
         // Read in the table
         let table_name: &String = &table_names.get(0).unwrap().0;
-        let table_path: String = format!("{}/{}.db", database_name, table_name);
+        let table_path: String = format!("{}/{}.db", database.path, table_name);
         let table: Table = Table::new(table_path)?;
 
         // We need to take all the columns
@@ -64,7 +64,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         // Read in the tables into a vector of tuples where they are represented as (table, alias)
         let mut tables: Vec<(Table, String)> = Vec::new();
         for (table_name, alias) in table_names {
-            let table_path: String = format!("{}/{}.db", database_name, table_name);
+            let table_path: String = format!("{}/{}.db", database.path, table_name);
             tables.push((Table::new(table_path)?, alias.clone()));
         }
 
