@@ -32,7 +32,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     // Read in the tables into a vector of tuples where they are represented as (table, alias)
     let mut tables: Vec<(Table, String)> = Vec::new();
     for (table_name, alias) in table_names {
-        let table_path: String = format!("{}/{}.db", database.path, table_name);
+        let table_path: String = format!("{}/{}.db", database.get_database_path(), table_name);
         tables.push((Table::new(table_path)?, alias.clone()));
     }
 

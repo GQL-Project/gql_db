@@ -87,7 +87,7 @@ impl Iterator for Table {
 /// with the given schema.
 pub fn create_table(table_name: String, schema: Schema, database: Database) -> Result<Table, String> {
     // Create a table file
-    let table_path = database.path.clone() + "/" + &table_name + ".db";
+    let table_path = database.get_database_path() + "/" + &table_name + ".db";
     create_file(&table_path).map_err(|e| e.to_string())?;
 
     // Write the header

@@ -6,8 +6,9 @@ const MAIN_BRANCH_NAME: &str = "main";
 
 #[derive(Clone)]
 pub struct Database {
-    pub path: String,
-    pub branch_name: String,
+    path: String,        // This is the full patch to the database directory: <path>/<db_name>
+    db_name: String,     // This is the name of the database (not the path)
+    branch_name: String,
     // TODO: maybe add permissions here
 }
 
@@ -34,11 +35,30 @@ impl Database {
         
         Ok(Database {
             path: db_path,
+            db_name: database_name,
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
         })
     }
 
 
+    /// Returns the database's name
+    pub fn get_database_name(&self) -> String {
+        self.db_name.clone()
+    }
+
+
+    /// Returns the database's current branch name
+    pub fn get_current_branch_name(&self) -> String {
+        self.branch_name.clone()
+    }
+
+
+    /// Returns the database's path
+    pub fn get_database_path(&self) -> String {
+        self.path.clone()
+    }
+
+    
     /// Deletes the database at the given path.
     /// It also deletes the database object.
     pub fn delete_database(&mut self) -> Result<(), String> {
