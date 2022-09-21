@@ -1,7 +1,9 @@
 use super::{
-    header::{read_header, schema_size, Schema},
-    pageio::{check_bounds, read_page, Page},
-    rowio::{read_row, Row},
+    header::*,
+    pageio::*,
+    rowio::*,
+    pageio::*,
+    databaseio::*,
 };
 
 #[derive(Clone)]
@@ -63,6 +65,25 @@ impl Iterator for Table {
         }
         row
     }
+}
+
+
+/// Creates a new table within the given database named <table_name>.db 
+/// with the given schema.
+pub fn create_table(table_name: String, schema: Schema, database: Database) -> Result<Table, String> {
+    // Create a table file
+    let table_path = database.path.clone() + "/" + &table_name + ".db";
+    create_file(&table_path).map_err(|e| e.to_string())?;
+
+    // Write the header
+    let header = Header {
+        num_pages: 1,
+        schema: schema.clone(),
+    };
+    write_header(&table_path, &header)?;
+
+    // Return the table
+    Ok(Table::new(table_path.to_string())?)
 }
 
 #[cfg(test)]
