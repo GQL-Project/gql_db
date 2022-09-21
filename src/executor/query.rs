@@ -331,4 +331,80 @@ mod tests {
         // Delete the test database
         new_db.delete_database().unwrap();
     }
+
+    #[test]
+    #[serial]
+    fn test_select_multiple_tables_specific_columns() {
+        // This tests 
+        // SELECT T1.id, T2.country FROM select_test_db.test_table1 T1, select_test_db.test_table2 T2;
+        let columns = ["T1.id".to_string(), "T2.country".to_string()];
+        let tables = [("test_table1".to_string(), "T1".to_string()),
+                                             ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
+    
+        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+    
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut table1: Table = create_table("test_table1".to_string(), schema1.clone(), new_db.clone()).unwrap();
+        
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("Robert Downey Jr.".to_string()),
+            Value::I32(40),
+        ];
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Tom Holland".to_string()),
+            Value::I32(20),
+        ];
+        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+        
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("country".to_string(), Column::String(50)),
+        ];
+        let mut table2: Table = create_table("test_table2".to_string(), schema2.clone(), new_db.clone()).unwrap();
+        
+        let row1 = vec![
+            Value::I32(5),
+            Value::String("United States".to_string()),
+        ];
+        let row2 = vec![
+            Value::I32(6),
+            Value::String("Britain".to_string()),
+        ];
+        insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
+        
+        let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
+
+        assert_eq!(result.0[0], ("id".to_string(), Column::I32));
+        assert_eq!(result.0[1], ("country".to_string(), Column::String(50)));
+
+        // Assert that 4 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("United States".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(1));
+        assert_eq!(result.1[1][1], Value::String("Britain".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(2));
+        assert_eq!(result.1[2][1], Value::String("United States".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(2));
+        assert_eq!(result.1[3][1], Value::String("Britain".to_string()));
+    }
 }
