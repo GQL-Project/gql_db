@@ -92,10 +92,14 @@ pub fn create_table(table_name: String, schema: Schema, database: Database) -> R
 
     // Write the header
     let header = Header {
-        num_pages: 1,
+        num_pages: 2,
         schema: schema.clone(),
     };
     write_header(&table_path, &header)?;
+
+    // Write a blank page to the table
+    let page = [0u8; PAGE_SIZE];
+    write_page(1, &table_path, &page).unwrap();
 
     // Return the table
     Ok(Table::new(table_path.to_string())?)
