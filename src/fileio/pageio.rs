@@ -48,6 +48,7 @@ pub fn write_page(page_num: u32, path: &String, page: &Page) -> Result<(), Strin
         let offset = (page_num * PAGE_SIZE as u32) as u64;
         if offset >= file_size {
             file.set_len(offset + PAGE_SIZE as u64)?;
+            println!("Resizing file to {}", offset + PAGE_SIZE as u64);
         }
         let mut f = RandomAccessFile::try_new(file)?;
         f.write_at(offset, page)?;
