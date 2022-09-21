@@ -161,6 +161,7 @@ mod tests {
                 assert_eq!(rowinfo.rownum, (i - 69) as u16);
             }
         }
+        clean_table(&path);
     }
 
     #[test]
