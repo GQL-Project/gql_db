@@ -2,7 +2,7 @@ use crate::util::row::{Row, RowInfo};
 
 use super::{
     header::{read_header, schema_size, Schema},
-    pageio::{check_bounds, read_page, write_page, Page},
+    pageio::{check_bounds, load_page, read_page, write_page, Page},
     rowio::{insert_row, read_row, write_row},
 };
 
@@ -10,10 +10,10 @@ pub struct Table {
     pub schema: Schema,
     pub page: Box<Page>,
     pub path: String,
-    pub pagenum: u32,
-    pub rownum: u16,
-    pub maxpages: u32,
-    pub size: usize,
+    pub page_num: u32,
+    pub row_num: u16,
+    pub max_pages: u32,
+    pub schema_size: usize,
 }
 
 impl Table {
@@ -22,18 +22,18 @@ impl Table {
         let header = read_header(&path)?;
         let page = read_page(1, &path)?;
         Ok(Table {
-            size: schema_size(&header.schema),
+            schema_size: schema_size(&header.schema),
             schema: header.schema,
             page,
             path,
-            pagenum: 1,
-            rownum: 0,
-            maxpages: header.num_pages,
+            page_num: 1,
+            row_num: 0,
+            max_pages: header.num_pages,
         })
     }
 
     fn get_offset(&self) -> usize {
-        self.rownum as usize * self.size
+        self.row_num as usize * self.schema_size
     }
 }
 
@@ -48,25 +48,29 @@ impl Iterator for Table {
 
     // This iterator should only return None when the table is exhausted.
     fn next(&mut self) -> Option<Self::Item> {
-        let mut row = None;
+        let mut rowinfo = None;
         // Keep reading rows until we find one that isn't empty, or we run out of rows.
-        while row.is_none() {
-            if self.pagenum > self.maxpages {
+        while rowinfo.is_none() {
+            if self.page_num >= self.max_pages {
                 return None;
             }
-            if check_bounds(self.get_offset(), self.size).is_err() {
-                self.page = read_page(self.pagenum + 1, &self.path).ok()?;
-                self.pagenum += 1;
-                self.rownum = 0;
+            if check_bounds(self.get_offset(), self.schema_size).is_err() {
+                load_page(self.page_num + 1, &self.path, self.page.as_mut()).ok()?;
+                self.page_num += 1;
+                self.row_num = 0;
             }
-            row = read_row(&self.schema, &self.page, self.rownum);
-            self.rownum += 1;
+            if let Some(row) = read_row(&self.schema, self.page.as_ref(), self.row_num) {
+                rowinfo = Some(RowInfo {
+                    row,
+                    pagenum: self.page_num,
+                    rownum: self.row_num,
+                });
+            } else {
+                rowinfo = None;
+            };
+            self.row_num += 1;
         }
-        Some(RowInfo {
-            row: row.unwrap(), // Safe to unwrap because we checked for None above.
-            pagenum: self.pagenum,
-            rownum: self.rownum - 1,
-        })
+        rowinfo
     }
 }
 
@@ -79,14 +83,14 @@ pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String>
     let mut page = read_page(pagenum, &table.path)?;
     for row in rows {
         if pagenum != row.pagenum {
-            write_page(pagenum as u64, &table.path, page.as_mut())?;
+            write_page(pagenum, &table.path, page.as_mut())?;
             pagenum = row.pagenum;
-            page = read_page(pagenum, &table.path)?;
+            load_page(pagenum, &table.path, page.as_mut())?;
         }
         write_row(&table.schema, &mut page, &row.row, row.rownum)?;
     }
     // Write the last page
-    write_page(pagenum as u64, &table.path, page.as_mut())?;
+    write_page(pagenum, &table.path, page.as_mut())?;
     Ok(())
 }
 
@@ -97,19 +101,19 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<(), String> {
     let mut page = read_page(pagenum, &table.path)?;
     for row in rows {
         while insert_row(&table.schema, page.as_mut(), &row)?.is_none() {
-            write_page(pagenum as u64, &table.path, page.as_mut())?;
+            write_page(pagenum, &table.path, page.as_mut())?;
             pagenum += 1;
-            if pagenum > table.maxpages {
+            if pagenum > table.max_pages {
                 // Allocate a new page
                 page = Box::new([0; 4096]);
-                table.maxpages += 1;
+                table.max_pages += 1;
             } else {
-                page = read_page(pagenum, &table.path)?;
+                load_page(pagenum, &table.path, page.as_mut())?;
             }
         }
     }
     // Write the last page
-    write_page(pagenum as u64, &table.path, page.as_mut())?;
+    write_page(pagenum, &table.path, page.as_mut())?;
     Ok(())
 }
 
@@ -133,14 +137,18 @@ mod tests {
         // Zip iterator with index
         for (i, rowinfo) in table.enumerate() {
             let row = rowinfo.row;
-            if i <= 68 {
+            if i < 69 {
                 assert_eq!(row[0], Value::I32(1));
                 assert_eq!(row[1], Value::String("John Constantine".to_string()));
                 assert_eq!(row[2], Value::I32(20));
+                assert_eq!(rowinfo.pagenum, 1);
+                assert_eq!(rowinfo.rownum, i as u16);
             } else {
                 assert_eq!(row[0], Value::I32(2));
                 assert_eq!(row[1], Value::String("Adam Sandler".to_string()));
                 assert_eq!(row[2], Value::I32(40));
+                assert_eq!(rowinfo.pagenum, 2);
+                assert_eq!(rowinfo.rownum, (i - 69) as u16);
             }
         }
         clean_table(&path);
@@ -155,7 +163,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
         let header = Header {
-            num_pages: 2,
+            num_pages: 3,
             schema: schema.clone(),
         };
         write_header(path, &header).unwrap();

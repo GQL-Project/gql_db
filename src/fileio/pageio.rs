@@ -20,28 +20,37 @@ pub fn create_file(path: &String) -> Result<(), Error> {
 pub fn read_page(page_num: u32, path: &String) -> Result<Box<Page>, String> {
     let mut buf = Box::new([0; PAGE_SIZE]);
     let f = RandomAccessFile::open(path).map_err(map_error)?;
-    f.read_at((page_num * PAGE_SIZE as u32) as u64, buf.as_mut())
+    let x = f
+        .read_at((page_num * PAGE_SIZE as u32) as u64, buf.as_mut())
         .map_err(map_error)?;
+    if x != PAGE_SIZE {
+        return Err(format!("Error reading page {}", page_num));
+    }
     Ok(buf)
 }
 
 // It's memory efficient to just reuse our old buffer (when possible)
-pub fn load_page(page_num: u64, path: &String, page: &mut Page) -> Result<(), String> {
+pub fn load_page(page_num: u32, path: &String, page: &mut Page) -> Result<(), String> {
     let f = RandomAccessFile::open(path).map_err(map_error)?;
-    f.read_at(page_num * PAGE_SIZE as u64, page)
+    let x = f
+        .read_at((page_num * PAGE_SIZE as u32) as u64, page)
         .map_err(map_error)?;
+    if x != PAGE_SIZE {
+        return Err(format!("Error reading page {}", page_num));
+    }
     Ok(())
 }
 
-pub fn write_page(page_num: u64, path: &String, page: &Page) -> Result<(), String> {
+pub fn write_page(page_num: u32, path: &String, page: &Page) -> Result<(), String> {
     || -> Result<(), Error> {
         let file = OpenOptions::new().write(true).open(path)?;
         let file_size = file.size()?.expect("File size is not available");
-        if page_num * PAGE_SIZE as u64 > file_size {
-            file.set_len((page_num + 1) * PAGE_SIZE as u64)?;
+        let offset = (page_num * PAGE_SIZE as u32) as u64;
+        if offset >= file_size {
+            file.set_len(offset + PAGE_SIZE as u64)?;
         }
         let mut f = RandomAccessFile::try_new(file)?;
-        f.write_at(page_num * PAGE_SIZE as u64, page)?;
+        f.write_at(offset, page)?;
         Ok(())
     }()
     .map_err(map_error)

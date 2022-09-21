@@ -43,10 +43,10 @@ pub fn read_header(file: &String) -> Result<Header, String> {
 }
 
 pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
-    let mut buf = [0u8; PAGE_SIZE];
-    write_type(&mut buf, 0, header.num_pages)?;
-    write_schema(&mut buf, &header.schema)?;
-    write_page(0, &file, &buf)?;
+    let mut buf = Box::new([0u8; PAGE_SIZE]);
+    write_type(buf.as_mut(), 0, header.num_pages)?;
+    write_schema(buf.as_mut(), &header.schema)?;
+    write_page(0, &file, buf.as_ref())?;
     Ok(())
 }
 
