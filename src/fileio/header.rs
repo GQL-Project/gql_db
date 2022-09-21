@@ -1,5 +1,3 @@
-use std::io::Error;
-
 use super::pageio::*;
 use crate::util::dbtype::Column;
 pub struct Header {
@@ -38,17 +36,17 @@ pub fn write_schema(page: &mut Page, schema: &Schema) -> Result<(), String> {
 // Not sure if it's better to have a file or the page passed in,
 // this can be changed later on.
 pub fn read_header(file: &String) -> Result<Header, String> {
-    let buf = read_page(0, &file).map_err(map_error)?;
+    let buf = read_page(0, &file)?;
     let num_pages = read_type(&buf, 0)?;
     let schema = read_schema(&buf)?;
     Ok(Header { num_pages, schema })
 }
 
 pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
-    let mut buf = [0u8; PAGE_SIZE];
-    write_type(&mut buf, 0, header.num_pages)?;
-    write_schema(&mut buf, &header.schema)?;
-    write_page(0, &file, &buf).map_err(map_error)?;
+    let mut buf = Box::new([0u8; PAGE_SIZE]);
+    write_type(buf.as_mut(), 0, header.num_pages)?;
+    write_schema(buf.as_mut(), &header.schema)?;
+    write_page(0, &file, buf.as_ref())?;
     Ok(())
 }
 
@@ -58,10 +56,6 @@ pub fn schema_size(schema: &Schema) -> usize {
         size += coltype.size();
     }
     size
-}
-
-fn map_error(err: Error) -> String {
-    format!("IO Error: {}", err)
 }
 
 #[cfg(test)]
