@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = client.connect_db(request).await?.into_inner();
 
     print!("{}", "GQL> ");
-    io::stdout().flush(); // Yellow line under is a little sketch, but it works
+    io::stdout().flush()?;
 
     let mut lines = io::stdin().lock().lines();
     let mut command = String::new();
@@ -36,9 +36,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         print!("{}", ">");
-        io::stdout().flush();
+        io::stdout().flush()?;
     }
 
+    // string manipulation to get rid of \n and ;
     command = command.replace(";", "");
     command = command.replace("\n", " ");
 
