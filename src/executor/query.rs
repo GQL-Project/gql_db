@@ -1,7 +1,6 @@
 use crate::util::dbtype::{Column, Value};
-use crate::fileio::{databaseio::*, tableio::*, header::*, rowio::*, pageio::*};
+use crate::fileio::{databaseio::*, tableio::*, header::*};
 use itertools::Itertools;
-use serial_test::serial;
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for 
@@ -118,6 +117,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
 mod tests {
     use super::*;
     use crate::util::dbtype::{Column, Value};
+    use serial_test::serial;
 
     #[test]
     #[serial]
@@ -338,7 +338,7 @@ mod tests {
         let tables = [("test_table1".to_string(), "T1".to_string()),
                                              ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
     
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
     
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),

@@ -1,5 +1,5 @@
-use crate::util::row::Row;
 use super::{header::*, pageio::*};
+use crate::util::row::Row;
 
 // Here, instead of returning an Error if the row is too large, we just return None
 pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Option<Row> {
@@ -50,6 +50,15 @@ pub fn insert_row(schema: &Schema, page: &mut Page, row: &Row) -> Result<Option<
         offset += size;
     }
     Ok(None)
+}
+
+// We could get away with just marking the byte, but this is safer.
+pub fn clear_row(schema: &Schema, page: &mut Page, rownum: u16) -> Result<(), String> {
+    let size = schema_size(schema);
+    let offset = (rownum as usize) * size;
+    let clear = (0 as char).to_string().repeat(size);
+    write_string(page, offset, &clear, size)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -105,6 +114,31 @@ mod tests {
         // Attempting to allocate another row here now should fail.
         assert_eq!(insert_row(&schema, &mut page, &row1).unwrap(), None);
         assert_eq!(read_row(&schema, &page, 10), Some(row1));
+    }
+
+    #[test]
+    fn test_clear_row() {
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut page = [0u8; PAGE_SIZE];
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("John".to_string()),
+            Value::I32(20),
+        ];
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Jane".to_string()),
+            Value::I32(21),
+        ];
+        write_row(&schema, &mut page, &row1, 0).unwrap();
+        write_row(&schema, &mut page, &row2, 1).unwrap();
+        clear_row(&schema, &mut page, 0).unwrap();
+        assert_eq!(read_row(&schema, &page, 0), None);
+        assert_eq!(read_row(&schema, &page, 1), Some(row2));
     }
 
     #[test]

@@ -1,12 +1,6 @@
 use crate::util::row::{Row, RowInfo};
 
-use super::{
-    header::*,
-    pageio::*,
-    rowio::*,
-    pageio::*,
-    databaseio::*,
-};
+use super::{databaseio::*, header::*, pageio::*, rowio::*};
 
 #[derive(Clone)]
 pub struct Table {
@@ -82,10 +76,13 @@ impl Iterator for Table {
     }
 }
 
-
-/// Creates a new table within the given database named <table_name>.db 
+/// Creates a new table within the given database named <table_name>.db
 /// with the given schema.
-pub fn create_table(table_name: String, schema: Schema, database: Database) -> Result<Table, String> {
+pub fn create_table(
+    table_name: String,
+    schema: Schema,
+    database: Database,
+) -> Result<Table, String> {
     // Create a table file
     let table_path = database.get_database_path() + "/" + &table_name + ".db";
     create_file(&table_path).map_err(|e| e.to_string())?;
@@ -104,7 +101,6 @@ pub fn create_table(table_name: String, schema: Schema, database: Database) -> R
     // Return the table
     Ok(Table::new(table_path.to_string())?)
 }
-
 
 /// This function is helpful when doing Updates
 /// It allows us to rewrite a specific row from the table.
@@ -148,6 +144,22 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<(), String> {
     }
     // Write the last page
     write_page(pagenum, &table.path, page.as_mut())?;
+    Ok(())
+}
+
+pub fn remove_rows(table: &Table, rows: Vec<(u32, u16)>) -> Result<(), String> {
+    let mut curr_page = 1;
+    let mut page = read_page(curr_page, &table.path)?;
+    for (pagenum, rownum) in rows {
+        if curr_page != pagenum {
+            write_page(curr_page, &table.path, page.as_ref())?;
+            curr_page = pagenum;
+            load_page(pagenum, &table.path, page.as_mut())?;
+        }
+        clear_row(&table.schema, page.as_mut(), rownum)?;
+    }
+    // Write the last page
+    write_page(curr_page, &table.path, page.as_ref())?;
     Ok(())
 }
 
@@ -231,6 +243,23 @@ mod tests {
         clean_table(&path);
     }
 
+    #[test]
+    fn test_removes() {
+        let path = "test_removerator.db".to_string();
+        let table = create_table(&path);
+
+        let rows: Vec<(u32, u16)> = (10..50)
+            .map(|i| (1, i as u16))
+            .chain((10..30).map(|i| (2, i as u16)))
+            .collect();
+        remove_rows(&table, rows).unwrap();
+        // Assert that we have (69 * 2 - 60) rows remaining
+        assert_eq!(table.into_iter().count(), 78);
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
     fn test_inserts() {
         let path = "test_inserterator.db".to_string();
         let mut table = create_table(&path);
