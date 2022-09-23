@@ -2,6 +2,8 @@ use crate::util::row::{Row, RowInfo};
 
 use super::{databaseio::*, header::*, pageio::*, rowio::*};
 
+pub const TABLE_FILE_EXTENSION: &str = ".db";
+
 #[derive(Clone)]
 pub struct Table {
     pub schema: Schema,
@@ -76,15 +78,18 @@ impl Iterator for Table {
     }
 }
 
-/// Creates a new table within the given database named <table_name>.db
+/// Creates a new table within the given database named <table_name><TABLE_FILE_EXTENSION>
 /// with the given schema.
 pub fn create_table(
     table_name: String,
-    schema: Schema,
-    database: Database,
+    schema: &Schema,
+    database: &Database,
 ) -> Result<Table, String> {
     // Create a table file
-    let table_path = database.get_database_path() + "/" + &table_name + ".db";
+    let table_path: String = database.get_current_branch_path() + 
+                             std::path::MAIN_SEPARATOR.to_string().as_str() + 
+                             &table_name +
+                             TABLE_FILE_EXTENSION.to_string().as_str();
     create_file(&table_path).map_err(|e| e.to_string())?;
 
     // Write the header
