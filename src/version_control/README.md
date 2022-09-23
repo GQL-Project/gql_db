@@ -46,10 +46,12 @@ Now that you have the common ancestor, you can merge the branches. The merge str
     
     ```
     {
-        "insert": [(<p_num>, <r_num>), <p_num>, <r_num>), <p_num>, <r_num>)], 
-        "delete": [<p_num>, <r_num>), <p_num>, <r_num>)]
+        "insert": [(<p_num>, <r_num>), (<p_num>, <r_num>), (<p_num>, <r_num>)], 
+        "delete": [(<p_num>, <r_num>), (<p_num>, <r_num>)]
     }
     ```
+2. Repeat step 1 with the target commits.
+3. **NOTE** Use the empty bits in the first byte of the table row to indicate rows that are ready to be deleted/inserted/updated. This way, you can keep track of which rows will cause a merge conflict or not. 
 
 ## Invariants
 
