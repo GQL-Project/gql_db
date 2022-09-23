@@ -32,8 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // store user input
             command.push_str(&last_input);
 
-            // stop reading if there's a semi colon
-            if last_input.contains(";") || last_input.contains("exit") {
+            // stop reading if there's a semi colon, has exit, or GQL command
+            // TODO: make sure the exit and GQL are the first line of the command
+            if last_input.contains(";") || last_input.contains("exit") || last_input.starts_with("GQL ") {
                 break;
             }
 
