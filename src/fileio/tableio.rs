@@ -101,11 +101,12 @@ pub fn create_table(
 
     // Write a blank page to the table
     let page = [0u8; PAGE_SIZE];
-    write_page(1, &table_path, &page).unwrap();
+    write_page(1, &table_path, &page)?;
 
     // Return the table
     Ok(Table::new(table_path.to_string())?)
 }
+
 
 /// This function is helpful when doing Updates
 /// It allows us to rewrite a specific row from the table.

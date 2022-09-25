@@ -15,6 +15,10 @@ const DELTAS_FILE_EXTENSION: &str = ".gql";
 const BRANCHES_FILE_NAME: &str = "branches";
 const BRANCHES_FILE_EXTENSION: &str = ".gql";
 
+// Branch HEADs File Constants
+const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
+const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
+
 #[derive(Clone)]
 pub struct Database {
     db_path: String,                // This is the full patch to the database directory: <path>/<db_name>
@@ -56,6 +60,13 @@ impl Database {
         let branches_file_path = Database::append_branches_file_path(db_path.clone());
         if !Path::new(&branches_file_path.clone()).exists() {
             std::fs::File::create(&branches_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+        }
+
+        // Create the branch_heads file, if it doesn't exist already, which holds all the branch HEADs for the database
+        // './databases/<database_name>/branch_heads.gql'
+        let branch_heads_file_path = Database::append_branch_heads_file_path(db_path.clone());
+        if !Path::new(&branch_heads_file_path.clone()).exists() {
+            std::fs::File::create(&branch_heads_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
         }
 
         // Now create the directory for the main branch
@@ -106,7 +117,7 @@ impl Database {
     }
 
 
-    /// Returns the path to the database's deltas file: <path>/<db_name>/deltas<DELTAS_FILE_EXTENSION>
+    /// Returns the path to the database's deltas file: <path>/<db_name>/deltas.gql
     pub fn get_deltas_file_path(&self) -> String {
         let db_dir_path = self.get_database_path();
         // Return the deltas file path appended to the database path
@@ -114,11 +125,18 @@ impl Database {
     }
 
 
-    /// Returns the path to the database's branches file: <path>/<db_name>/branches<BRANCHES_FILE_EXTENSION>
+    /// Returns the path to the database's branches file: <path>/<db_name>/branches.gql
     pub fn get_branches_file_path(&self) -> String {
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_branches_file_path(db_dir_path.clone())
+    }
+
+    /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
+    pub fn get_branch_heads_file_path(&self) -> String {
+        let db_dir_path = self.get_database_path();
+        // Return the branches file path appended to the database path
+        Database::append_branch_heads_file_path(db_dir_path.clone())
     }
 
     
@@ -218,7 +236,7 @@ impl Database {
     }
 
 
-    // Private static method that appends the deltas file path to the database_path
+    /// Private static method that appends the deltas file path to the database_path
     fn append_deltas_file_path(database_path: String) -> String {
         let mut deltas_file_path = database_path;
         deltas_file_path.push(std::path::MAIN_SEPARATOR);
@@ -228,13 +246,23 @@ impl Database {
     }
 
 
-    // Private static method that appends the branches file path to the database_path
+    /// Private static method that appends the branches file path to the database_path
     fn append_branches_file_path(database_path: String) -> String {
         let mut branches_file_path = database_path;
         branches_file_path.push(std::path::MAIN_SEPARATOR);
         branches_file_path.push_str(BRANCHES_FILE_NAME);
         branches_file_path.push_str(BRANCHES_FILE_EXTENSION);
         branches_file_path
+    }
+
+
+    /// Private static method that appends the branch heads file path to the database_path
+    fn append_branch_heads_file_path(database_path: String) -> String {
+        let mut branch_heads_file_path = database_path;
+        branch_heads_file_path.push(std::path::MAIN_SEPARATOR);
+        branch_heads_file_path.push_str(BRANCH_HEADS_FILE_NAME);
+        branch_heads_file_path.push_str(BRANCH_HEADS_FILE_EXTENSION);
+        branch_heads_file_path
     }
 }
 
@@ -312,10 +340,10 @@ mod tests {
                 BRANCHES_FILE_EXTENSION);
 
         // Delete the database
-        new_db.delete_database().unwrap();
+        //new_db.delete_database().unwrap();
 
         // Make sure database does not exist anymore
-        assert_eq!(Path::new(&db_base_path).exists(), false);
+        //assert_eq!(Path::new(&db_base_path).exists(), false);
     }
 
     #[test]
@@ -357,9 +385,9 @@ mod tests {
                 TABLE_FILE_EXTENSION);
 
         // Delete the database
-        new_db.delete_database().unwrap();
+        //new_db.delete_database().unwrap();
 
         // Make sure database does not exist anymore
-        assert_eq!(Path::new(&db_base_path).exists(), false);
+        //assert_eq!(Path::new(&db_base_path).exists(), false);
     }
 }
