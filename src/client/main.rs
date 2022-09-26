@@ -1,8 +1,8 @@
 use connection::database_connection_client::DatabaseConnectionClient;
 use connection::{ConnectResult, QueryRequest};
-use tonic::Request;
 use std::io::{self, BufRead, Write};
 use std::string::String;
+use tonic::Request;
 
 pub mod connection {
     tonic::include_proto!("db_connection");
@@ -34,7 +34,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // stop reading if there's a semi colon, has exit, or GQL command
             // TODO: make sure the exit and GQL are the first line of the command
-            if last_input.contains(";") || last_input.contains("exit") || last_input.starts_with("GQL ") {
+            if last_input.contains(";")
+                || last_input.contains("exit")
+                || last_input.starts_with("GQL ")
+            {
                 break;
             }
 
@@ -45,7 +48,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // string manipulation to get rid of \n and ;
         command = command.replace(";", "");
         command = command.replace("\n", " ");
-
 
         let request = QueryRequest {
             id: String::from(response.id.clone()),
@@ -59,11 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
             break;
         }
-        
+
         //let get_response;
         // GQL
         if command.starts_with("GQL ") {
-            client.run_version_control_command(Request::new(request.clone())).await?;
+            client
+                .run_version_control_command(Request::new(request.clone()))
+                .await?;
         } else {
             client.run_query(Request::new(request.clone())).await?;
         }
