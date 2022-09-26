@@ -2,6 +2,7 @@ use std::path::Path;
 use std::env;
 use glob::glob;
 use super::tableio::TABLE_FILE_EXTENSION;
+use crate::version_control::branches::*;
 
 // Branch Constants
 const MAIN_BRANCH_NAME: &str = "main";
@@ -30,8 +31,8 @@ pub struct Database {
 }
 
 impl Database {
-    /// Creates a new database at the given path if one does not already exist.
-    /// If it already exists, it will load that database.
+    /// Creates a new database at the given path.
+    /// It will return an error if the database already exists.
     pub fn new(database_name: String) -> Result<Database, String> {
         let db_base_path = Database::get_database_base_path()?;
         // If the databases base path './databases/' doesn't exist, create it
@@ -43,31 +44,27 @@ impl Database {
         let mut db_path = db_base_path.clone();
         db_path.push(std::path::MAIN_SEPARATOR);
         db_path.push_str(database_name.as_str());
-        // If the database doesn't exist already, create a directory for it.
-        if !Path::new(&db_path.clone()).exists() {
-            std::fs::create_dir(&db_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+        // If the database already exists, return an error
+        if Path::new(&db_path.clone()).exists() {
+            return Err("Database::new() Error: Database already exists".to_owned());
         }
+        std::fs::create_dir(&db_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
-        // Create the deltas file, if it doesn't exist already, which holds the deltas for the commits
+        // Create the deltas file, which holds the deltas for the commits
         // './databases/<database_name>/deltas.gql'
         let deltas_file_path = Database::append_deltas_file_path(db_path.clone());
-        if !Path::new(&deltas_file_path.clone()).exists() {
-            std::fs::File::create(&deltas_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
-        }
+        std::fs::File::create(&deltas_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
-        // Create the branches file, if it doesn't exist already, which holds all the branches for the database
+        // Create the branches file, which holds all the branches for the database
         // './databases/<database_name>/branches.gql'
         let branches_file_path = Database::append_branches_file_path(db_path.clone());
-        if !Path::new(&branches_file_path.clone()).exists() {
-            std::fs::File::create(&branches_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
-        }
+        std::fs::File::create(&branches_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
-        // Create the branch_heads file, if it doesn't exist already, which holds all the branch HEADs for the database
+        // Create the branch_heads file, which holds all the branch HEADs for the database
         // './databases/<database_name>/branch_heads.gql'
         let branch_heads_file_path = Database::append_branch_heads_file_path(db_path.clone());
-        if !Path::new(&branch_heads_file_path.clone()).exists() {
-            std::fs::File::create(&branch_heads_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
-        }
+        std::fs::File::create(&branch_heads_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+        write_branch_heads_file_header(&branch_heads_file_path)?;
 
         // Now create the directory for the main branch
         // './databases/<database_name>/<database_name>-<branch_name>/'
@@ -76,12 +73,42 @@ impl Database {
         main_branch_path.push_str(database_name.as_str());
         main_branch_path.push(DB_NAME_BRANCH_SEPARATOR);
         main_branch_path.push_str(MAIN_BRANCH_NAME);
-        // If the database main branch doesn't exist already, create a directory for it.
-        if !Path::new(&main_branch_path.clone()).exists() {
-            std::fs::create_dir(&main_branch_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
-        }
+        // Create a directory for the main branch database.
+        std::fs::create_dir(&main_branch_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
         // TODO: construct the main branch database from the diffs file
+        
+        Ok(Database {
+            db_path: db_path,
+            db_name: database_name,
+            branch_path: main_branch_path,
+            branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
+            connected_clients: Vec::new(),
+        })
+    }
+
+
+    /// Opens an existing database at the given path.
+    /// It will return an error if the database doesn't exist.
+    pub fn load_db(database_name: String) -> Result<Database, String> {
+        let db_base_path = Database::get_database_base_path()?;
+        
+        // Create the database directory if needed './databases/<database_name>'
+        let mut db_path = db_base_path.clone();
+        db_path.push(std::path::MAIN_SEPARATOR);
+        db_path.push_str(database_name.as_str());
+        // If the database doesn't already exist, return an error
+        if !Path::new(&db_path.clone()).exists() {
+            return Err("Database::load_db() Error: Database does not exist".to_owned());
+        }
+
+        // Now get the directory for the main branch
+        // './databases/<database_name>/<database_name>-<branch_name>/'
+        let mut main_branch_path = db_path.clone();
+        main_branch_path.push(std::path::MAIN_SEPARATOR);
+        main_branch_path.push_str(database_name.as_str());
+        main_branch_path.push(DB_NAME_BRANCH_SEPARATOR);
+        main_branch_path.push_str(MAIN_BRANCH_NAME);
         
         Ok(Database {
             db_path: db_path,
@@ -340,10 +367,10 @@ mod tests {
                 BRANCHES_FILE_EXTENSION);
 
         // Delete the database
-        //new_db.delete_database().unwrap();
+        new_db.delete_database().unwrap();
 
         // Make sure database does not exist anymore
-        //assert_eq!(Path::new(&db_base_path).exists(), false);
+        assert_eq!(Path::new(&db_base_path).exists(), false);
     }
 
     #[test]
@@ -385,9 +412,55 @@ mod tests {
                 TABLE_FILE_EXTENSION);
 
         // Delete the database
-        //new_db.delete_database().unwrap();
+        new_db.delete_database().unwrap();
 
         // Make sure database does not exist anymore
-        //assert_eq!(Path::new(&db_base_path).exists(), false);
+        assert_eq!(Path::new(&db_base_path).exists(), false);
+    }
+
+    #[test]
+    fn test_load_db() {
+        // This tests creating a database, saving it, and then loading it back in
+        let db_name = "test_load_db".to_string();
+        let db_branch_name: String = db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
+        let db_base_path: String = Database::get_database_base_path().unwrap() + 
+                                        std::path::MAIN_SEPARATOR.to_string().as_str() +
+                                        db_name.clone().as_str();
+        let full_path_to_branch: String = db_base_path.clone() + 
+                                                std::path::MAIN_SEPARATOR.to_string().as_str() + 
+                                                &db_branch_name.clone();
+
+        // Create the database
+        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
+        
+        // Make sure database does exist now
+        assert_eq!(Path::new(&db_base_path).exists(), true);
+        
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        create_table("test_table".to_string(), &schema, &new_db).unwrap(); 
+
+        // Load the database
+        let mut loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
+
+        // Make sure the database path is correct
+        assert_eq!(loaded_db.get_database_path(), db_base_path.clone());
+
+        // Make sure the current branch path is correct
+        assert_eq!(loaded_db.get_current_branch_path(), full_path_to_branch.clone());
+
+        // Make sure the table path is correct
+        assert_eq!(loaded_db.get_table_path("test_table".to_string()).unwrap(), 
+            full_path_to_branch.clone() + 
+                std::path::MAIN_SEPARATOR.to_string().as_str() +
+                "test_table" +
+                TABLE_FILE_EXTENSION);
+        
+        // Delete the database
+        loaded_db.delete_database().unwrap();
     }
 }

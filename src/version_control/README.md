@@ -101,4 +101,4 @@ Now that you have the common ancestor, you can merge the branches. The merge str
 1. All commits in a branch have increasing timestamps.
 2. The first commit that branches off of a commit has the name of the new branch.
 3. All branch merges are between a source and target branch. The commits between the common ancestor and the HEAD of the source branch are squashed when merging into the target branch.
-4. All branch heads are always stored in the `branches.gql` file.
+4. All branch heads are always stored in the `branch_heads.gql` file.

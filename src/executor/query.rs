@@ -338,7 +338,7 @@ mod tests {
         let tables = [("test_table1".to_string(), "T1".to_string()),
                                              ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
     
-        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
     
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -404,6 +404,9 @@ mod tests {
         // Assert that the fourth row is correct
         assert_eq!(result.1[3][0], Value::I32(2));
         assert_eq!(result.1[3][1], Value::String("Britain".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
     }
 
     #[test]
