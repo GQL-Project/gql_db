@@ -2,7 +2,7 @@ use std::path::Path;
 use std::env;
 use glob::glob;
 use super::tableio::TABLE_FILE_EXTENSION;
-use crate::version_control::branches::*;
+use crate::{fileio::tableio::*, version_control::{branch_heads::*, branches::*}};
 
 // Branch Constants
 const MAIN_BRANCH_NAME: &str = "main";
@@ -11,6 +11,10 @@ const DB_NAME_BRANCH_SEPARATOR: char = '-';
 // Deltas File Constants
 const DELTAS_FILE_NAME: &str = "deltas";
 const DELTAS_FILE_EXTENSION: &str = ".gql";
+
+// Commit Headers File Constants
+const COMMIT_HEADERS_FILE_NAME: &str = "commitheaders";
+const COMMIT_HEADERS_FILE_EXTENSION: &str = ".gql";
 
 // Branches File Constants
 const BRANCHES_FILE_NAME: &str = "branches";
@@ -26,6 +30,7 @@ pub struct Database {
     db_name: String,                // This is the name of the database (not the path)
     branch_path: String,            // This is the full path to the database branch directory: <path>/<db_name>/<branch_name>
     branch_name: String,            // The name of the branch that this database is currently on
+    branch_heads: BranchHEADs,      // The BranchHEADs file object for this database
     connected_clients: Vec<String>, // The list of clients that are currently connected to this database at this branch
     // TODO: maybe add permissions here
 }
@@ -55,6 +60,11 @@ impl Database {
         let deltas_file_path = Database::append_deltas_file_path(db_path.clone());
         std::fs::File::create(&deltas_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
+        // Create the commit headers file, which holds all the headers for the commits
+        // './databases/<database_name>/commitheaders.gql'
+        let commit_headers_file_path = Database::append_commit_headers_file_path(db_path.clone());
+        std::fs::File::create(&commit_headers_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+
         // Create the branches file, which holds all the branches for the database
         // './databases/<database_name>/branches.gql'
         let branches_file_path = Database::append_branches_file_path(db_path.clone());
@@ -62,9 +72,8 @@ impl Database {
 
         // Create the branch_heads file, which holds all the branch HEADs for the database
         // './databases/<database_name>/branch_heads.gql'
-        let branch_heads_file_path = Database::append_branch_heads_file_path(db_path.clone());
-        std::fs::File::create(&branch_heads_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
-        write_branch_heads_file_header(&branch_heads_file_path)?;
+        let branch_heads_file_path: String = Database::append_branch_heads_file_path(db_path.clone());
+        let branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file_path.clone(), true)?;
 
         // Now create the directory for the main branch
         // './databases/<database_name>/<database_name>-<branch_name>/'
@@ -83,6 +92,7 @@ impl Database {
             db_name: database_name,
             branch_path: main_branch_path,
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
+            branch_heads: branch_heads,
             connected_clients: Vec::new(),
         })
     }
@@ -110,11 +120,16 @@ impl Database {
         main_branch_path.push(DB_NAME_BRANCH_SEPARATOR);
         main_branch_path.push_str(MAIN_BRANCH_NAME);
         
+        // Load the branch_heads.gql file, which holds all the branch HEADs for the database
+        let branch_heads_file_path: String = Database::append_branch_heads_file_path(db_path.clone());
+        let branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file_path.clone(), false)?;
+
         Ok(Database {
             db_path: db_path,
             db_name: database_name,
             branch_path: main_branch_path,
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
+            branch_heads: branch_heads,
             connected_clients: Vec::new(),
         })
     }
@@ -153,11 +168,20 @@ impl Database {
 
 
     /// Returns the path to the database's branches file: <path>/<db_name>/branches.gql
+    pub fn get_commit_headers_file_path(&self) -> String {
+        let db_dir_path = self.get_database_path();
+        // Return the branches file path appended to the database path
+        Database::append_commit_headers_file_path(db_dir_path.clone())
+    }
+
+
+    /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
     pub fn get_branches_file_path(&self) -> String {
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_branches_file_path(db_dir_path.clone())
     }
+
 
     /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
     pub fn get_branch_heads_file_path(&self) -> String {
@@ -211,7 +235,7 @@ impl Database {
     
     /// Deletes the database at the given path.
     /// It also deletes the database object.
-    pub fn delete_database(&mut self) -> Result<(), String> {
+    pub fn delete_database(self) -> Result<(), String> {
         // Remove the directory and all files within it
         std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
         // Destroy self
@@ -223,7 +247,21 @@ impl Database {
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
-    pub fn create_branch(&mut self, branch_name: String) -> Result<(), String> {
+    pub fn create_branch(&mut self, branch_name: &String) -> Result<(), String> {
+        match self.branch_heads.get_branch_head(branch_name) {
+            Ok(_) => {
+                return Err("Database::create_branch() Error: Branch already exists".to_owned());
+            },
+            Err(_) => { } // Do nothing, we expect this error
+        }
+
+        // Create the new branch head
+        let new_branch_head: BranchHead = BranchHead {
+            branch_name: branch_name.clone(),
+            page_num: 0, // TODO: Set this after branch has been created 
+            row_num: 0   // TODO: Set this after branch has been created
+        };
+
         // TODO: implementation
         Ok(())
     }
@@ -273,7 +311,17 @@ impl Database {
     }
 
 
-    /// Private static method that appends the branches file path to the database_path
+    /// Private static method that appends the commit_headers file path to the database_path
+    fn append_commit_headers_file_path(database_path: String) -> String {
+        let mut commit_headers_file_path = database_path;
+        commit_headers_file_path.push(std::path::MAIN_SEPARATOR);
+        commit_headers_file_path.push_str(COMMIT_HEADERS_FILE_NAME);
+        commit_headers_file_path.push_str(COMMIT_HEADERS_FILE_EXTENSION);
+        commit_headers_file_path
+    }
+
+
+    /// Private static method that appends the branch heads file path to the database_path
     fn append_branches_file_path(database_path: String) -> String {
         let mut branches_file_path = database_path;
         branches_file_path.push(std::path::MAIN_SEPARATOR);
@@ -293,10 +341,11 @@ impl Database {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fileio::{tableio::*, header::Schema}, util::dbtype::Column};
+    use crate::{fileio::{header::Schema}, util::dbtype::Column};
     use serial_test::serial;
 
     #[test]
@@ -359,12 +408,12 @@ mod tests {
                 DELTAS_FILE_NAME + 
                 DELTAS_FILE_EXTENSION);
 
-        // Make sure the branches file path is correct
-        assert_eq!(new_db.get_branches_file_path(), 
+        // Make sure the commit headers file path is correct
+        assert_eq!(new_db.get_commit_headers_file_path(), 
             db_base_path.clone() +
                 std::path::MAIN_SEPARATOR.to_string().as_str() +
-                BRANCHES_FILE_NAME +
-                BRANCHES_FILE_EXTENSION);
+                COMMIT_HEADERS_FILE_NAME +
+                COMMIT_HEADERS_FILE_EXTENSION);
 
         // Delete the database
         new_db.delete_database().unwrap();
@@ -431,7 +480,7 @@ mod tests {
                                                 &db_branch_name.clone();
 
         // Create the database
-        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
+        let new_db: Database = Database::new(db_name.clone()).unwrap();
         
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
