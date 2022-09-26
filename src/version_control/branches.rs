@@ -1,7 +1,7 @@
 use tokio::time::error::Elapsed;
 
+use crate::fileio::{databaseio::*, header::*, pageio::*, rowio::*, tableio::*};
 use crate::util::{dbtype::*, row::*};
-use crate::fileio::{databaseio::*, tableio::*, header::*, rowio::*, pageio::*};
 
 #[derive(Clone)]
 pub struct BranchHead {
@@ -9,7 +9,6 @@ pub struct BranchHead {
     pub page_num: i32,
     pub row_num: i32,
 }
-
 
 /// Writes a table header for the branch HEADs file to a file at the given file path.
 pub fn write_branch_heads_file_header(branch_heads_file_path: &String) -> Result<Table, String> {
@@ -32,9 +31,11 @@ pub fn write_branch_heads_file_header(branch_heads_file_path: &String) -> Result
     Ok(Table::new(branch_heads_file_path.to_string())?)
 }
 
-
 /// Takes in a branch name and returns the corresponding branch head
-pub fn get_branch_head(branch_name: &String, branch_heads_file: &mut Table) -> Result<BranchHead, String> {
+pub fn get_branch_head(
+    branch_name: &String,
+    branch_heads_file: &mut Table,
+) -> Result<BranchHead, String> {
     let branch_heads: Vec<BranchHead> = get_all_branch_heads(branch_heads_file)?;
 
     for branch_head in branch_heads {
@@ -43,29 +44,32 @@ pub fn get_branch_head(branch_name: &String, branch_heads_file: &mut Table) -> R
         }
     }
 
-    return Err("Branch name not present in branch HEADs file".to_string())
+    return Err("Branch name not present in branch HEADs file".to_string());
 }
 
-
 /// Writes a new branch head to the branch heads file
-pub fn write_new_branch_head(branch_head: &BranchHead, branch_heads_file: &mut Table) -> Result<(), String> {
-    
+pub fn write_new_branch_head(
+    branch_head: &BranchHead,
+    branch_heads_file: &mut Table,
+) -> Result<(), String> {
     let rows: Vec<Vec<Value>> = vec![
         // Just make one new row
         vec![
             Value::String(branch_head.branch_name.clone()),
             Value::I32(branch_head.page_num),
-            Value::I32(branch_head.row_num)
+            Value::I32(branch_head.row_num),
         ],
     ];
     insert_rows(branch_heads_file, rows)?;
     Ok(())
 }
 
-
 /// Takes in a BranchHead object and updates the branch head in the branch heads file
 /// that corresponds to the branch name in the BranchHead object
-pub fn update_branch_head(branch_head: &BranchHead, branch_heads_file: &mut Table) -> Result<(), String> {
+pub fn update_branch_head(
+    branch_head: &BranchHead,
+    branch_heads_file: &mut Table,
+) -> Result<(), String> {
     // Iterate through all the rows in the branch heads file and check to see if there is a row that has
     // the same branch name as the branch head we are trying to update
     for row_info in branch_heads_file.into_iter().clone() {
@@ -76,7 +80,7 @@ pub fn update_branch_head(branch_head: &BranchHead, branch_heads_file: &mut Tabl
         // Get the branch name
         match row.get(0) {
             Some(Value::String(br_name)) => row_branch_name = br_name.to_string(),
-            _ => return Err("Error: Branch name not found".to_string())
+            _ => return Err("Error: Branch name not found".to_string()),
         }
 
         // If the branch name matches
@@ -86,16 +90,16 @@ pub fn update_branch_head(branch_head: &BranchHead, branch_heads_file: &mut Tabl
                 row: vec![
                     Value::String(branch_head.branch_name.clone()),
                     Value::I32(branch_head.page_num),
-                    Value::I32(branch_head.row_num)
+                    Value::I32(branch_head.row_num),
                 ],
                 pagenum: row_info.pagenum,
                 rownum: row_info.rownum,
             };
-    
+
             // Update the row in the branch heads file
             rewrite_rows(branch_heads_file, vec![updated_row_info])?;
 
-            return Ok(())
+            return Ok(());
         }
     }
 
@@ -103,10 +107,12 @@ pub fn update_branch_head(branch_head: &BranchHead, branch_heads_file: &mut Tabl
     Err("Error: Branch name was not present".to_string())
 }
 
-
 /// Deletes a branch head from the branch heads file
 /// Returns an error if the branch name is not present in the branch heads file
-pub fn delete_branch_head(branch_name: &String, branch_heads_file: &mut Table) -> Result<(), String> {
+pub fn delete_branch_head(
+    branch_name: &String,
+    branch_heads_file: &mut Table,
+) -> Result<(), String> {
     // Iterate through all the rows in the branch heads file and check to see if there is a row that has
     // the same branch name as the branch head we are trying to delete
     for row_info in branch_heads_file.into_iter().clone() {
@@ -117,20 +123,19 @@ pub fn delete_branch_head(branch_name: &String, branch_heads_file: &mut Table) -
         // Get the branch name
         match row.get(0) {
             Some(Value::String(br_name)) => row_branch_name = br_name.to_string(),
-            _ => return Err("Error: Branch name not found".to_string())
+            _ => return Err("Error: Branch name not found".to_string()),
         }
 
         // If the branch name matches, delete the row
         if row_branch_name == *branch_name {
             remove_rows(branch_heads_file, vec![(row_info.pagenum, row_info.rownum)])?;
-            return Ok(())
+            return Ok(());
         }
     }
 
     // The branch name was not present in the branch heads file
     Err("Error: Branch name was not present".to_string())
 }
-
 
 /// Read the branch heads file and return a vector of BranchHead structs
 pub fn get_all_branch_heads(branch_heads_file: &mut Table) -> Result<Vec<BranchHead>, String> {
@@ -146,19 +151,19 @@ pub fn get_all_branch_heads(branch_heads_file: &mut Table) -> Result<Vec<BranchH
         // Get the branch name
         match row.get(0) {
             Some(Value::String(br_name)) => branch_name = br_name.to_string(),
-            _ => return Err("Error: Branch name not found".to_string())
+            _ => return Err("Error: Branch name not found".to_string()),
         }
 
         // Get the page number
         match row.get(1) {
             Some(Value::I32(p_num)) => page_num = p_num.clone(),
-            _ => return Err("Error: Page number not found".to_string())
+            _ => return Err("Error: Page number not found".to_string()),
         }
 
         // Get the row number
         match row.get(2) {
             Some(Value::I32(r_num)) => row_num = r_num.clone(),
-            _ => return Err("Error: Row number not found".to_string())
+            _ => return Err("Error: Row number not found".to_string()),
         }
 
         let branch_head: BranchHead = BranchHead {
@@ -173,18 +178,18 @@ pub fn get_all_branch_heads(branch_heads_file: &mut Table) -> Result<Vec<BranchH
     Ok(branch_heads)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fileio::{header::Schema}, util::dbtype::Column};
+    use crate::{fileio::header::Schema, util::dbtype::Column};
 
     #[test]
     fn test_creating_branch_heads() {
         // Create a new branch heads file and write the header
         let branch_heads_file_path = "test_branch_heads_file".to_string();
         std::fs::File::create(branch_heads_file_path.clone()).unwrap();
-        let mut branch_heads_file = write_branch_heads_file_header(&branch_heads_file_path).unwrap();
+        let mut branch_heads_file =
+            write_branch_heads_file_header(&branch_heads_file_path).unwrap();
 
         let branch_head = BranchHead {
             branch_name: "main".to_string(),
@@ -210,7 +215,8 @@ mod tests {
         // Create a new branch heads file and write the header
         let branch_heads_file_path = "test_multi_branch_heads_file".to_string();
         std::fs::File::create(branch_heads_file_path.clone()).unwrap();
-        let mut branch_heads_file = write_branch_heads_file_header(&branch_heads_file_path).unwrap();
+        let mut branch_heads_file =
+            write_branch_heads_file_header(&branch_heads_file_path).unwrap();
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
@@ -237,7 +243,8 @@ mod tests {
         assert_eq!(branch_heads[1].page_num, 2);
         assert_eq!(branch_heads[1].row_num, 2);
 
-        let test_branch_head: BranchHead = get_branch_head(&"test".to_string(), &mut branch_heads_file).unwrap();
+        let test_branch_head: BranchHead =
+            get_branch_head(&"test".to_string(), &mut branch_heads_file).unwrap();
 
         assert_eq!(test_branch_head.branch_name, "test");
         assert_eq!(test_branch_head.page_num, 2);
@@ -252,7 +259,8 @@ mod tests {
         // Create a new branch heads file and write the header
         let branch_heads_file_path = "test_update_branch_heads_file".to_string();
         std::fs::File::create(branch_heads_file_path.clone()).unwrap();
-        let mut branch_heads_file = write_branch_heads_file_header(&branch_heads_file_path).unwrap();
+        let mut branch_heads_file =
+            write_branch_heads_file_header(&branch_heads_file_path).unwrap();
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
@@ -306,7 +314,8 @@ mod tests {
         // Create a new branch heads file and write the header
         let branch_heads_file_path = "test_delete_branch_heads_file".to_string();
         std::fs::File::create(branch_heads_file_path.clone()).unwrap();
-        let mut branch_heads_file = write_branch_heads_file_header(&branch_heads_file_path).unwrap();
+        let mut branch_heads_file =
+            write_branch_heads_file_header(&branch_heads_file_path).unwrap();
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
@@ -345,5 +354,4 @@ mod tests {
         // Delete the test file
         std::fs::remove_file(branch_heads_file_path).unwrap();
     }
-
 }
