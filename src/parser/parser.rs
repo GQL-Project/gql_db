@@ -1,12 +1,11 @@
 /// A parse function, that starts with a string and returns an AST representation of the query.
 /// If an error happens, an Err(msg) is returned.
-pub fn parse(query: &str, update: bool) -> Result<String, String> {
+pub fn parse(query: &str, _update: bool) -> Result<String, String> {
     if query.len() == 0 {
         return Err("Empty query".to_string());
     }
     Ok(query.to_string())
 }
-
 
 /// This method parses a version control command's query string into the individual components.
 /// Format "GQL <command> <flags> <args>"
@@ -31,25 +30,21 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             if vec.len() > 2 {
                 if vec[3] != "-m" {
                     // error message here
-                }
-                else {
+                } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
                 }
-        
-            }
-            else if (vec.len() == 2) {
+            } else if vec.len() == 2 {
                 // commit with no message
             }
         }
         "branch" => {
             // branch (CoPilot rec: Possible flags: -d, -m)
-            // Needs an argument 
+            // Needs an argument
             println!("{:?}", "branch command");
             if vec.len() != 3 {
                 // error message here
-            }
-            else {
+            } else {
                 // vec[2] should be a branch name
             }
         }
@@ -59,8 +54,7 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "switch branch command");
             if vec.len() != 3 {
                 // error message here
-            }
-            else {
+            } else {
                 // vec[2] should be a branch name
             }
         }
@@ -71,15 +65,13 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             if vec.len() != 2 {
                 // Error message here
             }
-
         }
         "revert" => {
             // revert (Needs an argument)
             println!("{:?}", "revert command");
             if vec.len() != 3 {
                 // error message here
-            }
-            else {
+            } else {
                 // vec[2] should be a commit hash
             }
         }

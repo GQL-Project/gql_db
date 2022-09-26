@@ -2,10 +2,10 @@ use db_connection::database_connection_server::DatabaseConnection;
 use db_connection::*;
 use tonic::{Request, Response, Status};
 
+use crate::executor::query;
 use crate::parser::parser;
 use crate::server::connection::Connection;
 use crate::util::convert::*;
-use crate::executor::query;
 
 pub mod db_connection {
     tonic::include_proto!("db_connection");
@@ -41,7 +41,7 @@ impl DatabaseConnection for Connection {
                 query::execute(&tree.clone(), false).map_err(|e| Status::internal(e))?;
 
                 Ok(Response::new(to_query_result(vec![tree], vec![])))
-            },
+            }
             Err(err) => Err(Status::cancelled(&err)),
         }
     }

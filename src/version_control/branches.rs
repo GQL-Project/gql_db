@@ -1,5 +1,5 @@
+use crate::fileio::{databaseio::*, header::*, pageio::*, rowio::*, tableio::*};
 use crate::util::{dbtype::*, row::*};
-use crate::fileio::{tableio::*, header::*, pageio::*};
 
 #[derive(Clone)]
 pub struct BranchNode {
@@ -21,7 +21,10 @@ impl BranchesFile {
     /// Creates a new BranchesFile object.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
-    pub fn new(filepath: String, create_file: bool) -> Result<BranchesFile, String> {
+    pub fn new(
+        filepath: String, 
+        create_file: bool
+    ) -> Result<BranchesFile, String> {
         if create_file {
             std::fs::File::create(filepath.clone()).map_err(|e| e.to_string())?;
 
