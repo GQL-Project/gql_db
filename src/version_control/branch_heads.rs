@@ -20,7 +20,10 @@ impl BranchHEADs {
     /// Creates a new BranchHEADs object.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
-    pub fn new(filepath: &String, create_file: bool) -> Result<BranchHEADs, String> {
+    pub fn new(
+        filepath: &String, 
+        create_file: bool
+    ) -> Result<BranchHEADs, String> {
         if create_file {
             std::fs::File::create(filepath.clone()).map_err(|e| e.to_string())?;
 
@@ -48,7 +51,10 @@ impl BranchHEADs {
     
     
     /// Takes in a branch name and returns the corresponding branch head
-    pub fn get_branch_head(&mut self, branch_name: &String) -> Result<BranchHead, String> {
+    pub fn get_branch_head(
+        &mut self, 
+        branch_name: &String
+    ) -> Result<BranchHead, String> {
         let branch_heads: Vec<BranchHead> = self.get_all_branch_heads()?;
 
         for branch_head in branch_heads {
@@ -62,7 +68,9 @@ impl BranchHEADs {
 
 
     /// Read the branch heads file and return a vector of BranchHead structs
-    pub fn get_all_branch_heads(&mut self) -> Result<Vec<BranchHead>, String> {
+    pub fn get_all_branch_heads(
+        &mut self
+    ) -> Result<Vec<BranchHead>, String> {
         let mut branch_heads: Vec<BranchHead> = Vec::new();
     
         for row_info in self.branch_heads_table.by_ref().into_iter().clone() {
@@ -104,7 +112,10 @@ impl BranchHEADs {
 
 
     /// Writes a new branch head to the branch heads file
-    pub fn write_new_branch_head(&mut self, branch_head: &BranchHead) -> Result<(), String> {
+    pub fn write_new_branch_head(
+        &mut self, 
+        branch_head: &BranchHead
+    ) -> Result<(), String> {
         let rows: Vec<Vec<Value>> = vec![
             // Just make one new row
             vec![
@@ -119,7 +130,10 @@ impl BranchHEADs {
 
     /// Takes in a BranchHead object and updates the branch head in the branch heads file
     /// that corresponds to the branch name in the BranchHead object
-    pub fn update_branch_head(&mut self, branch_head: &BranchHead) -> Result<(), String> {
+    pub fn update_branch_head(
+        &mut self, 
+        branch_head: &BranchHead
+    ) -> Result<(), String> {
         // Iterate through all the rows in the branch heads file and check to see if there is a row that has
         // the same branch name as the branch head we are trying to update
         for row_info in self.branch_heads_table.by_ref().into_iter().clone() {
@@ -160,7 +174,10 @@ impl BranchHEADs {
 
     /// Deletes a branch head from the branch heads file
     /// Returns an error if the branch name is not present in the branch heads file
-    pub fn delete_branch_head(&mut self, branch_name: &String) -> Result<(), String> {
+    pub fn delete_branch_head(
+        &mut self, 
+        branch_name: &String
+    ) -> Result<(), String> {
         // Iterate through all the rows in the branch heads file and check to see if there is a row that has
         // the same branch name as the branch head we are trying to delete
         for row_info in self.branch_heads_table.by_ref().into_iter().clone() {
