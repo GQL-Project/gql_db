@@ -153,6 +153,9 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<(), String> {
     Ok(())
 }
 
+
+/// This function is helpful when doing Deletes
+/// It removes the rows from the table specified by the tuples (pagenum, rownum)
 pub fn remove_rows(table: &Table, rows: Vec<(u32, u16)>) -> Result<(), String> {
     let mut curr_page = 1;
     let mut page = read_page(curr_page, &table.path)?;
@@ -168,6 +171,7 @@ pub fn remove_rows(table: &Table, rows: Vec<(u32, u16)>) -> Result<(), String> {
     write_page(curr_page, &table.path, page.as_ref())?;
     Ok(())
 }
+
 
 #[cfg(test)]
 mod tests {
