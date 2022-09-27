@@ -135,7 +135,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone()).unwrap();
+        let mut table1: Table = create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone()).unwrap().0;
         
         let row1 = vec![
             Value::I32(1),
@@ -192,8 +192,8 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("country".to_string(), Column::String(50)),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap();
-        let mut table2: Table = create_table(&"test_table2".to_string(), &schema2.clone(), &new_db.clone()).unwrap();
+        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
+        let mut table2: Table = create_table(&"test_table2".to_string(), &schema2.clone(), &new_db.clone()).unwrap().0;
         
         // Write rows to first table
         let row1 = vec![
@@ -281,7 +281,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone()).unwrap();
+        let mut table1: Table = create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone()).unwrap().0;
         
         let row1 = vec![
             Value::I32(1),
@@ -346,7 +346,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap();
+        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
         
         let row1 = vec![
             Value::I32(1),
@@ -364,7 +364,7 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("country".to_string(), Column::String(50)),
         ];
-        let mut table2: Table = create_table(&"test_table2".to_string(), &schema2.clone(), &new_db.clone()).unwrap();
+        let mut table2: Table = create_table(&"test_table2".to_string(), &schema2.clone(), &new_db.clone()).unwrap().0;
         
         let row1 = vec![
             Value::I32(5),
@@ -427,7 +427,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap();
+        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
 
         let row1 = vec![
             Value::I32(1),
@@ -469,7 +469,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap();
+        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
 
         let row1 = vec![
             Value::I32(1),

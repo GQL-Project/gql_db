@@ -1,6 +1,6 @@
 use itertools::Update;
 
-use crate::{util::row::{Row, RowInfo}, version_control::diff::UpdateDiff};
+use crate::{util::row::*, version_control::diff::*};
 use super::{databaseio::*, header::*, pageio::*, rowio::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
@@ -18,7 +18,7 @@ pub struct Table {
 }
 
 impl Table {
-    // Construct a new table.
+    // Construct a new table from an already existing file.
     pub fn new(
         directory: &String, 
         table_name: &String,
@@ -34,6 +34,11 @@ impl Table {
         }
         // Add table extension
         path = format!("{}{}", path, table_extension.unwrap_or(&TABLE_FILE_EXTENSION.to_string()));
+
+        // If the file doesn't exist, return an error.
+        if !std::path::Path::new(&path).exists() {
+            return Err(format!("Table file {} does not exist.", path));
+        }
 
         let header = read_header(&path)?;
         let page = Box::new([0u8; PAGE_SIZE]);
@@ -102,7 +107,7 @@ pub fn create_table(
     table_name: &String,
     schema: &Schema,
     database: &Database,
-) -> Result<Table, String> {
+) -> Result<(Table, TableCreateDiff), String> {
     let table_dir: String = database.get_current_branch_path();
     // Create a table file
     let table_path: String = table_dir.clone() + 
@@ -122,20 +127,28 @@ pub fn create_table(
     let page = [0u8; PAGE_SIZE];
     write_page(1, &table_path, &page)?;
 
-    // Return the table
-    Ok(Table::new(&table_dir.clone(), &table_name.clone(), None)?)
+    // Return the table and the diff
+    Ok((Table::new(&table_dir.clone(), &table_name.clone(), None)?,
+        TableCreateDiff {
+            table_name: table_name.clone(),
+            schema: schema.clone(),
+        }))
 }
 
 
 /// This function is helpful when doing Updates
 /// It allows us to rewrite a specific row from the table.
 /// It returns a diff of the rows that were updated.
-pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
-    //let mut diff: UpdateDiff = UpdateDiff::new(table.);
+pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
+    // Keep track of how the rows have changed.
+    let mut diff: UpdateDiff = UpdateDiff::new(table.name.clone(), 
+                                               schema_size(&table.schema),
+                                               0,
+                                               Vec::new());
 
     // To reduce page updates, we sort the rows by page number.
     if rows.len() < 1 {
-        return Ok(());
+        return Ok(diff);
     }
     rows.sort();
     let mut pagenum = rows[0].pagenum;
@@ -147,19 +160,37 @@ pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String>
             load_page(row.pagenum, &table.path, page.as_mut())?;
         }
         write_row(&table.schema, &mut page, &row.row, row.rownum)?;
+        // Add the row to the diff
+        diff.num_rows += 1;
+        diff.rows.push(row.clone());
     }
     // Write the last page
     write_page(pagenum, &table.path, page.as_ref())?;
-    Ok(())
+    Ok(diff)
 }
 
+
 /// This function is helpful when doing Inserts
-/// It allows us to insert a row into the table, allocating space when needed
-pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<(), String> {
+/// It allows us to insert a row into the table, allocating space when needed.
+/// It returns a diff of the rows that were inserted.
+pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, String> {
+    // Keep track of how the rows have changed.
+    let mut diff: InsertDiff = InsertDiff::new(table.name.clone(), 
+                                               schema_size(&table.schema),
+                                               0,
+                                               Vec::new());
+    
+    // Just return right away if we aren't inserting any rows
+    if rows.len() == 0 {
+        return Ok(diff);
+    }
+
     let mut pagenum = 1;
     let mut page = read_page(pagenum, &table.path)?;
     for row in rows {
-        while insert_row(&table.schema, page.as_mut(), &row)?.is_none() {
+        // Keep track of the rownum that we insert the row into
+        let mut rownum_inserted: Option<u16> = insert_row(&table.schema, page.as_mut(), &row)?;
+        while rownum_inserted.is_none() {
             write_page(pagenum, &table.path, page.as_ref())?;
             pagenum += 1;
             if pagenum > table.max_pages || load_page(pagenum, &table.path, page.as_mut()).is_err()
@@ -168,30 +199,60 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<(), String> {
                 page = Box::new([0; 4096]);
                 table.max_pages += 1;
             }
+            rownum_inserted = insert_row(&table.schema, page.as_mut(), &row)?;
         }
+
+        // Add the information to the diff
+        diff.num_rows += 1;
+        diff.rows.push(RowInfo {
+            row: row.clone(),
+            pagenum,
+            rownum: rownum_inserted.unwrap(), // This is fine to unwrap because we just checked that it wasn't None
+        });
     }
     // Write the last page
     write_page(pagenum, &table.path, page.as_mut())?;
-    Ok(())
+    Ok(diff)
 }
 
 
 /// This function is helpful when doing Deletes
 /// It removes the rows from the table specified by the tuples (pagenum, rownum)
-pub fn remove_rows(table: &Table, rows: Vec<(u32, u16)>) -> Result<(), String> {
+/// It returns a diff of the rows that were removed.
+pub fn remove_rows(table: &Table, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
+    // Keep track of how the rows have changed.
+    let mut diff: RemoveDiff = RemoveDiff::new(table.name.clone(), 
+                                               schema_size(&table.schema),
+                                               0,
+                                               Vec::new());
+
+    // Return right away if we aren't removing any rows
+    if rows.len() == 0 {
+        return Ok(diff);
+    }
+
     let mut curr_page = 1;
     let mut page = read_page(curr_page, &table.path)?;
-    for (pagenum, rownum) in rows {
+    for row_location in rows {
+        let pagenum: u32 = row_location.pagenum;
+        let rownum: u16 = row_location.rownum;
         if curr_page != pagenum {
             write_page(curr_page, &table.path, page.as_ref())?;
             curr_page = pagenum;
             load_page(pagenum, &table.path, page.as_mut())?;
         }
         clear_row(&table.schema, page.as_mut(), rownum)?;
+
+        // Add changes to the diff
+        diff.num_rows += 1;
+        diff.row_locations.push(RowLocation {
+            pagenum,
+            rownum,
+        });
     }
     // Write the last page
     write_page(curr_page, &table.path, page.as_ref())?;
-    Ok(())
+    Ok(diff)
 }
 
 
@@ -284,7 +345,15 @@ mod tests {
             .map(|i| (1, i as u16))
             .chain((10..30).map(|i| (2, i as u16)))
             .collect();
-        remove_rows(&table, rows).unwrap();
+        // Cast rows to a vector of Rowlocations
+        let rowlocations: Vec<RowLocation> = rows
+            .iter()
+            .map(|(pagenum, rownum)| RowLocation {
+                pagenum: *pagenum,
+                rownum: *rownum,
+            })
+            .collect();
+        remove_rows(&table, rowlocations).unwrap();
         // Assert that we have (69 * 2 - 60) rows remaining
         assert_eq!(table.into_iter().count(), 78);
         // Clean up by removing file
@@ -340,6 +409,77 @@ mod tests {
                 assert_eq!(rowinfo.rownum, (i - 207) as u16);
             }
         }
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
+    fn test_diffs() {
+        let path = "test_differator".to_string();
+        let mut table = create_table(&path);
+
+        let mut rows: Vec<Vec<Value>> = Vec::new();
+        rows.push(vec![
+            Value::I32(3),
+            Value::String("Alexander Hamilton".to_string()),
+            Value::I32(60),
+        ]);
+        rows.push(vec![
+            Value::I32(4),
+            Value::String("Aaron Burr".to_string()),
+            Value::I32(40),
+        ]);
+
+        // Try InsertDiff
+        let insert_diff: InsertDiff = insert_rows(&mut table, rows).unwrap();
+        // Verify that the insert_diff is correct
+        assert_eq!(insert_diff.row_size, schema_size(&table.schema));
+        assert_eq!(insert_diff.num_rows, 2);
+        assert_eq!(insert_diff.table_name, "test_differator".to_string());
+        // Verify that the first row is correct
+        assert_eq!(insert_diff.rows[0].pagenum, 3);
+        assert_eq!(insert_diff.rows[0].rownum, 0);
+        assert_eq!(insert_diff.rows[0].row[0], Value::I32(3));
+        assert_eq!(insert_diff.rows[0].row[1], Value::String("Alexander Hamilton".to_string()));
+        assert_eq!(insert_diff.rows[0].row[2], Value::I32(60));
+        // Verify that the second row is correct
+        assert_eq!(insert_diff.rows[1].pagenum, 3);
+        assert_eq!(insert_diff.rows[1].rownum, 1);
+        assert_eq!(insert_diff.rows[1].row[0], Value::I32(4));
+        assert_eq!(insert_diff.rows[1].row[1], Value::String("Aaron Burr".to_string()));
+        assert_eq!(insert_diff.rows[1].row[2], Value::I32(40));
+
+        // Try UpdateDiff
+        let mut rows_to_update: Vec<RowInfo> = vec![insert_diff.rows[1].clone()];
+        rows_to_update[0].row[0] = Value::I32(6);
+        rows_to_update[0].row[1] = Value::String("Aaron Burr the 2nd".to_string());
+        rows_to_update[0].row[2] = Value::I32(50);
+        let update_diff: UpdateDiff = rewrite_rows(&mut table, rows_to_update).unwrap();
+        // Verify that the update_diff is correct
+        assert_eq!(update_diff.row_size, schema_size(&table.schema));
+        assert_eq!(update_diff.num_rows, 1);
+        assert_eq!(update_diff.table_name, "test_differator".to_string());
+        // Verify that the row is correct
+        assert_eq!(update_diff.rows[0].pagenum, 3);
+        assert_eq!(update_diff.rows[0].rownum, 1);
+        assert_eq!(update_diff.rows[0].row[0], Value::I32(6));
+        assert_eq!(update_diff.rows[0].row[1], Value::String("Aaron Burr the 2nd".to_string()));
+        assert_eq!(update_diff.rows[0].row[2], Value::I32(50));
+
+        // Try RemoveDiff
+        let rows_to_remove: Vec<RowLocation> = vec![RowLocation {
+            pagenum: insert_diff.rows[0].clone().pagenum,
+            rownum: insert_diff.rows[0].clone().rownum,
+        }];
+        let remove_diff: RemoveDiff = remove_rows(&mut table, rows_to_remove).unwrap();
+        // Verify that the remove_diff is correct
+        assert_eq!(remove_diff.row_size, schema_size(&table.schema));
+        assert_eq!(remove_diff.num_rows, 1);
+        assert_eq!(remove_diff.table_name, "test_differator".to_string());
+        // Verify that the row is correct
+        assert_eq!(remove_diff.row_locations[0].pagenum, 3);
+        assert_eq!(remove_diff.row_locations[0].rownum, 0);
+        
         // Clean up by removing file
         clean_table(&path);
     }

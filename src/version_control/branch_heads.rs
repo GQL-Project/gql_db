@@ -204,7 +204,11 @@ impl BranchHEADs {
     
             // If the branch name matches, delete the row
             if row_branch_name == *branch_name {
-                remove_rows(&mut self.branch_heads_table, vec![(row_info.pagenum, row_info.rownum)])?;
+                remove_rows(&mut self.branch_heads_table, 
+                            vec![RowLocation {
+                                pagenum: row_info.pagenum,
+                                rownum: row_info.rownum,
+                            }])?;
                 return Ok(())
             }
         }
