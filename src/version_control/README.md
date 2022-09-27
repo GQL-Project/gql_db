@@ -11,7 +11,7 @@
 
 This is a representation of how we would visually think about it, and how it is represented across the 4 version control files for the database.
 
-<kbd>![BranchesStructure2](https://user-images.githubusercontent.com/54650222/192556052-6026bb96-de9c-457e-8ae0-46d33a779c76.png)</kbd>
+<kbd>![BranchesStructure](https://user-images.githubusercontent.com/54650222/192557378-ef1f7a0d-c717-43e4-a927-ad862ebc255c.png)</kbd>
 
 ## Commit Storage
 
