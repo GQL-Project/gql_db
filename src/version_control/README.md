@@ -22,7 +22,7 @@ This is implemented using the Schema and `fileio` functions.
 
 Then, we have a file called `deltas.gql`, which stores the actual commit data. This includes the following fields:
 - Commit Hash: 32 bytes (String)
-- GQL Command: 512 bytes (String)
+- GQL Commands: 512 bytes (String[])
 - Message: 64 bytes (String)
 - Diff Size: 4 bytes (I32)
 - Diff: Variable length (String)
@@ -53,20 +53,20 @@ The `Diff` refers to the changes that are made in this commit, which consists of
      
 The page number and row number help us find the row in the table to update, and additionally allow us to map the changes when needed.
 
-## Branches Storage
+## Branch Storage
 
-Branches are stored in a file separate from the commits. The branches will be stored using a page/offset system similar to the [fileio](https://github.com/GQL-Project/gql_db/tree/main/src/fileio#readme) system. 
+Branches are stored across 2 files: `branches.gql` and `branch_heads.gql`. The `branches.gql` file contains the individual branch nodes that make up the "tree" of the version control. They are linked from the branch HEADs with only prev pointers pointing all the way back to the origin. The branches will be stored using the [fileio](https://github.com/GQL-Project/gql_db/tree/main/src/fileio#readme) system. That allows the `branch_heads.gql` file to contain the HEAD pointer for each branch by storing the page number and offset of the branch node in the `branches.gql` file.
 
-Each branch node is exactly 104 bytes and contains the following information:
-1. Hash (String of 32 bytes)
-2. Prev Pointer [pagenum, offset] (Tuple containing 2 integers, total of 8 bytes)
-3. Branch Name (String of 60 bytes)
+Each branch node contains the following fields:
+- Hash: 32 bytes (String)
+- Prev Pointer [pagenum, offset]: 8 bytes (Tuple containing 2 integers)
+- Branch Name: 60 bytes (String)
 
 ### Accessing Branch Heads
 
-Branch heads are stored separately from the branch nodes. The branch heads are stored in a file called `branch_heads.gql` and are stored in a 4096 byte header as rows of 64 bytes each. They are in the following format:
-1. Branch Name (String of 60 bytes)
-2. Branch Head [pagenum, offset] (Tuple containing 2 shorts, total of 4 bytes)
+Branch heads are stored separately from the branch nodes. The branch heads are stored in a file called `branch_heads.gql` and are stored in a 4096 byte header as rows of 64 bytes each. Each branch head has the following fields:
+- Branch Name: 60 bytes (String)
+- Branch Head [pagenum, offset]: 8 bytes (Tuple containing 2 integers)
 
 ## Merge Strategy
 
