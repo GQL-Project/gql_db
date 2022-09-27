@@ -7,6 +7,12 @@
 * **Source Commits**: When merging, these are the commits that are between the common ancestor and the source branch's HEAD.
 * **Target Commits**: When merging, these are the commits that are between the common ancestor and the target branch's HEAD.
 
+## Overview of Entire Structure
+
+This is a representation of how we would visually think about it, and how it is represented across the 4 version control files for the database.
+
+<kbd>![BranchesStructure](https://user-images.githubusercontent.com/54650222/192554762-c6ed840a-af74-40aa-bf16-b87f9e4ab3ff.png)</kbd>
+
 ## Commit Storage
 
 Commits can have variable length, and hence encoding commits changes cannot be done (completely) using pages. 
