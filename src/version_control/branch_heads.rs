@@ -1,5 +1,5 @@
 use crate::util::{dbtype::*, row::*};
-use crate::fileio::{tableio::*, header::*, pageio::*};
+use crate::fileio::{tableio::*, header::*, pageio::*, *};
 
 #[derive(Clone)]
 pub struct BranchHead {
@@ -21,9 +21,18 @@ impl BranchHEADs {
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
     pub fn new(
-        filepath: &String, 
+        dir_path: &String, 
         create_file: bool
     ) -> Result<BranchHEADs, String> {
+        // Get filepath info
+        let branch_filename: String = format!("{}{}", databaseio::BRANCH_HEADS_FILE_NAME.to_string(), databaseio::BRANCH_HEADS_FILE_EXTENSION.to_string());
+        let filepath: String;
+        if dir_path.len() == 0 {
+            filepath = branch_filename.clone();
+        } else {
+            filepath = format!("{}{}{}", dir_path, std::path::MAIN_SEPARATOR, branch_filename);
+        }
+
         if create_file {
             std::fs::File::create(filepath.clone()).map_err(|e| e.to_string())?;
 
@@ -42,10 +51,12 @@ impl BranchHEADs {
             let page = [0u8; PAGE_SIZE];
             write_page(1, &filepath, &page)?;
         }
-
+        
         Ok(BranchHEADs {
             filepath: filepath.clone(),
-            branch_heads_table: Table::new(filepath.clone())?
+            branch_heads_table: Table::new(&dir_path.clone(), 
+                &databaseio::BRANCH_HEADS_FILE_NAME.to_string(),
+                Some(&databaseio::BRANCH_HEADS_FILE_EXTENSION.to_string()))?
         })
     }
     
@@ -207,11 +218,13 @@ impl BranchHEADs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use crate::fileio::databaseio::*;
 
     #[test]
+    #[serial]
     fn test_creating_branch_heads() {
-        let branch_heads_file: String = "test_branch_heads_file".to_string();
-        let mut branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file, true).unwrap();
+        let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head = BranchHead {
             branch_name: "main".to_string(),
@@ -229,13 +242,13 @@ mod tests {
         assert_eq!(branch_heads[0].row_num, 1);
 
         // Delete the test file
-        std::fs::remove_file(&branch_heads_file).unwrap();
+        std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
     }
 
     #[test]
+    #[serial]
     fn test_creating_multiple_branch_heads() {
-        let branch_heads_file: String = "test_multi_branch_heads_file".to_string();
-        let mut branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file, true).unwrap();
+        let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
@@ -269,13 +282,14 @@ mod tests {
         assert_eq!(test_branch_head.row_num, 2);
 
         // Delete the test file
-        std::fs::remove_file(branch_heads_file).unwrap();
+        std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
     }
 
     #[test]
+    #[serial]
     fn test_updating_branch_head() {
         let branch_heads_file: String = "test_update_branch_heads_file".to_string();
-        let mut branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file, true).unwrap();
+        let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
@@ -321,13 +335,14 @@ mod tests {
         assert_eq!(branch_head_list[1].row_num, 16);
 
         // Delete the test file
-        std::fs::remove_file(branch_heads_file).unwrap();
+        std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
     }
 
     #[test]
+    #[serial]
     fn test_deleting_branch_head() {
         let branch_heads_file: String = "test_delete_branch_heads_file".to_string();
-        let mut branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file, true).unwrap();
+        let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
@@ -364,7 +379,7 @@ mod tests {
         assert_eq!(branch_head_list[0].row_num, 1);
 
         // Delete the test file
-        std::fs::remove_file(branch_heads_file).unwrap();
+        std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
     }
 
 }

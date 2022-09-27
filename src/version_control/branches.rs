@@ -1,4 +1,4 @@
-use crate::fileio::{databaseio::*, header::*, pageio::*, rowio::*, tableio::*};
+use crate::fileio::{databaseio::{*, self}, header::*, pageio::*, rowio::*, tableio::*};
 use crate::util::{dbtype::*, row::*};
 
 #[derive(Clone)]
@@ -22,9 +22,13 @@ impl BranchesFile {
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
     pub fn new(
-        filepath: String, 
+        dir_path: String, 
         create_file: bool
     ) -> Result<BranchesFile, String> {
+        // Get filepath info
+        let branch_filename: String = format!("{}{}", databaseio::BRANCHES_FILE_NAME.to_string(), databaseio::BRANCHES_FILE_EXTENSION.to_string());
+        let filepath: String = format!("{}{}{}", dir_path, std::path::MAIN_SEPARATOR, branch_filename);
+
         if create_file {
             std::fs::File::create(filepath.clone()).map_err(|e| e.to_string())?;
 
@@ -47,7 +51,9 @@ impl BranchesFile {
 
         Ok(BranchesFile {
             filepath: filepath.clone(),
-            branches_table: Table::new(filepath.clone())?
+            branches_table: Table::new(&dir_path.clone(), 
+                &databaseio::BRANCHES_FILE_NAME.to_string(),
+                Some(&databaseio::BRANCHES_FILE_EXTENSION.to_string()))?
         })
     }
 }

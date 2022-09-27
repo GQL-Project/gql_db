@@ -1,11 +1,13 @@
-use crate::util::row::{Row, RowInfo};
+use itertools::Update;
 
+use crate::{util::row::{Row, RowInfo}, version_control::diff::UpdateDiff};
 use super::{databaseio::*, header::*, pageio::*, rowio::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
 #[derive(Clone)]
 pub struct Table {
+    pub name: String, // The name of the table without the file extension.
     pub schema: Schema,
     pub page: Box<Page>,
     pub path: String,
@@ -17,10 +19,26 @@ pub struct Table {
 
 impl Table {
     // Construct a new table.
-    pub fn new(path: String) -> Result<Table, String> {
+    pub fn new(
+        directory: &String, 
+        table_name: &String,
+        table_extension: Option<&String> // Optionally specify a file extension. Defaults to TABLE_FILE_EXTENSION.
+    ) -> Result<Table, String> {
+        // Construct the path to the table file.
+        let mut path: String;
+        if directory.len() == 0 {
+            path = table_name.clone();
+        }
+        else {
+            path = format!("{}{}{}", directory, std::path::MAIN_SEPARATOR, table_name);
+        }
+        // Add table extension
+        path = format!("{}{}", path, table_extension.unwrap_or(&TABLE_FILE_EXTENSION.to_string()));
+
         let header = read_header(&path)?;
         let page = Box::new([0u8; PAGE_SIZE]);
         Ok(Table {
+            name: table_name.to_string(),
             schema_size: schema_size(&header.schema),
             schema: header.schema,
             page,
@@ -81,12 +99,13 @@ impl Iterator for Table {
 /// Creates a new table within the given database named <table_name><TABLE_FILE_EXTENSION>
 /// with the given schema.
 pub fn create_table(
-    table_name: String,
+    table_name: &String,
     schema: &Schema,
     database: &Database,
 ) -> Result<Table, String> {
+    let table_dir: String = database.get_current_branch_path();
     // Create a table file
-    let table_path: String = database.get_current_branch_path() + 
+    let table_path: String = table_dir.clone() + 
                              std::path::MAIN_SEPARATOR.to_string().as_str() + 
                              &table_name +
                              TABLE_FILE_EXTENSION.to_string().as_str();
@@ -104,13 +123,16 @@ pub fn create_table(
     write_page(1, &table_path, &page)?;
 
     // Return the table
-    Ok(Table::new(table_path.to_string())?)
+    Ok(Table::new(&table_dir.clone(), &table_name.clone(), None)?)
 }
 
 
 /// This function is helpful when doing Updates
 /// It allows us to rewrite a specific row from the table.
+/// It returns a diff of the rows that were updated.
 pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<(), String> {
+    //let mut diff: UpdateDiff = UpdateDiff::new(table.);
+
     // To reduce page updates, we sort the rows by page number.
     if rows.len() < 1 {
         return Ok(());
@@ -191,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_read_iterator() {
-        let path = "test_readterator.db".to_string();
+        let path = "test_readterator".to_string();
         let table = create_table(&path);
         // Zip iterator with index
         for (i, rowinfo) in table.enumerate() {
@@ -215,7 +237,7 @@ mod tests {
 
     #[test]
     fn test_replaces() {
-        let path = "test_replacerator.db".to_string();
+        let path = "test_replacerator".to_string();
         let table = create_table(&path);
         let row = vec![
             Value::I32(3),
@@ -255,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_removes() {
-        let path = "test_removerator.db".to_string();
+        let path = "test_removerator".to_string();
         let table = create_table(&path);
 
         let rows: Vec<(u32, u16)> = (10..50)
@@ -271,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_inserts() {
-        let path = "test_inserterator.db".to_string();
+        let path = "test_inserterator".to_string();
         let mut table = create_table(&path);
         let row = vec![
             Value::I32(3),
@@ -324,7 +346,8 @@ mod tests {
 
     fn create_table(path: &String) -> Table {
         // Creates a file table
-        create_file(path).unwrap();
+        let filepath: String = path.clone() + &TABLE_FILE_EXTENSION.to_string();
+        create_file(&filepath).unwrap();
         let schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
@@ -334,7 +357,7 @@ mod tests {
             num_pages: 3,
             schema: schema.clone(),
         };
-        write_header(path, &header).unwrap();
+        write_header(&filepath, &header).unwrap();
         let row = vec![
             Value::I32(1),
             Value::String("John Constantine".to_string()),
@@ -342,7 +365,7 @@ mod tests {
         ];
         let mut page = [0u8; PAGE_SIZE];
         while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
-        write_page(1, path, &page).unwrap();
+        write_page(1, &filepath, &page).unwrap();
 
         let row = vec![
             Value::I32(2),
@@ -351,12 +374,13 @@ mod tests {
         ];
         let mut page = [0u8; PAGE_SIZE];
         while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
-        write_page(2, path, &page).unwrap();
+        write_page(2, &filepath, &page).unwrap();
         // Clean up by removing file
-        Table::new(path.to_string()).unwrap()
+        Table::new(&"".to_string(), &path.to_string(), None).unwrap()
     }
 
     fn clean_table(path: &String) {
-        std::fs::remove_file(path).unwrap();
+        let filepath: String = path.clone() + &TABLE_FILE_EXTENSION.to_string();
+        std::fs::remove_file(&filepath).unwrap();
     }
 }

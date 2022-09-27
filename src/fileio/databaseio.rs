@@ -5,24 +5,24 @@ use std::env;
 use std::path::Path;
 
 // Branch Constants
-const MAIN_BRANCH_NAME: &str = "main";
-const DB_NAME_BRANCH_SEPARATOR: char = '-';
+pub const MAIN_BRANCH_NAME: &str = "main";
+pub const DB_NAME_BRANCH_SEPARATOR: char = '-';
 
 // Deltas File Constants
-const DELTAS_FILE_NAME: &str = "deltas";
-const DELTAS_FILE_EXTENSION: &str = ".gql";
+pub const DELTAS_FILE_NAME: &str = "deltas";
+pub const DELTAS_FILE_EXTENSION: &str = ".gql";
 
 // Commit Headers File Constants
-const COMMIT_HEADERS_FILE_NAME: &str = "commitheaders";
-const COMMIT_HEADERS_FILE_EXTENSION: &str = ".gql";
+pub const COMMIT_HEADERS_FILE_NAME: &str = "commitheaders";
+pub const COMMIT_HEADERS_FILE_EXTENSION: &str = ".gql";
 
 // Branches File Constants
-const BRANCHES_FILE_NAME: &str = "branches";
-const BRANCHES_FILE_EXTENSION: &str = ".gql";
+pub const BRANCHES_FILE_NAME: &str = "branches";
+pub const BRANCHES_FILE_EXTENSION: &str = ".gql";
 
 // Branch HEADs File Constants
-const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
-const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
+pub const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
+pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
 #[derive(Clone)]
 pub struct Database {
@@ -76,8 +76,7 @@ impl Database {
 
         // Create the branch_heads file, which holds all the branch HEADs for the database
         // './databases/<database_name>/branch_heads.gql'
-        let branch_heads_file_path: String = Database::append_branch_heads_file_path(db_path.clone());
-        let branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file_path.clone(), true)?;
+        let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), true)?;
 
         // Now create the directory for the main branch
         // './databases/<database_name>/<database_name>-<branch_name>/'
@@ -125,8 +124,7 @@ impl Database {
         main_branch_path.push_str(MAIN_BRANCH_NAME);
         
         // Load the branch_heads.gql file, which holds all the branch HEADs for the database
-        let branch_heads_file_path: String = Database::append_branch_heads_file_path(db_path.clone());
-        let branch_heads: BranchHEADs = BranchHEADs::new(&branch_heads_file_path.clone(), false)?;
+        let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), false)?;
 
         Ok(Database {
             db_path: db_path,
@@ -467,7 +465,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table("test_table".to_string(), &schema, &new_db).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
 
         // Make sure the table path is correct
         assert_eq!(
@@ -510,7 +508,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table("test_table".to_string(), &schema, &new_db).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
 
         // Load the database
         let mut loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
