@@ -65,9 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         //let get_response;
         // GQL
         if command.starts_with("GQL ") {
-            client
-                .run_version_control_command(Request::new(request.clone()))
-                .await?;
+            client.run_version_control_command(Request::new(request.clone())).await?;
         } else {
             client.run_query(Request::new(request.clone())).await?;
         }
