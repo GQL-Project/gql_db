@@ -1,5 +1,5 @@
-use super::tableio::TABLE_FILE_EXTENSION;
-use crate::{fileio::tableio::*, version_control::{branch_heads::*, branches::*}};
+use super::tableio::*;
+use crate::{version_control::{branch_heads::*}};
 use glob::glob;
 use std::env;
 use std::path::Path;
@@ -251,7 +251,7 @@ impl Database {
         }
 
         // Create the new branch head
-        let new_branch_head: BranchHead = BranchHead {
+        let _new_branch_head: BranchHead = BranchHead {
             branch_name: branch_name.clone(),
             pagenum: 0, // TODO: Set this after branch has been created 
             rownum: 0   // TODO: Set this after branch has been created
@@ -360,7 +360,7 @@ mod tests {
         );
 
         // Create the database
-        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
+        let new_db: Database = Database::new(db_name.clone()).unwrap();
 
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
@@ -394,7 +394,7 @@ mod tests {
         );
 
         // Create the database
-        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
+        let new_db: Database = Database::new(db_name.clone()).unwrap();
 
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
@@ -454,7 +454,7 @@ mod tests {
         );
 
         // Create the database
-        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
+        let new_db: Database = Database::new(db_name.clone()).unwrap();
 
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
@@ -511,7 +511,7 @@ mod tests {
         create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
 
         // Load the database
-        let mut loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
+        let loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
 
         // Make sure the database path is correct
         assert_eq!(loaded_db.get_database_path(), db_base_path.clone());

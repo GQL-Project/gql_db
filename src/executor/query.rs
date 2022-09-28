@@ -128,7 +128,7 @@ mod tests {
         let columns = ["*".to_string()];
         let tables = [("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
     
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
     
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -181,7 +181,7 @@ mod tests {
         let tables = [("test_table1".to_string(), "T1".to_string()),
                                              ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
     
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
     
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -274,7 +274,7 @@ mod tests {
         let columns = ["T.id".to_string(), "T.name".to_string()];
         let tables = [("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
     
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
     
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -339,7 +339,7 @@ mod tests {
         let tables = [("test_table1".to_string(), "T1".to_string()),
                                              ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
     
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
     
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -419,7 +419,7 @@ mod tests {
         let columns = ["id".to_string(), "name".to_string(), "age".to_string(), "invalid_column".to_string()];
         let tables = [("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
 
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
 
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -461,7 +461,7 @@ mod tests {
         let tables = [("test_table1".to_string(), "".to_string()),
                                              ("test_table2".to_string(), "".to_string())]; // [(table_name, alias)]
 
-        let mut new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
 
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),

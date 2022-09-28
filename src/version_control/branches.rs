@@ -1,13 +1,13 @@
 use crate::fileio::{
-    databaseio::{self, *},
+    databaseio::{self},
     header::*,
     pageio::*,
-    rowio::*,
     tableio::*,
 };
 use crate::util::{dbtype::*, row::*};
 use super::{diff::*, branch_heads::*};
 
+/// This represents a branch node in the database. It is a single row in the `branches.gql` table.
 #[derive(Clone)]
 pub struct BranchNode {
     pub branch_name: String, // The name of the branch this node is on.

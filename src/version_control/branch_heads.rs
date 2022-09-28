@@ -2,6 +2,7 @@ use crate::fileio::{header::*, pageio::*, tableio::*, *};
 use crate::util::{dbtype::*, row::*};
 use crate::version_control::branches::*;
 
+/// This represents a branch head. It is a single row in the `branch_heads.gql` table.
 #[derive(Clone)]
 pub struct BranchHead {
     pub branch_name: String,
@@ -341,7 +342,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_updating_branch_head() {
-        let branch_heads_file: String = "test_update_branch_heads_file".to_string();
+        let _branch_heads_file: String = "test_update_branch_heads_file".to_string();
         let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {
@@ -398,7 +399,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_deleting_branch_head() {
-        let branch_heads_file: String = "test_delete_branch_heads_file".to_string();
+        let _branch_heads_file: String = "test_delete_branch_heads_file".to_string();
         let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {
