@@ -1,4 +1,10 @@
-use crate::fileio::{databaseio::{*, self}, header::*, pageio::*, rowio::*, tableio::*};
+use crate::fileio::{
+    databaseio::{self, *},
+    header::*,
+    pageio::*,
+    rowio::*,
+    tableio::*,
+};
 use crate::util::{dbtype::*, row::*};
 use super::{diff::*, branch_heads::*};
 
@@ -10,14 +16,14 @@ pub struct BranchNode {
     pub prev_rownum: i32,    // The row number of the previous branch node. Will be -1 if this is the first node.
     pub curr_pagenum: i32,   // The page number of the current branch node.
     pub curr_rownum: i32,    // The row number of the current branch node.
-    pub is_head: bool        // Whether or not this node is the head of the branch.
+    pub is_head: bool,       // Whether or not this node is the head of the branch.
 }
 
 /// This is designed to represent the branches.gql file for a database.
 #[derive(Clone)]
 pub struct Branches {
     pub filepath: String, // This is only public to allow file cleanup duing testing
-    branches_table: Table
+    branches_table: Table,
 }
 
 impl BranchNode {
@@ -25,19 +31,19 @@ impl BranchNode {
     pub fn new(row: &Row) -> Result<Self, String> {
         let branch_name: String = match row.get(0) {
             Some(Value::String(s)) => s.clone(),
-            _ => return Err("Invalid branch name".to_string())
+            _ => return Err("Invalid branch name".to_string()),
         };
         let commit_hash: String = match row.get(1) {
             Some(Value::String(s)) => s.clone(),
-            _ => return Err("Invalid commit hash".to_string())
+            _ => return Err("Invalid commit hash".to_string()),
         };
         let prev_pagenum: i32 = match row.get(2) {
             Some(Value::I32(i)) => *i,
-            _ => return Err("Invalid page number".to_string())
+            _ => return Err("Invalid page number".to_string()),
         };
         let prev_rownum: i32 = match row.get(3) {
             Some(Value::I32(i)) => *i,
-            _ => return Err("Invalid row number".to_string())
+            _ => return Err("Invalid row number".to_string()),
         };
         let curr_pagenum: i32 = match row.get(4) {
             Some(Value::I32(i)) => *i,
@@ -59,7 +65,7 @@ impl BranchNode {
             prev_rownum,
             curr_pagenum,
             curr_rownum,
-            is_head
+            is_head,
         })
     }
 }
@@ -74,8 +80,17 @@ impl Branches {
         create_file: bool
     ) -> Result<Branches, String> {
         // Get filepath info
-        let branch_filename: String = format!("{}{}", databaseio::BRANCHES_FILE_NAME.to_string(), databaseio::BRANCHES_FILE_EXTENSION.to_string());
-        let mut filepath: String = format!("{}{}{}", dir_path, std::path::MAIN_SEPARATOR, branch_filename);
+        let branch_filename: String = format!(
+            "{}{}", 
+            databaseio::BRANCHES_FILE_NAME.to_string(), 
+            databaseio::BRANCHES_FILE_EXTENSION.to_string()
+        );
+        let mut filepath: String = format!(
+            "{}{}{}", 
+            dir_path, 
+            std::path::MAIN_SEPARATOR, 
+            branch_filename
+        );
         // If the directory path is not given, use the current directory
         if dir_path.len() == 0 {
             filepath = branch_filename;
@@ -91,7 +106,7 @@ impl Branches {
                 ("prev_row_num".to_string(), Column::I32),
                 ("curr_page_num".to_string(), Column::I32),
                 ("curr_row_num".to_string(), Column::I32),
-                ("is_head".to_string(), Column::Bool)
+                ("is_head".to_string(), Column::Bool),
             ];
             let header = Header {
                 num_pages: 2,
@@ -106,12 +121,13 @@ impl Branches {
 
         Ok(Branches {
             filepath: filepath.clone(),
-            branches_table: Table::new(&dir_path.clone(), 
+            branches_table: Table::new(
+                &dir_path.clone(),
                 &databaseio::BRANCHES_FILE_NAME.to_string(),
-                Some(&databaseio::BRANCHES_FILE_EXTENSION.to_string()))?
+                Some(&databaseio::BRANCHES_FILE_EXTENSION.to_string()),
+            )?,
         })
     }
-
 
     /// Returns a branch node from the given page row and number.
     pub fn get_branch_node(&self, row_location: &RowLocation) -> Result<BranchNode, String> {
@@ -119,12 +135,11 @@ impl Branches {
         Ok(BranchNode::new(&row)?)
     }
 
-
     /// Returns the previous branch node from the given branch node
     pub fn get_prev_branch_node(&self, branch_node: &BranchNode) -> Result<BranchNode, String> {
         let row_location = RowLocation {
             pagenum: branch_node.prev_pagenum as u32,
-            rownum: branch_node.prev_rownum as u16
+            rownum: branch_node.prev_rownum as u16,
         };
         self.get_branch_node(&row_location)
     }
