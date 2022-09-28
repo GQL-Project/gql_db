@@ -253,8 +253,8 @@ impl Database {
         // Create the new branch head
         let new_branch_head: BranchHead = BranchHead {
             branch_name: branch_name.clone(),
-            page_num: 0, // TODO: Set this after branch has been created 
-            row_num: 0   // TODO: Set this after branch has been created
+            pagenum: 0, // TODO: Set this after branch has been created 
+            rownum: 0   // TODO: Set this after branch has been created
         };
 
         // TODO: implementation

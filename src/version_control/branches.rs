@@ -3,10 +3,10 @@ use crate::util::{dbtype::*, row::*};
 
 #[derive(Clone)]
 pub struct BranchNode {
-    pub commit_hash: String,
-    pub page_num: i32,
-    pub row_num: i32,
-    pub branch_name: String
+    pub branch_name: String, // The name of the branch this node is on.
+    pub commit_hash: String, // The commit hash that this node is associated with.
+    pub prev_pagenum: i32,  // The page number of the previous branch node.
+    pub prev_rownum: i32    // The row number of the previous branch node.
 }
 
 /// This is designed to represent the branches.gql file for a database.
@@ -14,6 +14,35 @@ pub struct BranchNode {
 pub struct BranchesFile {
     filepath: String,
     branches_table: Table
+}
+
+impl BranchNode {
+    /// Create a new BranchNode from a row of data read from the branches.gql table
+    pub fn new(row: Row) -> Result<Self, String> {
+        let branch_name: String = match row.get(0) {
+            Some(Value::String(s)) => s.clone(),
+            _ => return Err("Invalid branch name".to_string())
+        };
+        let commit_hash: String = match row.get(1) {
+            Some(Value::String(s)) => s.clone(),
+            _ => return Err("Invalid commit hash".to_string())
+        };
+        let page_num: i32 = match row.get(2) {
+            Some(Value::I32(i)) => *i,
+            _ => return Err("Invalid page number".to_string())
+        };
+        let row_num: i32 = match row.get(3) {
+            Some(Value::I32(i)) => *i,
+            _ => return Err("Invalid row number".to_string())
+        };
+
+        Ok(Self {
+            branch_name,
+            commit_hash,
+            prev_pagenum: page_num,
+            prev_rownum: row_num
+        })
+    }
 }
 
 
@@ -33,10 +62,10 @@ impl BranchesFile {
             std::fs::File::create(filepath.clone()).map_err(|e| e.to_string())?;
 
             let schema = vec![
+                ("branch_name".to_string(), Column::String(60)),
                 ("commit_hash".to_string(), Column::String(32)),
                 ("page_num".to_string(), Column::I32),
-                ("row_num".to_string(), Column::I32),
-                ("branch_name".to_string(), Column::String(60))
+                ("row_num".to_string(), Column::I32)
             ];
             let header = Header {
                 num_pages: 2,
@@ -55,5 +84,22 @@ impl BranchesFile {
                 &databaseio::BRANCHES_FILE_NAME.to_string(),
                 Some(&databaseio::BRANCHES_FILE_EXTENSION.to_string()))?
         })
+    }
+
+
+    /// Returns a branch node from the given page row and number.
+    pub fn get_branch_node(&self, row_location: RowLocation) -> Result<BranchNode, String> {
+        let row = get_row(&self.branches_table, row_location)?;
+        Ok(BranchNode::new(row)?)
+    }
+
+
+    /// Returns the previous branch node from the given branch node
+    pub fn get_prev_branch_node(&self, branch_node: &BranchNode) -> Result<BranchNode, String> {
+        let row_location = RowLocation {
+            pagenum: branch_node.prev_pagenum as u32,
+            rownum: branch_node.prev_rownum as u16
+        };
+        self.get_branch_node(row_location)
     }
 }

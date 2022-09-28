@@ -1,11 +1,12 @@
 use crate::util::{dbtype::*, row::*};
 use crate::fileio::{tableio::*, header::*, pageio::*, *};
+use crate::version_control::branches::*;
 
 #[derive(Clone)]
 pub struct BranchHead {
     pub branch_name: String,
-    pub page_num: i32,
-    pub row_num: i32,
+    pub pagenum: i32,
+    pub rownum: i32,
 }
 
 /// This is designed to represent the branch_heads.gql file for a database.
@@ -61,7 +62,7 @@ impl BranchHEADs {
     }
     
     
-    /// Takes in a branch name and returns the corresponding branch head
+    /// Takes in a branch name and returns the corresponding branch HEAD.
     pub fn get_branch_head(
         &mut self, 
         branch_name: &String
@@ -75,6 +76,20 @@ impl BranchHEADs {
         }
 
         return Err("Branch name not present in branch HEADs file".to_string())
+    }
+
+
+    /// Returns the branch node for the HEAD of the given branch.
+    pub fn get_branch_head_node(
+        &mut self, 
+        branch_name: &String,
+        branches_file: &BranchesFile
+    ) -> Result<BranchNode, String> {
+        let branch_head: BranchHead = self.get_branch_head(branch_name)?;
+        Ok(branches_file.get_branch_node(RowLocation {
+            pagenum: branch_head.pagenum as u32,
+            rownum: branch_head.rownum as u16
+        })?)
     }
 
 
@@ -111,8 +126,8 @@ impl BranchHEADs {
     
             let branch_head: BranchHead = BranchHead {
                 branch_name: branch_name,
-                page_num: page_num,
-                row_num: row_num,
+                pagenum: page_num,
+                rownum: row_num,
             };
     
             branch_heads.push(branch_head);
@@ -131,8 +146,8 @@ impl BranchHEADs {
             // Just make one new row
             vec![
                 Value::String(branch_head.branch_name.clone()),
-                Value::I32(branch_head.page_num),
-                Value::I32(branch_head.row_num)
+                Value::I32(branch_head.pagenum),
+                Value::I32(branch_head.rownum)
             ],
         ];
         insert_rows(&mut self.branch_heads_table, rows)?;
@@ -164,8 +179,8 @@ impl BranchHEADs {
                 let updated_row_info: RowInfo = RowInfo {
                     row: vec![
                         Value::String(branch_head.branch_name.clone()),
-                        Value::I32(branch_head.page_num),
-                        Value::I32(branch_head.row_num)
+                        Value::I32(branch_head.pagenum),
+                        Value::I32(branch_head.rownum)
                     ],
                     pagenum: row_info.pagenum,
                     rownum: row_info.rownum,
@@ -232,8 +247,8 @@ mod tests {
 
         let branch_head = BranchHead {
             branch_name: "main".to_string(),
-            page_num: 1,
-            row_num: 1,
+            pagenum: 1,
+            rownum: 1,
         };
 
         branch_heads.write_new_branch_head(&branch_head).unwrap();
@@ -242,8 +257,8 @@ mod tests {
 
         assert_eq!(branch_heads.len(), 1);
         assert_eq!(branch_heads[0].branch_name, "main");
-        assert_eq!(branch_heads[0].page_num, 1);
-        assert_eq!(branch_heads[0].row_num, 1);
+        assert_eq!(branch_heads[0].pagenum, 1);
+        assert_eq!(branch_heads[0].rownum, 1);
 
         // Delete the test file
         std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
@@ -256,14 +271,14 @@ mod tests {
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
-            page_num: 1,
-            row_num: 1,
+            pagenum: 1,
+            rownum: 1,
         };
 
         let branch_head2 = BranchHead {
             branch_name: "test".to_string(),
-            page_num: 2,
-            row_num: 2,
+            pagenum: 2,
+            rownum: 2,
         };
 
         branch_heads.write_new_branch_head(&branch_head1).unwrap();
@@ -273,17 +288,17 @@ mod tests {
 
         assert_eq!(branch_head_list.len(), 2);
         assert_eq!(branch_head_list[0].branch_name, "main");
-        assert_eq!(branch_head_list[0].page_num, 1);
-        assert_eq!(branch_head_list[0].row_num, 1);
+        assert_eq!(branch_head_list[0].pagenum, 1);
+        assert_eq!(branch_head_list[0].rownum, 1);
         assert_eq!(branch_head_list[1].branch_name, "test");
-        assert_eq!(branch_head_list[1].page_num, 2);
-        assert_eq!(branch_head_list[1].row_num, 2);
+        assert_eq!(branch_head_list[1].pagenum, 2);
+        assert_eq!(branch_head_list[1].rownum, 2);
 
         let test_branch_head: BranchHead = branch_heads.get_branch_head(&"test".to_string()).unwrap();
 
         assert_eq!(test_branch_head.branch_name, "test");
-        assert_eq!(test_branch_head.page_num, 2);
-        assert_eq!(test_branch_head.row_num, 2);
+        assert_eq!(test_branch_head.pagenum, 2);
+        assert_eq!(test_branch_head.rownum, 2);
 
         // Delete the test file
         std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
@@ -297,14 +312,14 @@ mod tests {
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
-            page_num: 1,
-            row_num: 1,
+            pagenum: 1,
+            rownum: 1,
         };
 
         let branch_head2 = BranchHead {
             branch_name: "test".to_string(),
-            page_num: 2,
-            row_num: 2,
+            pagenum: 2,
+            rownum: 2,
         };
 
         branch_heads.write_new_branch_head(&branch_head1).unwrap();
@@ -312,19 +327,19 @@ mod tests {
 
         let branch_head3 = BranchHead {
             branch_name: "test".to_string(),
-            page_num: 5,
-            row_num: 16,
+            pagenum: 5,
+            rownum: 16,
         };
 
         let branch_head_list = branch_heads.get_all_branch_heads().unwrap();
 
         assert_eq!(branch_head_list.len(), 2);
         assert_eq!(branch_head_list[0].branch_name, "main");
-        assert_eq!(branch_head_list[0].page_num, 1);
-        assert_eq!(branch_head_list[0].row_num, 1);
+        assert_eq!(branch_head_list[0].pagenum, 1);
+        assert_eq!(branch_head_list[0].rownum, 1);
         assert_eq!(branch_head_list[1].branch_name, "test");
-        assert_eq!(branch_head_list[1].page_num, 2);
-        assert_eq!(branch_head_list[1].row_num, 2);
+        assert_eq!(branch_head_list[1].pagenum, 2);
+        assert_eq!(branch_head_list[1].rownum, 2);
 
         branch_heads.update_branch_head(&branch_head3).unwrap();
 
@@ -332,11 +347,11 @@ mod tests {
 
         assert_eq!(branch_head_list.len(), 2);
         assert_eq!(branch_head_list[0].branch_name, "main");
-        assert_eq!(branch_head_list[0].page_num, 1);
-        assert_eq!(branch_head_list[0].row_num, 1);
+        assert_eq!(branch_head_list[0].pagenum, 1);
+        assert_eq!(branch_head_list[0].rownum, 1);
         assert_eq!(branch_head_list[1].branch_name, "test");
-        assert_eq!(branch_head_list[1].page_num, 5);
-        assert_eq!(branch_head_list[1].row_num, 16);
+        assert_eq!(branch_head_list[1].pagenum, 5);
+        assert_eq!(branch_head_list[1].rownum, 16);
 
         // Delete the test file
         std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();
@@ -350,14 +365,14 @@ mod tests {
 
         let branch_head1 = BranchHead {
             branch_name: "main".to_string(),
-            page_num: 1,
-            row_num: 1,
+            pagenum: 1,
+            rownum: 1,
         };
 
         let branch_head2 = BranchHead {
             branch_name: "test".to_string(),
-            page_num: 2,
-            row_num: 2,
+            pagenum: 2,
+            rownum: 2,
         };
 
         branch_heads.write_new_branch_head(&branch_head1).unwrap();
@@ -367,11 +382,11 @@ mod tests {
 
         assert_eq!(branch_head_list.len(), 2);
         assert_eq!(branch_head_list[0].branch_name, "main");
-        assert_eq!(branch_head_list[0].page_num, 1);
-        assert_eq!(branch_head_list[0].row_num, 1);
+        assert_eq!(branch_head_list[0].pagenum, 1);
+        assert_eq!(branch_head_list[0].rownum, 1);
         assert_eq!(branch_head_list[1].branch_name, "test");
-        assert_eq!(branch_head_list[1].page_num, 2);
-        assert_eq!(branch_head_list[1].row_num, 2);
+        assert_eq!(branch_head_list[1].pagenum, 2);
+        assert_eq!(branch_head_list[1].rownum, 2);
 
         branch_heads.delete_branch_head(&"test".to_string()).unwrap();
 
@@ -379,8 +394,8 @@ mod tests {
 
         assert_eq!(branch_head_list.len(), 1);
         assert_eq!(branch_head_list[0].branch_name, "main");
-        assert_eq!(branch_head_list[0].page_num, 1);
-        assert_eq!(branch_head_list[0].row_num, 1);
+        assert_eq!(branch_head_list[0].pagenum, 1);
+        assert_eq!(branch_head_list[0].rownum, 1);
 
         // Delete the test file
         std::fs::remove_file(format!("{}{}", BRANCH_HEADS_FILE_NAME, BRANCH_HEADS_FILE_EXTENSION)).unwrap();

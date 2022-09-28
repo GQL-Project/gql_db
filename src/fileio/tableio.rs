@@ -256,6 +256,18 @@ pub fn remove_rows(table: &Table, rows: Vec<RowLocation>) -> Result<RemoveDiff, 
 }
 
 
+/// Get the row from the table specified by the tuple (pagenum, rownum)
+pub fn get_row(table: &Table, row_location: RowLocation) -> Result<Row, String> {
+    // Read the page from the table file
+    let page: Page = *read_page(row_location.pagenum, &table.path)?;
+    
+    // Get the row from the page based on the schema size
+    match read_row(&table.schema, &page, row_location.rownum) {
+        Some(row) => { return Ok(row); },
+        None => Err("Row not found".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
