@@ -4,6 +4,14 @@ use crate::{fileio::header::*, util::row::*};
 /*                                         Diff Structs                                            */
 /***************************************************************************************************/
 
+pub enum Diff {
+    Update(UpdateDiff),
+    Insert(InsertDiff),
+    Remove(RemoveDiff),
+    TableCreate(TableCreateDiff),
+    TableRemove(TableRemoveDiff),
+}
+
 #[derive(Clone)]
 pub struct UpdateDiff {
     pub table_name: String, // The name of the table that the rows were updated in
