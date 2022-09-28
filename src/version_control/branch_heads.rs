@@ -12,8 +12,19 @@ pub struct BranchHead {
 /// This is designed to represent the branch_heads.gql file for a database.
 #[derive(Clone)]
 pub struct BranchHEADs {
-    filepath: String,
+    pub filepath: String, // This is only public to allow file cleanup duing testing
     branch_heads_table: Table
+}
+
+
+impl BranchHead {
+    /// Gets the branch node location from a given branch HEAD
+    pub fn get_branch_node_location(&self) -> RowLocation {
+        RowLocation {
+            pagenum: self.pagenum as u32,
+            rownum: self.rownum as u16
+        }
+    }
 }
 
 
@@ -83,10 +94,10 @@ impl BranchHEADs {
     pub fn get_branch_head_node(
         &mut self, 
         branch_name: &String,
-        branches_file: &BranchesFile
+        branches_file: &Branches
     ) -> Result<BranchNode, String> {
         let branch_head: BranchHead = self.get_branch_head(branch_name)?;
-        Ok(branches_file.get_branch_node(RowLocation {
+        Ok(branches_file.get_branch_node(&RowLocation {
             pagenum: branch_head.pagenum as u32,
             rownum: branch_head.rownum as u16
         })?)
@@ -138,7 +149,7 @@ impl BranchHEADs {
 
 
     /// Writes a new branch head to the branch heads file
-    pub fn write_new_branch_head(
+    pub fn create_branch_head(
         &mut self, 
         branch_head: &BranchHead
     ) -> Result<(), String> {
@@ -198,6 +209,26 @@ impl BranchHEADs {
     }
 
 
+    /// Set branch head object with a new branch node
+    /// This function is used when an existing branch gets a new branch node
+    pub fn set_branch_head(
+        &mut self, 
+        branch_name: &String,
+        new_branch_node_loc: &RowLocation,
+    ) -> Result<(), String> {
+        // Get the branch head
+        let mut branch_head: BranchHead = self.get_branch_head(branch_name)?;
+    
+        // Update the branch head
+        branch_head.pagenum = new_branch_node_loc.pagenum as i32;
+        branch_head.rownum = new_branch_node_loc.rownum as i32;
+    
+        // Update the branch head in the branch heads file
+        self.update_branch_head(&branch_head)?;
+        Ok(())
+    }
+
+
     /// Deletes a branch head from the branch heads file
     /// Returns an error if the branch name is not present in the branch heads file
     pub fn delete_branch_head(
@@ -251,7 +282,7 @@ mod tests {
             rownum: 1,
         };
 
-        branch_heads.write_new_branch_head(&branch_head).unwrap();
+        branch_heads.create_branch_head(&branch_head).unwrap();
 
         let branch_heads = branch_heads.get_all_branch_heads().unwrap();
 
@@ -281,8 +312,8 @@ mod tests {
             rownum: 2,
         };
 
-        branch_heads.write_new_branch_head(&branch_head1).unwrap();
-        branch_heads.write_new_branch_head(&branch_head2).unwrap();
+        branch_heads.create_branch_head(&branch_head1).unwrap();
+        branch_heads.create_branch_head(&branch_head2).unwrap();
 
         let branch_head_list = branch_heads.get_all_branch_heads().unwrap();
 
@@ -322,8 +353,8 @@ mod tests {
             rownum: 2,
         };
 
-        branch_heads.write_new_branch_head(&branch_head1).unwrap();
-        branch_heads.write_new_branch_head(&branch_head2).unwrap();
+        branch_heads.create_branch_head(&branch_head1).unwrap();
+        branch_heads.create_branch_head(&branch_head2).unwrap();
 
         let branch_head3 = BranchHead {
             branch_name: "test".to_string(),
@@ -375,8 +406,8 @@ mod tests {
             rownum: 2,
         };
 
-        branch_heads.write_new_branch_head(&branch_head1).unwrap();
-        branch_heads.write_new_branch_head(&branch_head2).unwrap();
+        branch_heads.create_branch_head(&branch_head1).unwrap();
+        branch_heads.create_branch_head(&branch_head2).unwrap();
 
         let branch_head_list = branch_heads.get_all_branch_heads().unwrap();
 
