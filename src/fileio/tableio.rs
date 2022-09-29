@@ -143,7 +143,7 @@ pub fn create_table(
 /// It returns a diff of the rows that were updated.
 pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
     // Keep track of how the rows have changed.
-    let mut diff: UpdateDiff = UpdateDiff::new(table.name.clone(), 0, Vec::new());
+    let mut diff: UpdateDiff = UpdateDiff::new(table.name.clone(), Vec::new());
 
     // To reduce page updates, we sort the rows by page number.
     if rows.len() < 1 {
@@ -160,7 +160,6 @@ pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff,
         }
         write_row(&table.schema, &mut page, &row.row, row.rownum)?;
         // Add the row to the diff
-        diff.num_rows += 1;
         diff.rows.push(row.clone());
     }
     // Write the last page
@@ -173,7 +172,7 @@ pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff,
 /// It returns a diff of the rows that were inserted.
 pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, String> {
     // Keep track of how the rows have changed.
-    let mut diff: InsertDiff = InsertDiff::new(table.name.clone(), 0, Vec::new());
+    let mut diff: InsertDiff = InsertDiff::new(table.name.clone(), Vec::new());
 
     // Just return right away if we aren't inserting any rows
     if rows.len() == 0 {
@@ -198,7 +197,6 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, Stri
         }
 
         // Add the information to the diff
-        diff.num_rows += 1;
         diff.rows.push(RowInfo {
             row: row.clone(),
             pagenum,
@@ -215,7 +213,7 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, Stri
 /// It returns a diff of the rows that were removed.
 pub fn remove_rows(table: &Table, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
     // Keep track of how the rows have changed.
-    let mut diff: RemoveDiff = RemoveDiff::new(table.name.clone(), 0, Vec::new());
+    let mut diff: RemoveDiff = RemoveDiff::new(table.name.clone(), Vec::new());
 
     // Return right away if we aren't removing any rows
     if rows.len() == 0 {
@@ -235,7 +233,6 @@ pub fn remove_rows(table: &Table, rows: Vec<RowLocation>) -> Result<RemoveDiff, 
         clear_row(&table.schema, page.as_mut(), rownum)?;
 
         // Add changes to the diff
-        diff.num_rows += 1;
         diff.row_locations.push(RowLocation { pagenum, rownum });
     }
     // Write the last page
@@ -434,7 +431,6 @@ mod tests {
         // Try InsertDiff
         let insert_diff: InsertDiff = insert_rows(&mut table, rows).unwrap();
         // Verify that the insert_diff is correct
-        assert_eq!(insert_diff.num_rows, 2);
         assert_eq!(insert_diff.table_name, "test_differator".to_string());
         // Verify that the first row is correct
         assert_eq!(insert_diff.rows[0].pagenum, 3);
@@ -462,7 +458,6 @@ mod tests {
         rows_to_update[0].row[2] = Value::I32(50);
         let update_diff: UpdateDiff = rewrite_rows(&mut table, rows_to_update).unwrap();
         // Verify that the update_diff is correct
-        assert_eq!(update_diff.num_rows, 1);
         assert_eq!(update_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
         assert_eq!(update_diff.rows[0].pagenum, 3);
@@ -481,7 +476,6 @@ mod tests {
         }];
         let remove_diff: RemoveDiff = remove_rows(&mut table, rows_to_remove).unwrap();
         // Verify that the remove_diff is correct
-        assert_eq!(remove_diff.num_rows, 1);
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
         assert_eq!(remove_diff.row_locations[0].pagenum, 3);

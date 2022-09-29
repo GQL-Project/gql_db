@@ -46,34 +46,21 @@ pub struct TableRemoveDiff {
 /***************************************************************************************************/
 
 impl UpdateDiff {
-    pub fn new(table_name: String, num_rows: usize, rows: Vec<RowInfo>) -> Self {
-        Self {
-            table_name,
-            num_rows,
-            rows,
-        }
+    pub fn new(table_name: String, rows: Vec<RowInfo>) -> Self {
+        Self { table_name, rows }
     }
 }
 
 impl InsertDiff {
-    pub fn new(table_name: String, num_rows: usize, rows: Vec<RowInfo>) -> Self {
-        Self {
-            table_name,
-            num_rows,
-            rows,
-        }
+    pub fn new(table_name: String, rows: Vec<RowInfo>) -> Self {
+        Self { table_name, rows }
     }
 }
 
 impl RemoveDiff {
-    pub fn new(
-        table_name: String,
-        num_rows: usize,
-        row_locations: Vec<RowLocation>,
-    ) -> Self {
+    pub fn new(table_name: String, row_locations: Vec<RowLocation>) -> Self {
         Self {
             table_name,
-            num_rows,
             row_locations,
         }
     }
