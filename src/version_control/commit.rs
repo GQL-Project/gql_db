@@ -1,10 +1,9 @@
 use crate::{
     fileio::{
         databaseio,
-        header::{read_schema, schema_size, write_header, Header, Schema},
+        header::{write_header, Header, Schema},
         pageio::*,
-        rowio::read_row,
-        tableio::{get_row, insert_rows, Table},
+        tableio::{insert_rows, Table},
     },
     util::{
         dbtype::{Column, Value},

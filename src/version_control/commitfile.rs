@@ -1,7 +1,7 @@
 use crate::{
     fileio::{
         header::{schema_size, Schema},
-        pageio::{read_page, read_string, read_type, Page, PAGE_SIZE},
+        pageio::*,
         tableio::Table,
     },
     util::{dbtype::Column, row::Row},
@@ -15,7 +15,7 @@ pub struct CommitFile {
 }
 
 impl CommitFile {
-    // Safe reads: These functions will read from the page, and if the offset is past the end of the
+    // Safe reads and writes: These functions will read from the page, and if the offset is past the end of the
     // page, it will read from the next page. This is useful for reading strings and other types
     // that are not guaranteed to be on a page boundary.
     pub fn sread_string(
@@ -36,6 +36,25 @@ impl CommitFile {
         Ok(string)
     }
 
+    pub fn swrite_string(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        string: &str,
+        size: u32,
+    ) -> Result<(), String> {
+        // If offset is greater than the page size, read the next page and reset the offset
+        if *offset + size >= PAGE_SIZE as u32 {
+            *offset = 0;
+            *pagenum = *pagenum + 1;
+            *page = *read_page(*pagenum, &self.delta_path)?;
+        }
+        write_string(page, *offset as usize, string, size as usize)?;
+        *offset = *offset + size;
+        Ok(())
+    }
+
     // Safe read - dynamic string size
     pub fn sdread_string(
         &self,
@@ -45,6 +64,19 @@ impl CommitFile {
     ) -> Result<String, String> {
         let size: u32 = self.sread_type(page, pagenum, offset)?;
         self.sread_string(page, pagenum, offset, size)
+    }
+
+    // Safe write - dynamic string size
+    pub fn sdwrite_string(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        string: &str,
+    ) -> Result<(), String> {
+        let size: u32 = string.len() as u32;
+        self.swrite_type(page, pagenum, offset, size)?;
+        self.swrite_string(page, pagenum, offset, string, size)
     }
 
     pub fn sread_type<T: Sized>(
@@ -63,6 +95,25 @@ impl CommitFile {
         let t = read_type(page, *offset as usize)?;
         *offset = *offset + size;
         Ok(t)
+    }
+
+    pub fn swrite_type<T: Sized>(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        t: T,
+    ) -> Result<(), String> {
+        // If offset is greater than the page size, read the next page and reset the offset
+        let size = std::mem::size_of::<T>() as u32;
+        if *offset + size >= PAGE_SIZE as u32 {
+            *offset = 0;
+            *pagenum = *pagenum + 1;
+            *page = *read_page(*pagenum, &self.delta_path)?;
+        }
+        write_type(page, *offset as usize, t)?;
+        *offset = *offset + size;
+        Ok(())
     }
 
     pub fn sread_row(
@@ -88,6 +139,31 @@ impl CommitFile {
         Ok(row)
     }
 
+    pub fn swrite_row(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        row: &Row,
+        schema: &Schema,
+    ) -> Result<(), String> {
+        let size = schema_size(schema) as u32; // Ensure the row is not split across pages
+        if *offset + size >= PAGE_SIZE as u32 {
+            *offset = 0;
+            *pagenum = *pagenum + 1;
+            *page = *read_page(*pagenum, &self.delta_path)?;
+        }
+        self.swrite_type::<u8>(page, pagenum, offset, 1)?;
+        schema
+            .iter()
+            .zip(row.iter())
+            .try_for_each(|((_, celltype), cell)| {
+                celltype.write(cell, page, *offset as usize)?;
+                *offset = *offset + celltype.size() as u32;
+                Ok(())
+            })
+    }
+
     pub fn sread_schema(
         &self,
         page: &mut Page,
@@ -103,5 +179,20 @@ impl CommitFile {
             schema.push((colname, Column::decode_type(typeid)));
         }
         Ok(schema)
+    }
+
+    pub fn swrite_schema(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        schema: &Schema,
+    ) -> Result<(), String> {
+        self.swrite_type::<u8>(page, pagenum, offset, schema.len() as u8)?;
+        schema.iter().try_for_each(|(colname, celltype)| {
+            self.swrite_type::<u16>(page, pagenum, offset, celltype.encode_type())?;
+            self.swrite_string(page, pagenum, offset, colname, 50)?;
+            Ok(())
+        })
     }
 }
