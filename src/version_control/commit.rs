@@ -144,13 +144,24 @@ impl CommitFile {
         }
     }
 
+    // Returns the commit header for a given commit hash.
     pub fn store_commit(&mut self, commit: Commit) -> Result<(), String> {
-        let header = self.find_header(commit.hash.clone())?;
-        if let Some(header) = header {
-            self.write_commit(commit, header.pagenum)
-        } else {
-            self.write_commit(commit, 0)
+        // Always needs to be written at the end. Traverse pages until we find a page marked as free.
+        let mut pagenum = 1;
+        let mut page = self.sread_page(pagenum)?;
+        let mut read: u8 = read_type(&mut page, 0)?;
+        while read != 0 {
+            pagenum += 1;
+            page = self.sread_page(pagenum)?; // If there is no page, this will create a new page
+            read = read_type(&mut page, 0)?;
         }
+        let hash = commit.hash.clone();
+        self.write_commit(commit, pagenum)?;
+        let header = CommitHeader {
+            commit_hash: hash,
+            pagenum,
+        };
+        self.insert_header(header)
     }
 
     fn find_header(&self, commit_hash: String) -> Result<Option<CommitHeader>, String> {
@@ -325,8 +336,8 @@ mod tests {
     fn test_simple_commit() {
         let delta = CommitFile::new(&"".to_string(), true).unwrap();
         let schema = vec![
-            ("branch_name".to_string(), Column::String(60)),
-            ("commit_hash".to_string(), Column::String(32)),
+            ("t1".to_string(), Column::String(60)),
+            ("t2".to_string(), Column::String(32)),
         ];
         let commit = Commit::new(
             "test_hash".to_string(),
@@ -340,6 +351,33 @@ mod tests {
         );
         delta.write_commit(commit.clone(), 0).unwrap();
         let commit2 = delta.read_commit(0).unwrap();
+        assert_eq!(commit, commit2);
+
+        // Delete the test files
+        std::fs::remove_file(delta.delta_path).unwrap();
+        std::fs::remove_file(delta.header_path).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_simple_header() {
+        let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
+        let schema = vec![
+            ("t1".to_string(), Column::String(60)),
+            ("t45".to_string(), Column::String(32)),
+        ];
+        let commit = Commit::new(
+            "test_hash".to_string(),
+            "test_timestamp".to_string(),
+            "test_message".to_string(),
+            "test_command".to_string(),
+            vec![Diff::TableCreate(TableCreateDiff {
+                table_name: "test_table".to_string(),
+                schema: schema.clone(),
+            })],
+        );
+        delta.store_commit(commit.clone()).unwrap();
+        let commit2 = delta.fetch_commit("test_hash".to_string()).unwrap();
         assert_eq!(commit, commit2);
 
         // Delete the test files
