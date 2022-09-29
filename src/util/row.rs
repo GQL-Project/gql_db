@@ -2,13 +2,13 @@ use super::dbtype::Value;
 
 pub type Row = Vec<Value>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RowLocation {
     pub pagenum: u32,
     pub rownum: u16
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RowInfo {
     pub row: Row,
     pub pagenum: u32,
@@ -26,13 +26,6 @@ impl Ord for RowInfo {
 impl PartialOrd for RowInfo {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-// Note that comparisons between two rows are not meaningful, and are not implemented.
-impl PartialEq for RowInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.pagenum == other.pagenum && self.rownum == other.rownum
     }
 }
 

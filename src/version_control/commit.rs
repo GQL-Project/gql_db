@@ -11,16 +11,16 @@ use crate::{
     },
 };
 
-use super::diff::*;
 use super::commitfile::*;
+use super::diff::*;
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
 pub struct CommitHeader {
     commit_hash: String,
     pagenum: u32,
-    offset: u32,
 }
 
+#[derive(Clone, PartialEq, Debug)]
 pub struct Commit {
     hash: String,
     timestamp: String, // TODO: Change to a DateTime object
@@ -50,11 +50,10 @@ impl Commit {
 
 impl CommitHeader {
     /// Creates a new CommitHeader object.
-    pub fn new(commit_hash: String, pagenum: u32, rownum: u32) -> Self {
+    pub fn new(commit_hash: String, pagenum: u32) -> Self {
         Self {
             commit_hash,
             pagenum: pagenum as u32,
-            offset: rownum as u32,
         }
     }
 
@@ -67,15 +66,10 @@ impl CommitHeader {
             Some(Value::I32(i)) => *i,
             _ => return Err("Invalid page number".to_string()),
         };
-        let row_num: i32 = match row.get(2) {
-            Some(Value::I32(i)) => *i,
-            _ => return Err("Invalid row number".to_string()),
-        };
 
         Ok(Self {
             commit_hash,
             pagenum: page_num as u32,
-            offset: row_num as u32,
         })
     }
 }
@@ -84,21 +78,26 @@ impl CommitFile {
     /// Creates a new BranchesFile object.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
-    pub fn new(dir_path: String, create_file: bool) -> Result<CommitFile, String> {
+    pub fn new(dir_path: &String, create_file: bool) -> Result<CommitFile, String> {
         // Create Header File
         let header_name: String = format!(
             "{}{}",
             databaseio::COMMIT_HEADERS_FILE_NAME.to_string(),
             databaseio::COMMIT_HEADERS_FILE_EXTENSION.to_string()
         );
-        let header_path: String =
+        let mut header_path: String =
             format!("{}{}{}", dir_path, std::path::MAIN_SEPARATOR, header_name);
         let delta_name = format!(
             "{}{}",
             databaseio::DELTAS_FILE_NAME.to_string(),
-            databaseio::DELTAS_FILE_NAME.to_string()
+            databaseio::DELTAS_FILE_EXTENSION.to_string()
         );
-        let delta_path: String = format!("{}{}{}", dir_path, std::path::MAIN_SEPARATOR, delta_name);
+        let mut delta_path: String =
+            format!("{}{}{}", dir_path, std::path::MAIN_SEPARATOR, delta_name);
+        if dir_path.len() == 0 {
+            header_path = header_name;
+            delta_path = delta_name;
+        }
 
         if create_file {
             // Header File
@@ -107,7 +106,6 @@ impl CommitFile {
             let schema = vec![
                 ("commit_hash".to_string(), Column::String(32)),
                 ("page_num".to_string(), Column::I32),
-                ("row_num".to_string(), Column::I32),
             ];
             let header = Header {
                 num_pages: 2,
@@ -136,7 +134,26 @@ impl CommitFile {
 
     /// Search for a commit header by its commit hash.
     /// Returns the page number and row number of the commit header.
-    pub fn find_header(&self, commit_hash: String) -> Result<Option<CommitHeader>, String> {
+
+    pub fn fetch_commit(&self, commit_hash: String) -> Result<Commit, String> {
+        let header = self.find_header(commit_hash)?;
+        if let Some(header) = header {
+            self.read_commit(header.pagenum)
+        } else {
+            Err("Commit not found".to_string())
+        }
+    }
+
+    pub fn store_commit(&mut self, commit: Commit) -> Result<(), String> {
+        let header = self.find_header(commit.hash.clone())?;
+        if let Some(header) = header {
+            self.write_commit(commit, header.pagenum)
+        } else {
+            self.write_commit(commit, 0)
+        }
+    }
+
+    fn find_header(&self, commit_hash: String) -> Result<Option<CommitHeader>, String> {
         let hash = Value::String(commit_hash);
         for RowInfo { row, .. } in self.header_table.clone() {
             if row[0] == hash {
@@ -147,20 +164,24 @@ impl CommitFile {
         Ok(None)
     }
 
-    pub fn fetch_commit(&self, commit_hash: String) -> Result<Commit, String> {
-        let header = self.find_header(commit_hash)?;
-        if let Some(header) = header {
-            self.read_commit(header.pagenum, header.offset)
-        } else {
-            Err("Commit not found".to_string())
-        }
+    fn insert_header(&mut self, header: CommitHeader) -> Result<(), String> {
+        let row = vec![
+            Value::String(header.commit_hash.clone()),
+            Value::I32(header.pagenum as i32),
+        ];
+        insert_rows(&mut self.header_table, vec![row])?;
+        Ok(())
     }
 
-    pub fn read_commit(&self, mut pagenum: u32, mut offset: u32) -> Result<Commit, String> {
+    fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
         // Read the commit information first
         let page = &mut read_page(pagenum, &self.delta_path)?;
         let pagenum = &mut pagenum;
-        let offset = &mut offset;
+        let offset = &mut 0;
+        let byte: u8 = self.sread_type(page, pagenum, offset)?;
+        if byte != 1 {
+            return Err("Invalid commit".to_string());
+        }
         let commit_hash = self.sread_string(page, pagenum, offset, 32)?;
         let timestamp = self.sread_string(page, pagenum, offset, 32)?;
         let message = self.sdread_string(page, pagenum, offset)?;
@@ -188,9 +209,17 @@ impl CommitFile {
                         rows.push(row_info);
                     }
                     if difftype == 0 {
-                        Diff::Update(UpdateDiff { table_name, rows })
+                        Diff::Update(UpdateDiff {
+                            table_name,
+                            schema,
+                            rows,
+                        })
                     } else {
-                        Diff::Insert(InsertDiff { table_name, rows })
+                        Diff::Insert(InsertDiff {
+                            table_name,
+                            schema,
+                            rows,
+                        })
                     }
                 }
                 2 => {
@@ -226,13 +255,95 @@ impl CommitFile {
         Ok(Commit::new(commit_hash, timestamp, message, command, diffs))
     }
 
-    pub fn insert_header(&mut self, header: CommitHeader) -> Result<(), String> {
-        let row = vec![
-            Value::String(header.commit_hash.clone()),
-            Value::I32(header.pagenum as i32),
-            Value::I32(header.offset as i32),
-        ];
-        insert_rows(&mut self.header_table, vec![row])?;
+    fn write_commit(&self, commit: Commit, mut pagenum: u32) -> Result<(), String> {
+        let page = &mut self.sread_page(pagenum)?;
+        let pagenum = &mut pagenum;
+        let offset = &mut 0;
+        self.swrite_type(page, pagenum, offset, 1u8)?;
+        self.swrite_string(page, pagenum, offset, &commit.hash, 32)?;
+        self.swrite_string(page, pagenum, offset, &commit.timestamp, 32)?;
+        self.sdwrite_string(page, pagenum, offset, &commit.message)?;
+        self.sdwrite_string(page, pagenum, offset, &commit.command)?;
+        // Parsing the diffs
+        self.swrite_type(page, pagenum, offset, commit.diffs.len() as u32)?;
+        for diff in commit.diffs {
+            match diff {
+                Diff::Update(update) => {
+                    self.swrite_type(page, pagenum, offset, 0u32)?;
+                    self.sdwrite_string(page, pagenum, offset, &update.table_name)?;
+                    self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
+                    for row in update.rows {
+                        self.swrite_schema(page, pagenum, offset, &update.schema)?;
+                        self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
+                        self.swrite_type(page, pagenum, offset, row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
+                }
+                Diff::Insert(insert) => {
+                    self.swrite_type(page, pagenum, offset, 1u32)?;
+                    self.sdwrite_string(page, pagenum, offset, &insert.table_name)?;
+                    self.swrite_type(page, pagenum, offset, insert.rows.len() as u32)?;
+                    for row in insert.rows {
+                        self.swrite_schema(page, pagenum, offset, &insert.schema)?;
+                        self.swrite_row(page, pagenum, offset, &row.row, &insert.schema)?;
+                        self.swrite_type(page, pagenum, offset, row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
+                }
+                Diff::Remove(remove) => {
+                    self.swrite_type(page, pagenum, offset, 2u32)?;
+                    self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
+                    self.swrite_type(page, pagenum, offset, remove.row_locations.len() as u32)?;
+                    for row in remove.row_locations {
+                        self.swrite_type(page, pagenum, offset, row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
+                }
+                Diff::TableCreate(create) => {
+                    self.swrite_type(page, pagenum, offset, 3u32)?;
+                    self.sdwrite_string(page, pagenum, offset, &create.table_name)?;
+                    self.swrite_schema(page, pagenum, offset, &create.schema)?;
+                }
+                Diff::TableRemove(remove) => {
+                    self.swrite_type(page, pagenum, offset, 4u32)?;
+                    self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
+                }
+            }
+        }
+        write_page(*pagenum, &self.delta_path, page)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_simple_commit() {
+        let delta = CommitFile::new(&"".to_string(), true).unwrap();
+        let schema = vec![
+            ("branch_name".to_string(), Column::String(60)),
+            ("commit_hash".to_string(), Column::String(32)),
+        ];
+        let commit = Commit::new(
+            "test_hash".to_string(),
+            "test_timestamp".to_string(),
+            "test_message".to_string(),
+            "test_command".to_string(),
+            vec![Diff::TableCreate(TableCreateDiff {
+                table_name: "test_table".to_string(),
+                schema: schema.clone(),
+            })],
+        );
+        delta.write_commit(commit.clone(), 0).unwrap();
+        let commit2 = delta.read_commit(0).unwrap();
+        assert_eq!(commit, commit2);
+
+        // Delete the test files
+        std::fs::remove_file(delta.delta_path).unwrap();
+        std::fs::remove_file(delta.header_path).unwrap();
     }
 }

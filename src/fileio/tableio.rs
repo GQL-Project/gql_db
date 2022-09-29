@@ -143,7 +143,8 @@ pub fn create_table(
 /// It returns a diff of the rows that were updated.
 pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
     // Keep track of how the rows have changed.
-    let mut diff: UpdateDiff = UpdateDiff::new(table.name.clone(), Vec::new());
+    let mut diff: UpdateDiff =
+        UpdateDiff::new(table.name.clone(), table.schema.clone(), Vec::new());
 
     // To reduce page updates, we sort the rows by page number.
     if rows.len() < 1 {
@@ -172,7 +173,8 @@ pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff,
 /// It returns a diff of the rows that were inserted.
 pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, String> {
     // Keep track of how the rows have changed.
-    let mut diff: InsertDiff = InsertDiff::new(table.name.clone(), Vec::new());
+    let mut diff: InsertDiff =
+        InsertDiff::new(table.name.clone(), table.schema.clone(), Vec::new());
 
     // Just return right away if we aren't inserting any rows
     if rows.len() == 0 {
