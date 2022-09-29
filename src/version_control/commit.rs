@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-use super::diff::{Diff, DiffType, TableRemoveDiff, TableCreateDiff};
+use super::diff::{Diff, DiffType, TableCreateDiff, TableRemoveDiff};
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
 pub struct CommitHeader {
@@ -162,10 +162,10 @@ impl CommitFile {
         let timestamp = self.sread_string(&mut page, pagenum, offset, 32)?;
         // Get message size and read message
         let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
-        let message = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+        let message = self.sread_string(&mut page, pagenum, offset, size)?;
         // Get command size and read command
         let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
-        let command = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+        let command = self.sread_string(&mut page, pagenum, offset, size)?;
 
         // Parsing the diffs
         let num_diffs: u32 = self.sread_type(&mut page, pagenum, offset)?;
@@ -176,32 +176,31 @@ impl CommitFile {
             let diff: Diff = match difftype {
                 0 => {
                     // Update
-                    let old_value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
-                    let new_value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    let old_value = self.sread_string(&mut page, pagenum, offset, size)?;
+                    let new_value = self.sread_string(&mut page, pagenum, offset, size)?;
                     todo!()
                 }
                 1 => {
                     // Insert
-                    let value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    let value = self.sread_string(&mut page, pagenum, offset, size)?;
                     todo!()
                 }
                 2 => {
                     // Delete
-                    let value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    let value = self.sread_string(&mut page, pagenum, offset, size)?;
                     todo!()
                 }
                 3 => {
                     // Create Table
-                    let table_name = self.sread_string(&mut page, pagenum, offset, 100)?;
+                    let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
+                    let table_name = self.sread_string(&mut page, pagenum, offset, size)?;
                     let schema = self.sread_schema(&mut page, pagenum, offset)?;
-                    Diff::TableCreate(TableCreateDiff {
-                        table_name,
-                        schema,
-                    })
+                    Diff::TableCreate(TableCreateDiff { table_name, schema })
                 }
                 4 => {
                     // Remove Table
-                    let table_name = self.sread_string(&mut page, pagenum, offset, 100)?;
+                    let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
+                    let table_name = self.sread_string(&mut page, pagenum, offset, size)?;
                     Diff::TableRemove(TableRemoveDiff { table_name })
                 }
                 _ => return Err("Invalid diff type".to_string()),
@@ -233,7 +232,7 @@ impl CommitFile {
         page: &mut Page,
         pagenum: &mut u32,
         offset: &mut u32,
-        size: usize,
+        size: u32,
     ) -> Result<String, String> {
         // If offset is greater than the page size, read the next page and reset the offset
         if *offset >= PAGE_SIZE as u32 {
@@ -241,7 +240,7 @@ impl CommitFile {
             *pagenum = *pagenum + 1;
             *page = *read_page(*pagenum, &self.delta_path)?;
         }
-        let string = read_string(page, *offset as usize, size)?;
+        let string = read_string(page, *offset as usize, size as usize)?;
         *offset = *offset + size as u32;
         Ok(string)
     }
