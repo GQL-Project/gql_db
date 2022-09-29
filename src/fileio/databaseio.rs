@@ -243,6 +243,7 @@ impl Database {
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
     pub fn create_branch(&mut self, branch_name: &String) -> Result<(), String> {
+        // Check if the branch name already exists. We want to verify that it doesn't exist already.
         match self.branch_heads.get_branch_head(branch_name) {
             Ok(_) => {
                 return Err("Database::create_branch() Error: Branch already exists".to_owned());
@@ -250,14 +251,8 @@ impl Database {
             Err(_) => { } // Do nothing, we expect this error
         }
 
-        // Create the new branch head
-        let _new_branch_head: BranchHead = BranchHead {
-            branch_name: branch_name.clone(),
-            pagenum: 0, // TODO: Set this after branch has been created 
-            rownum: 0   // TODO: Set this after branch has been created
-        };
+        //TODO: Ryan User Story 18
 
-        // TODO: implementation
         Ok(())
     }
 
