@@ -155,17 +155,13 @@ impl CommitFile {
 
     pub fn read_commit(&self, mut pagenum: u32, mut offset: u32) -> Result<Option<Commit>, String> {
         // Read the commit information first
-        let mut page = &mut read_page(pagenum, &self.delta_path)?;
+        let page = &mut read_page(pagenum, &self.delta_path)?;
         let pagenum = &mut pagenum;
         let offset = &mut offset;
         let commit_hash = self.sread_string(page, pagenum, offset, 32)?;
         let timestamp = self.sread_string(page, pagenum, offset, 32)?;
-        // Get message size and read message
-        let size: u32 = self.sread_type(page, pagenum, offset)?;
-        let message = self.sread_string(page, pagenum, offset, size)?;
-        // Get command size and read command
-        let size: u32 = self.sread_type(page, pagenum, offset)?;
-        let command = self.sread_string(page, pagenum, offset, size)?;
+        let message = self.sdread_string(page, pagenum, offset)?;
+        let command = self.sdread_string(page, pagenum, offset)?;
 
         // Parsing the diffs
         let num_diffs: u32 = self.sread_type(page, pagenum, offset)?;
@@ -173,6 +169,7 @@ impl CommitFile {
         for _ in 0..num_diffs {
             let size: u32 = self.sread_type(page, pagenum, offset)?;
             let difftype: u32 = self.sread_type(page, pagenum, offset)?;
+            let table_name = self.sdread_string(page, pagenum, offset)?;
             let diff: Diff = match difftype {
                 0 => {
                     // Update
@@ -192,15 +189,11 @@ impl CommitFile {
                 }
                 3 => {
                     // Create Table
-                    let size: u32 = self.sread_type(page, pagenum, offset)?;
-                    let table_name = self.sread_string(page, pagenum, offset, size)?;
                     let schema = self.sread_schema(page, pagenum, offset)?;
                     Diff::TableCreate(TableCreateDiff { table_name, schema })
                 }
                 4 => {
                     // Remove Table
-                    let size: u32 = self.sread_type(page, pagenum, offset)?;
-                    let table_name = self.sread_string(page, pagenum, offset, size)?;
                     Diff::TableRemove(TableRemoveDiff { table_name })
                 }
                 _ => return Err("Invalid diff type".to_string()),
@@ -243,6 +236,17 @@ impl CommitFile {
         let string = read_string(page, *offset as usize, size as usize)?;
         *offset = *offset + size as u32;
         Ok(string)
+    }
+
+    // Safe read - dynamic string size
+    fn sdread_string(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32
+    ) -> Result<String, String> {
+        let size: u32 = self.sread_type(page, pagenum, offset)?;
+        self.sread_string(page, pagenum, offset, size)
     }
 
     pub fn sread_type<T: Sized>(
