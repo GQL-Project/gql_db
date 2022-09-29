@@ -1,8 +1,8 @@
 use crate::{
     fileio::{
         databaseio,
-        header::{write_header, Header},
-        pageio::{write_page, PAGE_SIZE},
+        header::{read_schema, write_header, Header, Schema},
+        pageio::*,
         tableio::{get_row, insert_rows, Table},
     },
     util::{
@@ -11,16 +11,17 @@ use crate::{
     },
 };
 
-use super::diff::Diff;
+use super::diff::{Diff, DiffType, TableRemoveDiff, TableCreateDiff};
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
 pub struct CommitHeader {
     commit_hash: String,
-    loc: RowLocation, // Note that RowLocation's rownum is a byte offset, not a row number.
+    pagenum: u32,
+    offset: u32,
 }
 
 pub struct Commit {
-    header: CommitHeader,
+    hash: String,
     timestamp: String, // TODO: Change to a DateTime object
     message: String,
     command: String, // Command that was run to create this commit
@@ -38,36 +39,28 @@ impl Commit {
     /// Creates a new Commit object.
     pub fn new(
         commit_hash: String,
-        page_num: i32,
-        row_num: i32,
         timestamp: String,
         message: String,
         command: String,
         diffs: Vec<Diff>,
     ) -> Self {
         Self {
-            header: CommitHeader::new(commit_hash, page_num, row_num),
+            hash: commit_hash,
             timestamp,
             message,
             command,
             diffs,
         }
     }
-
-    // TODO: Implement a function to write a commit to a file.
-
-    // TODO: Implement a function to read and create a commit from a CommitHeader.
 }
 
 impl CommitHeader {
     /// Creates a new CommitHeader object.
-    pub fn new(commit_hash: String, pagenum: i32, rownum: i32) -> Self {
+    pub fn new(commit_hash: String, pagenum: u32, rownum: u32) -> Self {
         Self {
             commit_hash,
-            loc: RowLocation {
-                pagenum: pagenum as u32,
-                rownum: rownum as u16,
-            },
+            pagenum: pagenum as u32,
+            offset: rownum as u32,
         }
     }
 
@@ -87,10 +80,8 @@ impl CommitHeader {
 
         Ok(Self {
             commit_hash,
-            loc: RowLocation {
-                pagenum: page_num as u32,
-                rownum: row_num as u16,
-            },
+            pagenum: page_num as u32,
+            offset: row_num as u32,
         })
     }
 }
@@ -136,12 +127,11 @@ impl CommitFile {
 
             // Delta File
             std::fs::File::create(delta_path.clone()).map_err(|e| e.to_string())?;
-            
         }
 
         Ok(CommitFile {
-            header_path: header_path,
-            delta_path: delta_path,
+            header_path,
+            delta_path,
             header_table: Table::new(
                 &dir_path.clone(),
                 &databaseio::COMMIT_HEADERS_FILE_NAME.to_string(),
@@ -163,13 +153,130 @@ impl CommitFile {
         Ok(None)
     }
 
+    pub fn read_commit(&self, mut pagenum: u32, mut offset: u32) -> Result<Option<Commit>, String> {
+        // Read the commit information first
+        let mut page = read_page(pagenum, &self.delta_path)?;
+        let pagenum = &mut pagenum;
+        let offset = &mut offset;
+        let commit_hash = self.sread_string(&mut page, pagenum, offset, 32)?;
+        let timestamp = self.sread_string(&mut page, pagenum, offset, 32)?;
+        // Get message size and read message
+        let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
+        let message = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+        // Get command size and read command
+        let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
+        let command = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+
+        // Parsing the diffs
+        let num_diffs: u32 = self.sread_type(&mut page, pagenum, offset)?;
+        let mut diffs: Vec<Diff> = Vec::new();
+        for _ in 0..num_diffs {
+            let size: u32 = self.sread_type(&mut page, pagenum, offset)?;
+            let difftype: u32 = self.sread_type(&mut page, pagenum, offset)?;
+            let diff: Diff = match difftype {
+                0 => {
+                    // Update
+                    let old_value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    let new_value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    todo!()
+                }
+                1 => {
+                    // Insert
+                    let value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    todo!()
+                }
+                2 => {
+                    // Delete
+                    let value = self.sread_string(&mut page, pagenum, offset, size as usize)?;
+                    todo!()
+                }
+                3 => {
+                    // Create Table
+                    let table_name = self.sread_string(&mut page, pagenum, offset, 100)?;
+                    let schema = self.sread_schema(&mut page, pagenum, offset)?;
+                    Diff::TableCreate(TableCreateDiff {
+                        table_name,
+                        schema,
+                    })
+                }
+                4 => {
+                    // Remove Table
+                    let table_name = self.sread_string(&mut page, pagenum, offset, 100)?;
+                    Diff::TableRemove(TableRemoveDiff { table_name })
+                }
+                _ => return Err("Invalid diff type".to_string()),
+            };
+            diffs.push(diff);
+        }
+        Ok(Some(Commit::new(
+            commit_hash,
+            timestamp,
+            message,
+            command,
+            diffs,
+        )))
+    }
+
     pub fn insert_header(&mut self, header: CommitHeader) -> Result<(), String> {
         let row = vec![
             Value::String(header.commit_hash.clone()),
-            Value::I32(header.loc.pagenum as i32),
-            Value::I32(header.loc.rownum as i32),
+            Value::I32(header.pagenum as i32),
+            Value::I32(header.offset as i32),
         ];
         insert_rows(&mut self.header_table, vec![row])?;
         Ok(())
+    }
+
+    // Safe reads (with page and offset changes when needed)
+    fn sread_string(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        size: usize,
+    ) -> Result<String, String> {
+        // If offset is greater than the page size, read the next page and reset the offset
+        if *offset >= PAGE_SIZE as u32 {
+            *offset = *offset - PAGE_SIZE as u32;
+            *pagenum = *pagenum + 1;
+            *page = *read_page(*pagenum, &self.delta_path)?;
+        }
+        let string = read_string(page, *offset as usize, size)?;
+        *offset = *offset + size as u32;
+        Ok(string)
+    }
+
+    pub fn sread_type<T: Sized>(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+    ) -> Result<T, String> {
+        // If offset is greater than the page size, read the next page and reset the offset
+        if *offset >= PAGE_SIZE as u32 {
+            *offset = *offset - PAGE_SIZE as u32;
+            *pagenum = *pagenum + 1;
+            *page = *read_page(*pagenum, &self.delta_path)?;
+        }
+        let t = read_type(page, *offset as usize)?;
+        *offset = *offset + std::mem::size_of::<T>() as u32;
+        Ok(t)
+    }
+
+    pub fn sread_schema(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+    ) -> Result<Schema, String> {
+        let mut schema = Schema::new();
+        // Rather than doing ::<u8>, this is cleaner
+        let num_cols: u8 = self.sread_type(page, pagenum, offset)?;
+        for _ in 0..num_cols {
+            let typeid: u16 = self.sread_type(page, pagenum, offset)?;
+            let colname = self.sread_string(page, pagenum, offset, 50)?;
+            schema.push((colname, Column::decode_type(typeid)));
+        }
+        Ok(schema)
     }
 }
