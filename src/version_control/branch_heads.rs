@@ -3,23 +3,24 @@ use crate::util::{dbtype::*, row::*};
 use crate::version_control::branches::*;
 
 /// This represents a branch head. It is a single row in the `branch_heads.gql` table.
+/// It points to a branch node in the `branches.gql` table. 
 #[derive(Clone)]
 pub struct BranchHead {
-    pub branch_name: String,
-    pub pagenum: i32,
-    pub rownum: i32,
+    pub branch_name: String, // The name of the branch that this head points to.
+    pub pagenum: i32,        // The page number in `branches.gql` where the branch node is located.
+    pub rownum: i32,         // The row number in `branches.gql` where the branch node is located.
 }
 
 /// This is designed to represent the branch_heads.gql file for a database.
 #[derive(Clone)]
 pub struct BranchHEADs {
-    pub filepath: String, // This is only public to allow file cleanup duing testing
+    filepath: String,
     branch_heads_table: Table,
 }
 
 
 impl BranchHead {
-    /// Gets the branch node location from a given branch HEAD
+    /// Gets the branch node location within `branches.gql` from a given branch HEAD
     pub fn get_branch_node_location(&self) -> RowLocation {
         RowLocation {
             pagenum: self.pagenum as u32,
@@ -30,7 +31,7 @@ impl BranchHead {
 
 
 impl BranchHEADs {
-    /// Creates a new BranchHEADs object.
+    /// Creates a new BranchHEADs object to store the branch heads for the database.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
     pub fn new(dir_path: &String, create_file: bool) -> Result<BranchHEADs, String> {
@@ -81,6 +82,13 @@ impl BranchHEADs {
         })
     }
 
+
+    // Immutable getter access to filepath.
+    pub fn filepath(&self) -> &str {
+        &self.filepath
+    }
+
+
     /// Takes in a branch name and returns the corresponding branch HEAD.
     pub fn get_branch_head(&mut self, branch_name: &String) -> Result<BranchHead, String> {
         let branch_heads: Vec<BranchHead> = self.get_all_branch_heads()?;
@@ -95,19 +103,19 @@ impl BranchHEADs {
     }
 
     /// Returns the branch node for the HEAD of the given branch.
-    pub fn get_branch_head_node(
+    pub fn get_branch_node_from_head(
         &mut self,
         branch_name: &String,
-        branches_file: &Branches
+        branches: &Branches
     ) -> Result<BranchNode, String> {
         let branch_head: BranchHead = self.get_branch_head(branch_name)?;
-        Ok(branches_file.get_branch_node(&RowLocation {
+        Ok(branches.get_branch_node(&RowLocation {
             pagenum: branch_head.pagenum as u32,
             rownum: branch_head.rownum as u16,
         })?)
     }
 
-    /// Read the branch heads file and return a vector of BranchHead structs
+    /// Read the branch heads file and return a vector of BranchHead objects
     pub fn get_all_branch_heads(&mut self) -> Result<Vec<BranchHead>, String> {
         let mut branch_heads: Vec<BranchHead> = Vec::new();
 
@@ -148,11 +156,20 @@ impl BranchHEADs {
         Ok(branch_heads)
     }
 
-    /// Writes a new branch head to the branch heads file
+    /// Writes a new branch head to the branch heads file.
+    /// Returns an error if a branch head with the given name already exists.
     pub fn create_branch_head(
         &mut self, 
         branch_head: &BranchHead
     ) -> Result<(), String> {
+        // Make sure that a branch head doesn't already have the same branch name
+        let branch_heads: Vec<BranchHead> = self.get_all_branch_heads()?;
+        for branch in branch_heads {
+            if branch.branch_name == branch_head.branch_name {
+                return Err("Error: Branch name already exists".to_string());
+            }
+        }
+
         let rows: Vec<Vec<Value>> = vec![
             // Just make one new row
             vec![
@@ -166,7 +183,7 @@ impl BranchHEADs {
     }
 
     /// Takes in a BranchHead object and updates the branch head in the branch heads file
-    /// that corresponds to the branch name in the BranchHead object
+    /// that corresponds to the branch name in the BranchHead object.
     pub fn update_branch_head(&mut self, branch_head: &BranchHead) -> Result<(), String> {
         // Iterate through all the rows in the branch heads file and check to see if there is a row that has
         // the same branch name as the branch head we are trying to update
@@ -206,8 +223,8 @@ impl BranchHEADs {
     }
 
 
-    /// Set branch head object with a new branch node
-    /// This function is used when an existing branch gets a new branch node
+    /// Set branch head object to point to a new branch node within `branches.gql`
+    /// This function is used when an existing branch gets a new branch node appended to it.
     pub fn set_branch_head(
         &mut self, 
         branch_name: &String,
@@ -342,7 +359,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_updating_branch_head() {
-        let _branch_heads_file: String = "test_update_branch_heads_file".to_string();
         let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {
@@ -399,7 +415,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_deleting_branch_head() {
-        let _branch_heads_file: String = "test_delete_branch_heads_file".to_string();
         let mut branch_heads: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
 
         let branch_head1 = BranchHead {

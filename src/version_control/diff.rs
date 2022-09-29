@@ -1,4 +1,4 @@
-use crate::{fileio::header::*, util::row::*};
+use crate::{fileio::{header::*, databaseio::*}, util::row::*};
 
 /***************************************************************************************************/
 /*                                         Diff Structs                                            */
@@ -64,4 +64,13 @@ impl RemoveDiff {
             row_locations,
         }
     }
+}
+
+
+/// This method takes in a directory along with the diffs that are to be applied to it and applies them.
+/// There are a couple assumptions:
+/// 1. The table_dir exists and is where the table files are stored.
+/// 2. The diffs are in the order that the changes were made.
+pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) {
+    
 }
