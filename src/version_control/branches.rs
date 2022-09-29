@@ -8,6 +8,7 @@ use crate::util::{dbtype::*, row::*};
 use super::{diff::*, branch_heads::*};
 
 /// This represents a branch node in the database. It is a single row in the `branches.gql` table.
+/// A branch node is in a linked list of other branch nodes. It is singly linked, pointing backwards.
 #[derive(Clone)]
 pub struct BranchNode {
     pub branch_name: String, // The name of the branch this node is on.
@@ -20,9 +21,10 @@ pub struct BranchNode {
 }
 
 /// This is designed to represent the branches.gql file for a database.
+/// It is a table that contains a list of all branch nodes across all branches in the database.
 #[derive(Clone)]
 pub struct Branches {
-    pub filepath: String, // This is only public to allow file cleanup duing testing
+    filepath: String,
     branches_table: Table,
 }
 
@@ -72,7 +74,8 @@ impl BranchNode {
 
 
 impl Branches {
-    /// Creates a new BranchesFile object.
+    /// Creates a new Branches object.
+    /// This object is used to store all the branch nodes across all branches in the database.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
     pub fn new(
@@ -129,19 +132,30 @@ impl Branches {
         })
     }
 
-    /// Returns a branch node from the given page row and number.
+
+    // Immutable getter access to filepath.
+    pub fn filepath(&self) -> &str {
+        &self.filepath
+    }
+
+
+    /// Returns a branch node from `branches.gql` with the given page row and number.
     pub fn get_branch_node(&self, row_location: &RowLocation) -> Result<BranchNode, String> {
         let row = get_row(&self.branches_table, &row_location)?;
         Ok(BranchNode::new(&row)?)
     }
 
     /// Returns the previous branch node from the given branch node
-    pub fn get_prev_branch_node(&self, branch_node: &BranchNode) -> Result<BranchNode, String> {
+    /// Returns None if the given branch node is the original node in the database
+    pub fn get_prev_branch_node(&self, branch_node: &BranchNode) -> Result<Option<BranchNode>, String> {
+        if branch_node.prev_pagenum == -1 || branch_node.prev_rownum == -1 {
+            return Ok(None);
+        }
         let row_location = RowLocation {
             pagenum: branch_node.prev_pagenum as u32,
             rownum: branch_node.prev_rownum as u16,
         };
-        self.get_branch_node(&row_location)
+        Ok(Some(self.get_branch_node(&row_location)?))
     }
 
 
@@ -153,10 +167,10 @@ impl Branches {
         let mut current_branch_node: BranchNode = branch_node.clone();
         loop {
             branch_nodes.push(current_branch_node.clone());
-            if current_branch_node.prev_pagenum == -1 {
-                break;
-            }
-            current_branch_node = self.get_prev_branch_node(&current_branch_node)?;
+            current_branch_node = match self.get_prev_branch_node(&current_branch_node)? {
+                Some(bn) => bn, // If Some, we have a previous node
+                None => break,              // If None, that means we are trying to go before the original node
+            };
         }
         branch_nodes.reverse();
         Ok(branch_nodes)
@@ -165,6 +179,7 @@ impl Branches {
 
     /// Creates a new branch node and adds it to the branches table with the given branch name and commit hash.
     /// Also updates the branch HEADs table appropriately.
+    /// It branches the node off the prev_node given. If prev_node is None, it becomes the original node.
     pub fn create_branch_node(
         &mut self, 
         branch_heads_table: &mut BranchHEADs, 
@@ -285,8 +300,8 @@ mod tests {
         assert_eq!(branch_node.is_head, true);
 
         // Delete the test files
-        std::fs::remove_file(branches_file.filepath).unwrap();
-        std::fs::remove_file(branch_heads_table.filepath).unwrap();
+        std::fs::remove_file(branches_file.filepath()).unwrap();
+        std::fs::remove_file(branch_heads_table.filepath()).unwrap();
     }
 
     #[test]
@@ -318,7 +333,7 @@ mod tests {
         assert_eq!(branch_node2.is_head, true);
 
         // Verify that you can access first branch node from the second
-        let branch_node3: BranchNode = branches_file.get_prev_branch_node(&branch_node2).unwrap();
+        let branch_node3: BranchNode = branches_file.get_prev_branch_node(&branch_node2).unwrap().unwrap();
         assert_eq!(branch_node3.branch_name, branch_name2);
         assert_eq!(branch_node3.commit_hash, commit_hash1);
         assert_eq!(branch_node3.prev_pagenum, -1);
@@ -326,7 +341,27 @@ mod tests {
         assert_eq!(branch_node3.is_head, false);
 
         // Delete the test files
-        std::fs::remove_file(branches_file.filepath).unwrap();
-        std::fs::remove_file(branch_heads_table.filepath).unwrap();
+        std::fs::remove_file(branches_file.filepath()).unwrap();
+        std::fs::remove_file(branch_heads_table.filepath()).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_branch_node_from_head() {
+        let mut branches_file: Branches = Branches::new(&"".to_string(), true).unwrap();
+        let mut branch_heads_table: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
+        let commit_hash1: String = "12345678901234567890123456789012".to_string();
+        let branch_name: String = "test_branch".to_string();
+        branches_file.create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash1).unwrap();
+        let branch_node: BranchNode = branch_heads_table.get_branch_node_from_head(&branch_name, &branches_file).unwrap();
+        assert_eq!(branch_node.branch_name, branch_name);
+        assert_eq!(branch_node.commit_hash, commit_hash1);
+        assert_eq!(branch_node.prev_pagenum, -1);
+        assert_eq!(branch_node.prev_rownum, -1);
+        assert_eq!(branch_node.is_head, true);
+
+        // Delete the test files
+        std::fs::remove_file(branches_file.filepath()).unwrap();
+        std::fs::remove_file(branch_heads_table.filepath()).unwrap();
     }
 }
