@@ -154,7 +154,16 @@ impl CommitFile {
         Ok(None)
     }
 
-    pub fn read_commit(&self, mut pagenum: u32, mut offset: u32) -> Result<Option<Commit>, String> {
+    pub fn fetch_commit(&self, commit_hash: String) -> Result<Commit, String> {
+        let header = self.find_header(commit_hash)?;
+        if let Some(header) = header {
+            self.read_commit(header.pagenum, header.offset)
+        } else {
+            Err("Commit not found".to_string())
+        }
+    }
+
+    pub fn read_commit(&self, mut pagenum: u32, mut offset: u32) -> Result<Commit, String> {
         // Read the commit information first
         let page = &mut read_page(pagenum, &self.delta_path)?;
         let pagenum = &mut pagenum;
@@ -168,7 +177,6 @@ impl CommitFile {
         let num_diffs: u32 = self.sread_type(page, pagenum, offset)?;
         let mut diffs: Vec<Diff> = Vec::new();
         for _ in 0..num_diffs {
-            let size: u32 = self.sread_type(page, pagenum, offset)?;
             let difftype: u32 = self.sread_type(page, pagenum, offset)?;
             let table_name = self.sdread_string(page, pagenum, offset)?;
             let diff: Diff = match difftype {
@@ -222,13 +230,13 @@ impl CommitFile {
             };
             diffs.push(diff);
         }
-        Ok(Some(Commit::new(
+        Ok(Commit::new(
             commit_hash,
             timestamp,
             message,
             command,
             diffs,
-        )))
+        ))
     }
 
     pub fn insert_header(&mut self, header: CommitHeader) -> Result<(), String> {
