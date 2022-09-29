@@ -15,7 +15,6 @@ pub enum Diff {
 #[derive(Clone)]
 pub struct UpdateDiff {
     pub table_name: String, // The name of the table that the rows were updated in
-    pub row_size: usize,    // The size of each row.
     pub num_rows: usize,    // The number of rows that were affected.
     pub rows: Vec<RowInfo>, // The rows that were updated.
 }
@@ -23,7 +22,6 @@ pub struct UpdateDiff {
 #[derive(Clone)]
 pub struct InsertDiff {
     pub table_name: String, // The name of the table that the rows were updated in
-    pub row_size: usize,    // The size of each row.
     pub num_rows: usize,    // The number of rows that were inserted.
     pub rows: Vec<RowInfo>, // The rows that were inserted.
 }
@@ -31,7 +29,6 @@ pub struct InsertDiff {
 #[derive(Clone)]
 pub struct RemoveDiff {
     pub table_name: String, // The name of the table that the rows were removed from
-    pub row_size: usize,    // The size of each row.
     pub num_rows: usize,    // The number of rows that were removed.
     pub row_locations: Vec<RowLocation>, // The rows that were removed.
 }
@@ -52,10 +49,9 @@ pub struct TableRemoveDiff {
 /***************************************************************************************************/
 
 impl UpdateDiff {
-    pub fn new(table_name: String, row_size: usize, num_rows: usize, rows: Vec<RowInfo>) -> Self {
+    pub fn new(table_name: String, num_rows: usize, rows: Vec<RowInfo>) -> Self {
         Self {
             table_name,
-            row_size,
             num_rows,
             rows,
         }
@@ -63,10 +59,9 @@ impl UpdateDiff {
 }
 
 impl InsertDiff {
-    pub fn new(table_name: String, row_size: usize, num_rows: usize, rows: Vec<RowInfo>) -> Self {
+    pub fn new(table_name: String, num_rows: usize, rows: Vec<RowInfo>) -> Self {
         Self {
             table_name,
-            row_size,
             num_rows,
             rows,
         }
@@ -76,13 +71,11 @@ impl InsertDiff {
 impl RemoveDiff {
     pub fn new(
         table_name: String,
-        row_size: usize,
         num_rows: usize,
         row_locations: Vec<RowLocation>,
     ) -> Self {
         Self {
             table_name,
-            row_size,
             num_rows,
             row_locations,
         }
