@@ -13,6 +13,7 @@ use crate::{
 };
 
 use super::diff::*;
+use super::commitfile::*;
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
 pub struct CommitHeader {
@@ -27,13 +28,6 @@ pub struct Commit {
     message: String,
     command: String, // Command that was run to create this commit
     diffs: Vec<Diff>,
-}
-
-#[derive(Clone)]
-pub struct CommitFile {
-    header_path: String,
-    delta_path: String,
-    header_table: Table,
 }
 
 impl Commit {
@@ -183,7 +177,7 @@ impl CommitFile {
                 0 | 1 => {
                     // Update or Insert
                     let num_rows: usize = self.sread_type(page, pagenum, offset)?;
-                    let schema: Schema = Schema::new(); // TODO: "Figure out how to get to the Schema"
+                    let schema: Schema = self.sread_schema(page, pagenum, offset)?;
                     let mut rows: Vec<RowInfo> = Vec::new();
                     for _ in 0..num_rows {
                         let row = self.sread_row(page, pagenum, offset, &schema)?;
@@ -230,13 +224,7 @@ impl CommitFile {
             };
             diffs.push(diff);
         }
-        Ok(Commit::new(
-            commit_hash,
-            timestamp,
-            message,
-            command,
-            diffs,
-        ))
+        Ok(Commit::new(commit_hash, timestamp, message, command, diffs))
     }
 
     pub fn insert_header(&mut self, header: CommitHeader) -> Result<(), String> {
@@ -247,95 +235,5 @@ impl CommitFile {
         ];
         insert_rows(&mut self.header_table, vec![row])?;
         Ok(())
-    }
-
-    // Safe reads: These functions will read from the page, and if the offset is past the end of the
-    // page, it will read from the next page. This is useful for reading strings and other types
-    // that are not guaranteed to be on a page boundary.
-    fn sread_string(
-        &self,
-        page: &mut Page,
-        pagenum: &mut u32,
-        offset: &mut u32,
-        size: u32,
-    ) -> Result<String, String> {
-        // If offset is greater than the page size, read the next page and reset the offset
-        if *offset + size >= PAGE_SIZE as u32 {
-            *offset = 0;
-            *pagenum = *pagenum + 1;
-            *page = *read_page(*pagenum, &self.delta_path)?;
-        }
-        let string = read_string(page, *offset as usize, size as usize)?;
-        *offset = *offset + size;
-        Ok(string)
-    }
-
-    // Safe read - dynamic string size
-    fn sdread_string(
-        &self,
-        page: &mut Page,
-        pagenum: &mut u32,
-        offset: &mut u32,
-    ) -> Result<String, String> {
-        let size: u32 = self.sread_type(page, pagenum, offset)?;
-        self.sread_string(page, pagenum, offset, size)
-    }
-
-    pub fn sread_type<T: Sized>(
-        &self,
-        page: &mut Page,
-        pagenum: &mut u32,
-        offset: &mut u32,
-    ) -> Result<T, String> {
-        // If offset is greater than the page size, read the next page and reset the offset
-        let size = std::mem::size_of::<T>() as u32;
-        if *offset + size >= PAGE_SIZE as u32 {
-            *offset = 0;
-            *pagenum = *pagenum + 1;
-            *page = *read_page(*pagenum, &self.delta_path)?;
-        }
-        let t = read_type(page, *offset as usize)?;
-        *offset = *offset + size;
-        Ok(t)
-    }
-
-    pub fn sread_row(
-        &self,
-        page: &mut Page,
-        pagenum: &mut u32,
-        offset: &mut u32,
-        schema: &Schema,
-    ) -> Result<Row, String> {
-        let size = schema_size(schema) as u32; // Ensure the row is not split across pages
-        if *offset + size >= PAGE_SIZE as u32 {
-            *offset = 0;
-            *pagenum = *pagenum + 1;
-            *page = *read_page(*pagenum, &self.delta_path)?;
-        }
-        let mut row = Row::new();
-        let check: u8 = self.sread_type(page, pagenum, offset)?;
-        assert!(check == 1, "Malformed Row");
-        for (_, celltype) in schema {
-            row.push(celltype.read(page, *offset as usize)?);
-            *offset = *offset + celltype.size() as u32;
-        }
-        Ok(row)
-    }
-
-    pub fn sread_schema(
-        &self,
-        page: &mut Page,
-        pagenum: &mut u32,
-        offset: &mut u32,
-    ) -> Result<Schema, String> {
-        let mut schema = Schema::new();
-        // Rather than doing ::<u8>, this is cleaner
-        let num_cols: u8 = self.sread_type(page, pagenum, offset)?;
-        for _ in 0..num_cols {
-            let typeid: u16 = self.sread_type(page, pagenum, offset)?;
-            let colname = self.sread_string(page, pagenum, offset, 50)?;
-            schema.push((colname, Column::decode_type(typeid)));
-        }
-        Ok(schema)
     }
 }
