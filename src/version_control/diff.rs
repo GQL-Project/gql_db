@@ -15,21 +15,18 @@ pub enum Diff {
 #[derive(Clone)]
 pub struct UpdateDiff {
     pub table_name: String, // The name of the table that the rows were updated in
-    pub num_rows: usize,    // The number of rows that were affected.
     pub rows: Vec<RowInfo>, // The rows that were updated.
 }
 
 #[derive(Clone)]
 pub struct InsertDiff {
     pub table_name: String, // The name of the table that the rows were updated in
-    pub num_rows: usize,    // The number of rows that were inserted.
     pub rows: Vec<RowInfo>, // The rows that were inserted.
 }
 
 #[derive(Clone)]
 pub struct RemoveDiff {
     pub table_name: String, // The name of the table that the rows were removed from
-    pub num_rows: usize,    // The number of rows that were removed.
     pub row_locations: Vec<RowLocation>, // The rows that were removed.
 }
 

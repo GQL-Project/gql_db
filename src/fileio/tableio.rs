@@ -215,11 +215,7 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, Stri
 /// It returns a diff of the rows that were removed.
 pub fn remove_rows(table: &Table, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
     // Keep track of how the rows have changed.
-    let mut diff: RemoveDiff = RemoveDiff::new(
-        table.name.clone(),
-        0,
-        Vec::new(),
-    );
+    let mut diff: RemoveDiff = RemoveDiff::new(table.name.clone(), 0, Vec::new());
 
     // Return right away if we aren't removing any rows
     if rows.len() == 0 {

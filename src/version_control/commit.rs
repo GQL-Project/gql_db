@@ -1,8 +1,9 @@
 use crate::{
     fileio::{
         databaseio,
-        header::{read_schema, write_header, Header, Schema},
+        header::{read_schema, schema_size, write_header, Header, Schema},
         pageio::*,
+        rowio::read_row,
         tableio::{get_row, insert_rows, Table},
     },
     util::{
@@ -11,7 +12,7 @@ use crate::{
     },
 };
 
-use super::diff::{Diff, TableCreateDiff, TableRemoveDiff};
+use super::diff::*;
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
 pub struct CommitHeader {
@@ -171,21 +172,42 @@ impl CommitFile {
             let difftype: u32 = self.sread_type(page, pagenum, offset)?;
             let table_name = self.sdread_string(page, pagenum, offset)?;
             let diff: Diff = match difftype {
-                0 => {
-                    // Update
-                    let old_value = self.sread_string(page, pagenum, offset, size)?;
-                    let new_value = self.sread_string(page, pagenum, offset, size)?;
-                    todo!()
-                }
-                1 => {
-                    // Insert
-                    let value = self.sread_string(page, pagenum, offset, size)?;
-                    todo!()
+                0 | 1 => {
+                    // Update or Insert
+                    let num_rows: usize = self.sread_type(page, pagenum, offset)?;
+                    let schema: Schema = Schema::new(); // TODO: "Figure out how to get to the Schema"
+                    let mut rows: Vec<RowInfo> = Vec::new();
+                    for _ in 0..num_rows {
+                        let row = self.sread_row(page, pagenum, offset, &schema)?;
+                        let row_info = RowInfo {
+                            row,
+                            pagenum: self.sread_type(page, pagenum, offset)?,
+                            rownum: self.sread_type(page, pagenum, offset)?,
+                        };
+                        rows.push(row_info);
+                    }
+                    if difftype == 0 {
+                        Diff::Update(UpdateDiff { table_name, rows })
+                    } else {
+                        Diff::Insert(InsertDiff { table_name, rows })
+                    }
                 }
                 2 => {
                     // Delete
-                    let value = self.sread_string(page, pagenum, offset, size)?;
-                    todo!()
+                    let num_rows: usize = self.sread_type(page, pagenum, offset)?;
+                    let mut rows: Vec<RowLocation> = Vec::new();
+                    for _ in 0..num_rows {
+                        let page_num: u32 = self.sread_type(page, pagenum, offset)?;
+                        let row_num: u16 = self.sread_type(page, pagenum, offset)?;
+                        rows.push(RowLocation {
+                            pagenum: page_num,
+                            rownum: row_num,
+                        });
+                    }
+                    Diff::Remove(RemoveDiff {
+                        table_name,
+                        row_locations: rows,
+                    })
                 }
                 3 => {
                     // Create Table
@@ -219,7 +241,9 @@ impl CommitFile {
         Ok(())
     }
 
-    // Safe reads (with page and offset changes when needed)
+    // Safe reads: These functions will read from the page, and if the offset is past the end of the
+    // page, it will read from the next page. This is useful for reading strings and other types
+    // that are not guaranteed to be on a page boundary.
     fn sread_string(
         &self,
         page: &mut Page,
@@ -228,13 +252,13 @@ impl CommitFile {
         size: u32,
     ) -> Result<String, String> {
         // If offset is greater than the page size, read the next page and reset the offset
-        if *offset >= PAGE_SIZE as u32 {
-            *offset = *offset - PAGE_SIZE as u32;
+        if *offset + size >= PAGE_SIZE as u32 {
+            *offset = 0;
             *pagenum = *pagenum + 1;
             *page = *read_page(*pagenum, &self.delta_path)?;
         }
         let string = read_string(page, *offset as usize, size as usize)?;
-        *offset = *offset + size as u32;
+        *offset = *offset + size;
         Ok(string)
     }
 
@@ -243,7 +267,7 @@ impl CommitFile {
         &self,
         page: &mut Page,
         pagenum: &mut u32,
-        offset: &mut u32
+        offset: &mut u32,
     ) -> Result<String, String> {
         let size: u32 = self.sread_type(page, pagenum, offset)?;
         self.sread_string(page, pagenum, offset, size)
@@ -256,14 +280,38 @@ impl CommitFile {
         offset: &mut u32,
     ) -> Result<T, String> {
         // If offset is greater than the page size, read the next page and reset the offset
-        if *offset >= PAGE_SIZE as u32 {
-            *offset = *offset - PAGE_SIZE as u32;
+        let size = std::mem::size_of::<T>() as u32;
+        if *offset + size >= PAGE_SIZE as u32 {
+            *offset = 0;
             *pagenum = *pagenum + 1;
             *page = *read_page(*pagenum, &self.delta_path)?;
         }
         let t = read_type(page, *offset as usize)?;
-        *offset = *offset + std::mem::size_of::<T>() as u32;
+        *offset = *offset + size;
         Ok(t)
+    }
+
+    pub fn sread_row(
+        &self,
+        page: &mut Page,
+        pagenum: &mut u32,
+        offset: &mut u32,
+        schema: &Schema,
+    ) -> Result<Row, String> {
+        let size = schema_size(schema) as u32; // Ensure the row is not split across pages
+        if *offset + size >= PAGE_SIZE as u32 {
+            *offset = 0;
+            *pagenum = *pagenum + 1;
+            *page = *read_page(*pagenum, &self.delta_path)?;
+        }
+        let mut row = Row::new();
+        let check: u8 = self.sread_type(page, pagenum, offset)?;
+        assert!(check == 1, "Malformed Row");
+        for (_, celltype) in schema {
+            row.push(celltype.read(page, *offset as usize)?);
+            *offset = *offset + celltype.size() as u32;
+        }
+        Ok(row)
     }
 
     pub fn sread_schema(
