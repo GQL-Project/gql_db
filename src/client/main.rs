@@ -66,8 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // GQL
         if command.starts_with("GQL ") {
             client.run_version_control_command(Request::new(request.clone())).await?;
-        } else {
+        } else if command.starts_with("SELECT "){
             client.run_query(Request::new(request.clone())).await?;
+        } else {
+            println!("Invalid command");
         }
     }
 
