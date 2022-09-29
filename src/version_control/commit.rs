@@ -1,3 +1,9 @@
+use rand::distributions::Alphanumeric;
+use rand::thread_rng;
+use rand::Rng;
+
+use super::commitfile::*;
+use super::diff::*;
 use crate::{
     fileio::{
         databaseio,
@@ -10,9 +16,7 @@ use crate::{
         row::{Row, RowInfo, RowLocation},
     },
 };
-
-use super::commitfile::*;
-use super::diff::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
 pub struct CommitHeader {
@@ -45,6 +49,14 @@ impl Commit {
             command,
             diffs,
         }
+    }
+
+    pub fn create_hash() -> String {
+        thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect()
     }
 }
 
@@ -144,8 +156,25 @@ impl CommitFile {
         }
     }
 
+    pub fn create_commit(
+        &mut self,
+        message: String,
+        command: String,
+        diffs: Vec<Diff>,
+    ) -> Result<Commit, String> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_millis()
+            .to_string();
+        let hash = Commit::create_hash();
+        let commit = Commit::new(hash, timestamp, message, command, diffs);
+        self.store_commit(&commit)?;
+        Ok(commit)
+    }
+
     // Returns the commit header for a given commit hash.
-    pub fn store_commit(&mut self, commit: Commit) -> Result<(), String> {
+    fn store_commit(&mut self, commit: &Commit) -> Result<(), String> {
         // Always needs to be written at the end. Traverse pages until we find a page marked as free.
         let mut pagenum = 1;
         let mut page = self.sread_page(pagenum)?;
@@ -194,7 +223,7 @@ impl CommitFile {
             return Err("Invalid commit".to_string());
         }
         let commit_hash = self.sread_string(page, pagenum, offset, 32)?;
-        let timestamp = self.sread_string(page, pagenum, offset, 32)?;
+        let timestamp = self.sread_string(page, pagenum, offset, 128)?;
         let message = self.sdread_string(page, pagenum, offset)?;
         let command = self.sdread_string(page, pagenum, offset)?;
 
@@ -266,24 +295,24 @@ impl CommitFile {
         Ok(Commit::new(commit_hash, timestamp, message, command, diffs))
     }
 
-    fn write_commit(&self, commit: Commit, mut pagenum: u32) -> Result<(), String> {
+    fn write_commit(&self, commit: &Commit, mut pagenum: u32) -> Result<(), String> {
         let page = &mut self.sread_page(pagenum)?;
         let pagenum = &mut pagenum;
         let offset = &mut 0;
         self.swrite_type(page, pagenum, offset, 1u8)?;
         self.swrite_string(page, pagenum, offset, &commit.hash, 32)?;
-        self.swrite_string(page, pagenum, offset, &commit.timestamp, 32)?;
+        self.swrite_string(page, pagenum, offset, &commit.timestamp, 128)?;
         self.sdwrite_string(page, pagenum, offset, &commit.message)?;
         self.sdwrite_string(page, pagenum, offset, &commit.command)?;
         // Parsing the diffs
         self.swrite_type(page, pagenum, offset, commit.diffs.len() as u32)?;
-        for diff in commit.diffs {
+        for diff in &commit.diffs {
             match diff {
                 Diff::Update(update) => {
                     self.swrite_type(page, pagenum, offset, 0u32)?;
                     self.sdwrite_string(page, pagenum, offset, &update.table_name)?;
                     self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
-                    for row in update.rows {
+                    for row in &update.rows {
                         self.swrite_schema(page, pagenum, offset, &update.schema)?;
                         self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
@@ -294,7 +323,7 @@ impl CommitFile {
                     self.swrite_type(page, pagenum, offset, 1u32)?;
                     self.sdwrite_string(page, pagenum, offset, &insert.table_name)?;
                     self.swrite_type(page, pagenum, offset, insert.rows.len() as u32)?;
-                    for row in insert.rows {
+                    for row in &insert.rows {
                         self.swrite_schema(page, pagenum, offset, &insert.schema)?;
                         self.swrite_row(page, pagenum, offset, &row.row, &insert.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
@@ -305,7 +334,7 @@ impl CommitFile {
                     self.swrite_type(page, pagenum, offset, 2u32)?;
                     self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
                     self.swrite_type(page, pagenum, offset, remove.row_locations.len() as u32)?;
-                    for row in remove.row_locations {
+                    for row in &remove.row_locations {
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
                     }
@@ -349,7 +378,7 @@ mod tests {
                 schema: schema.clone(),
             })],
         );
-        delta.write_commit(commit.clone(), 0).unwrap();
+        delta.write_commit(&commit, 0).unwrap();
         let commit2 = delta.read_commit(0).unwrap();
         assert_eq!(commit, commit2);
 
@@ -376,7 +405,7 @@ mod tests {
                 schema: schema.clone(),
             })],
         );
-        delta.store_commit(commit.clone()).unwrap();
+        delta.store_commit(&commit).unwrap();
         let commit2 = delta.fetch_commit("test_hash".to_string()).unwrap();
         assert_eq!(commit, commit2);
 
