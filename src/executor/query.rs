@@ -448,12 +448,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        create_table(
-            &"test_table1".to_string(),
-            &schema1,
-            &new_db,
-        )
-        .unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db).unwrap();
 
         insert(
             vec![
@@ -478,12 +473,7 @@ mod tests {
             ("country".to_string(), Column::String(50)),
         ];
 
-        create_table(
-            &"test_table2".to_string(),
-            &schema2,
-            &new_db,
-        )
-        .unwrap();
+        create_table(&"test_table2".to_string(), &schema2, &new_db).unwrap();
 
         insert(
             vec![
@@ -551,12 +541,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        create_table(
-            &"test_table1".to_string(),
-            &schema1,
-            &new_db,
-        )
-        .unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db).unwrap();
 
         insert(
             vec![
@@ -606,12 +591,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        create_table(
-            &"test_table1".to_string(),
-            &schema1,
-            &new_db,
-        )
-        .unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db).unwrap();
 
         insert(
             vec![
