@@ -1,9 +1,10 @@
+use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 /// A parse function, that starts with a string and returns an AST representation of the query.
 /// If an error happens, an Err(msg) is returned.
-pub fn parse(query: &str, _update: bool) -> Result<String, String> {
+pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
     if query.len() == 0 {
         return Err("Empty query".to_string());
     }
@@ -13,7 +14,7 @@ pub fn parse(query: &str, _update: bool) -> Result<String, String> {
     let ast = Parser::parse_sql(&dialect, query);
 
     println!("AST: {:?}", ast);
-    Ok(query.to_string())
+    ast.map_err(|e| e.to_string())
 }
 
 /// This method parses a version control command's query string into the individual components.
@@ -55,14 +56,15 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             // branch (CoPilot rec: Possible flags: -d, -m)
             // Needs an argument
             println!("{:?}", "branch command");
-            if vec.len() < 3 { 
+            if vec.len() < 3 {
                 // error message here
                 println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
-            } else if vec.len() > 3 { // spaces in the branch name
+            } else if vec.len() > 3 {
+                // spaces in the branch name
                 // error message here
                 println!("{:?}", "Invalid Branch Name");
-                return Err("Invalid Branch Name".to_string());        
+                return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
                 println!("{:?}", "Valid Branch Command");
@@ -72,14 +74,15 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             // merge
             // Needs an argument
             println!("{:?}", "switch branch command");
-            if vec.len() < 3 { 
+            if vec.len() < 3 {
                 // error message here
                 println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
-            } else if vec.len() > 3 { // spaces in the branch name
+            } else if vec.len() > 3 {
+                // spaces in the branch name
                 // error message here
-                println!("{:?}", "Invalid Branch Name");   
-                return Err("Invalid Branch Name".to_string());          
+                println!("{:?}", "Invalid Branch Name");
+                return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
                 println!("{:?}", "Valid Switch Branch Command");

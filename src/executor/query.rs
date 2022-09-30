@@ -1,10 +1,11 @@
+use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
-use crate::fileio::{databaseio::*, tableio::*, header::*};
 use itertools::Itertools;
+use sqlparser::ast::Statement;
 
 /// A parse function, that starts with a string and returns either a table for query commands
-/// or a string for 
-pub fn execute(ast: &String, _update: bool) -> Result<String, String> {
+/// or a string for
+pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -12,11 +13,14 @@ pub fn execute(ast: &String, _update: bool) -> Result<String, String> {
     Ok("0".to_string())
 }
 
-
 /// This method implements the SQL Select statement. It takes in the column and table names where table_names
 /// is an array of tuples where the first element is the table name and the second element is the alias.
 /// It returns a tuple containing the schema and the rows of the resulting table.
-pub fn select(column_names: &[String], table_names: &[(String, String)], database: Database) -> Result<(Schema, Vec<Vec<Value>>), String> {
+pub fn select(
+    column_names: &[String],
+    table_names: &[(String, String)],
+    database: Database,
+) -> Result<(Schema, Vec<Vec<Value>>), String> {
     if table_names.len() == 0 || column_names.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
     }
@@ -27,7 +31,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     // The rows and schema that are to be returned from the select statement
     let mut selected_rows: Vec<Vec<Value>> = Vec::new();
     let mut selected_schema: Schema = Vec::new();
-    
+
     // Read in the tables into a vector of tuples where they are represented as (table, alias)
     let mut tables: Vec<(Table, String)> = Vec::new();
     for (table_name, alias) in table_names {
@@ -37,8 +41,7 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     }
 
     // Create an iterator of table iterators using the cartesion product of the tables :)
-    let table_iterator = tables.iter()
-        .map(|x| x.0.clone()).multi_cartesian_product();
+    let table_iterator = tables.iter().map(|x| x.0.clone()).multi_cartesian_product();
 
     // Get the names of all the columns in the tables along with their aliases in
     // the format <alias>.<column_name> and store them in a vector of tuples
@@ -46,12 +49,16 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     // It will be a vector of tuples where each tuple is of the form:
     // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
     // This is where the fun begins... ;)
-    let table_column_names: Vec<(String, Column, String)> = tables.iter()
-        .map(|x: &(Table, String)| x.0.schema.iter()
-            .map(|y: &(String, Column)| (format!("{}.{}", x.1, y.0.clone()), 
-                                         y.1.clone(), 
-                                         y.0.clone()))
-            .collect::<Vec<(String, Column, String)>>())
+    let table_column_names: Vec<(String, Column, String)> = tables
+        .iter()
+        .map(|x: &(Table, String)| {
+            x.0.schema
+                .iter()
+                .map(|y: &(String, Column)| {
+                    (format!("{}.{}", x.1, y.0.clone()), y.1.clone(), y.0.clone())
+                })
+                .collect::<Vec<(String, Column, String)>>()
+        })
         .flatten()
         .collect::<Vec<(String, Column, String)>>();
 
@@ -66,7 +73,9 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         for table_rows in table_iterator {
             // Accumulate all the cells across the vector of rows into a single vector
             let mut selected_cells: Vec<Value> = Vec::new();
-            table_rows.iter().for_each(|x| selected_cells.extend(x.row.clone()));
+            table_rows
+                .iter()
+                .for_each(|x| selected_cells.extend(x.row.clone()));
 
             // Append the selected_cells row to our result
             selected_rows.push(selected_cells.clone());
@@ -77,15 +86,22 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
         // Get the indices of the columns we want to select
         let mut table_column_indices: Vec<usize> = Vec::new();
         for desired_column in column_names {
-            let index = table_column_names.iter().position(|x| x.0.eq(desired_column));
+            let index = table_column_names
+                .iter()
+                .position(|x| x.0.eq(desired_column));
             // Check that index is valid
             match index {
                 Some(x) => {
                     table_column_indices.push(x);
                     let (_, col_type, output_col_name) = table_column_names.get(x).unwrap();
                     selected_schema.push((output_col_name.clone(), col_type.clone()));
-                },
-                None => return Err(format!("Column {} does not exist in any of the tables", desired_column))
+                }
+                None => {
+                    return Err(format!(
+                        "Column {} does not exist in any of the tables",
+                        desired_column
+                    ))
+                }
             }
         }
 
@@ -113,7 +129,6 @@ pub fn select(column_names: &[String], table_names: &[(String, String)], databas
     Ok((selected_schema, selected_rows))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,20 +138,23 @@ mod tests {
     #[test]
     #[serial]
     fn test_select_single_table_star() {
-        // This tests 
+        // This tests
         // SELECT * FROM select_test_db.test_table1
         let columns = ["*".to_string()];
         let tables = [("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-    
+
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-    
+
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone()).unwrap().0;
-        
+        let mut table1: Table =
+            create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone())
+                .unwrap()
+                .0;
+
         let row1 = vec![
             Value::I32(1),
             Value::String("Iron Man".to_string()),
@@ -148,7 +166,7 @@ mod tests {
             Value::I32(20),
         ];
         insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
-        
+
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -178,11 +196,13 @@ mod tests {
         // This tests:
         // SELECT * FROM select_test_db.test_table1, select_test_db.test_table2
         let columns = ["*".to_string()];
-        let tables = [("test_table1".to_string(), "T1".to_string()),
-                                             ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
-    
+        let tables = [
+            ("test_table1".to_string(), "T1".to_string()),
+            ("test_table2".to_string(), "T2".to_string()),
+        ]; // [(table_name, alias)]
+
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-    
+
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
@@ -192,9 +212,21 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("country".to_string(), Column::String(50)),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
-        let mut table2: Table = create_table(&"test_table2".to_string(), &schema2.clone(), &new_db.clone()).unwrap().0;
-        
+        let mut table1: Table = create_table(
+            &"test_table1".to_string(),
+            &schema1.clone(),
+            &new_db.clone(),
+        )
+        .unwrap()
+        .0;
+        let mut table2: Table = create_table(
+            &"test_table2".to_string(),
+            &schema2.clone(),
+            &new_db.clone(),
+        )
+        .unwrap()
+        .0;
+
         // Write rows to first table
         let row1 = vec![
             Value::I32(1),
@@ -209,20 +241,12 @@ mod tests {
         insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
 
         // Write rows to second table
-        let row1 = vec![
-            Value::I32(1),
-            Value::String("United States".to_string()),
-        ];
-        let row2 = vec![
-            Value::I32(2),
-            Value::String("Britain".to_string()),
-        ];
+        let row1 = vec![Value::I32(1), Value::String("United States".to_string())];
+        let row2 = vec![Value::I32(2), Value::String("Britain".to_string())];
         insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
-        
+
         // Run the SELECT query
-        let result = select(&columns.to_owned(),
-                                                             &tables, 
-                                                             new_db.clone()).unwrap();
+        let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
         // Check that the schema is correct
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -236,14 +260,20 @@ mod tests {
 
         // Check that the first row is correct
         assert_eq!(result.1[0][0], Value::I32(1));
-        assert_eq!(result.1[0][1], Value::String("Robert Downey Jr.".to_string()));
+        assert_eq!(
+            result.1[0][1],
+            Value::String("Robert Downey Jr.".to_string())
+        );
         assert_eq!(result.1[0][2], Value::I32(40));
         assert_eq!(result.1[0][3], Value::I32(1));
         assert_eq!(result.1[0][4], Value::String("United States".to_string()));
 
         // Check that the second row is correct
         assert_eq!(result.1[1][0], Value::I32(1));
-        assert_eq!(result.1[1][1], Value::String("Robert Downey Jr.".to_string()));
+        assert_eq!(
+            result.1[1][1],
+            Value::String("Robert Downey Jr.".to_string())
+        );
         assert_eq!(result.1[1][2], Value::I32(40));
         assert_eq!(result.1[1][3], Value::I32(2));
         assert_eq!(result.1[1][4], Value::String("Britain".to_string()));
@@ -269,20 +299,23 @@ mod tests {
     #[test]
     #[serial]
     fn test_select_single_table_specific_columns() {
-        // This tests 
+        // This tests
         // SELECT T.id, T.name FROM select_test_db.test_table1 T;
         let columns = ["T.id".to_string(), "T.name".to_string()];
         let tables = [("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-    
+
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-    
+
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone()).unwrap().0;
-        
+        let mut table1: Table =
+            create_table(&"test_table1".to_string(), &schema.clone(), &new_db.clone())
+                .unwrap()
+                .0;
+
         let row1 = vec![
             Value::I32(1),
             Value::String("Iron Man".to_string()),
@@ -299,7 +332,7 @@ mod tests {
             Value::I32(35),
         ];
         insert_rows(&mut table1, [row1, row2, row3].to_vec()).unwrap();
-        
+
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
@@ -333,21 +366,29 @@ mod tests {
     #[test]
     #[serial]
     fn test_select_multiple_tables_specific_columns() {
-        // This tests 
+        // This tests
         // SELECT T1.id, T2.country FROM select_test_db.test_table1 T1, select_test_db.test_table2 T2;
         let columns = ["T1.id".to_string(), "T2.country".to_string()];
-        let tables = [("test_table1".to_string(), "T1".to_string()),
-                                             ("test_table2".to_string(), "T2".to_string())]; // [(table_name, alias)]
-    
+        let tables = [
+            ("test_table1".to_string(), "T1".to_string()),
+            ("test_table2".to_string(), "T2".to_string()),
+        ]; // [(table_name, alias)]
+
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-    
+
         let schema1: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
-        
+        let mut table1: Table = create_table(
+            &"test_table1".to_string(),
+            &schema1.clone(),
+            &new_db.clone(),
+        )
+        .unwrap()
+        .0;
+
         let row1 = vec![
             Value::I32(1),
             Value::String("Robert Downey Jr.".to_string()),
@@ -359,23 +400,23 @@ mod tests {
             Value::I32(20),
         ];
         insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
-        
+
         let schema2: Schema = vec![
             ("id".to_string(), Column::I32),
             ("country".to_string(), Column::String(50)),
         ];
-        let mut table2: Table = create_table(&"test_table2".to_string(), &schema2.clone(), &new_db.clone()).unwrap().0;
-        
-        let row1 = vec![
-            Value::I32(5),
-            Value::String("United States".to_string()),
-        ];
-        let row2 = vec![
-            Value::I32(6),
-            Value::String("Britain".to_string()),
-        ];
+        let mut table2: Table = create_table(
+            &"test_table2".to_string(),
+            &schema2.clone(),
+            &new_db.clone(),
+        )
+        .unwrap()
+        .0;
+
+        let row1 = vec![Value::I32(5), Value::String("United States".to_string())];
+        let row2 = vec![Value::I32(6), Value::String("Britain".to_string())];
         insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
-        
+
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
@@ -416,7 +457,12 @@ mod tests {
         // This tests
         // SELECT id, name, age, invalid_column FROM select_test_db.test_table1;
 
-        let columns = ["id".to_string(), "name".to_string(), "age".to_string(), "invalid_column".to_string()];
+        let columns = [
+            "id".to_string(),
+            "name".to_string(),
+            "age".to_string(),
+            "invalid_column".to_string(),
+        ];
         let tables = [("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
 
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
@@ -427,7 +473,13 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
+        let mut table1: Table = create_table(
+            &"test_table1".to_string(),
+            &schema1.clone(),
+            &new_db.clone(),
+        )
+        .unwrap()
+        .0;
 
         let row1 = vec![
             Value::I32(1),
@@ -458,8 +510,10 @@ mod tests {
         // SELECT id, name, age FROM select_test_db.test_table1, select_test_db.test_table2;
 
         let columns = ["id".to_string(), "name".to_string(), "age".to_string()];
-        let tables = [("test_table1".to_string(), "".to_string()),
-                                             ("test_table2".to_string(), "".to_string())]; // [(table_name, alias)]
+        let tables = [
+            ("test_table1".to_string(), "".to_string()),
+            ("test_table2".to_string(), "".to_string()),
+        ]; // [(table_name, alias)]
 
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
 
@@ -469,7 +523,13 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        let mut table1: Table = create_table(&"test_table1".to_string(), &schema1.clone(), &new_db.clone()).unwrap().0;
+        let mut table1: Table = create_table(
+            &"test_table1".to_string(),
+            &schema1.clone(),
+            &new_db.clone(),
+        )
+        .unwrap()
+        .0;
 
         let row1 = vec![
             Value::I32(1),
