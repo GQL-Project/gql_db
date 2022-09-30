@@ -395,7 +395,7 @@ mod tests {
                 ],
             ],
             "test_table1".to_string(),
-            &new_db.clone(),
+            &new_db,
         )
         .unwrap();
 
@@ -450,8 +450,8 @@ mod tests {
 
         create_table(
             &"test_table1".to_string(),
-            &schema1.clone(),
-            &new_db.clone(),
+            &schema1,
+            &new_db,
         )
         .unwrap();
 
@@ -469,7 +469,7 @@ mod tests {
                 ],
             ],
             "test_table1".to_string(),
-            &new_db.clone(),
+            &new_db,
         )
         .unwrap();
 
@@ -480,8 +480,8 @@ mod tests {
 
         create_table(
             &"test_table2".to_string(),
-            &schema2.clone(),
-            &new_db.clone(),
+            &schema2,
+            &new_db,
         )
         .unwrap();
 
@@ -491,7 +491,7 @@ mod tests {
                 vec![Value::I32(6), Value::String("Britain".to_string())],
             ],
             "test_table2".to_string(),
-            &new_db.clone(),
+            &new_db,
         )
         .unwrap();
 
@@ -553,8 +553,8 @@ mod tests {
 
         create_table(
             &"test_table1".to_string(),
-            &schema1.clone(),
-            &new_db.clone(),
+            &schema1,
+            &new_db,
         )
         .unwrap();
 
@@ -572,7 +572,7 @@ mod tests {
                 ],
             ],
             "test_table1".to_string(),
-            &new_db.clone(),
+            &new_db,
         )
         .unwrap();
 
@@ -608,8 +608,8 @@ mod tests {
 
         create_table(
             &"test_table1".to_string(),
-            &schema1.clone(),
-            &new_db.clone(),
+            &schema1,
+            &new_db,
         )
         .unwrap();
 
@@ -627,7 +627,7 @@ mod tests {
                 ],
             ],
             "test_table1".to_string(),
-            &new_db.clone(),
+            &new_db,
         )
         .unwrap();
 
@@ -683,7 +683,7 @@ mod tests {
                 Value::I32(1000),
             ],
         ];
-        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).unwrap();
+        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 5);
@@ -763,7 +763,7 @@ mod tests {
             ],
         ];
 
-        assert!(insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).is_err());
+        assert!(insert(rows, "test_table1".to_string(), &new_db).is_err());
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -807,7 +807,7 @@ mod tests {
             ],
         ];
 
-        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).unwrap();
+        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 4);
@@ -886,7 +886,7 @@ mod tests {
             ],
         ];
 
-        assert!(insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).is_err());
+        assert!(insert(rows, "test_table1".to_string(), &new_db).is_err());
 
         // Delete the test database
         new_db.delete_database().unwrap();
