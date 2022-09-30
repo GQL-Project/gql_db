@@ -103,18 +103,6 @@ impl Iterator for Table {
     }
 }
 
-/// Creates a new table within the given database named <table_name><TABLE_FILE_EXTENSION>
-/// with the given schema.
-pub fn create_table(
-    table_name: &String,
-    schema: &Schema,
-    database: &Database,
-) -> Result<(Table, TableCreateDiff), String> {
-    let table_dir: String = database.get_current_branch_path();
-    // Create a table file and return it
-    create_table_in_dir(table_name, schema, &table_dir)
-}
-
 /// Create a new table within a given directory named <table_name><TABLE_FILE_EXTENSION>
 pub fn create_table_in_dir(
     table_name: &String,
