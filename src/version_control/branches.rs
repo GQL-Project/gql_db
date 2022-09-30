@@ -141,7 +141,7 @@ impl Branches {
 
     /// Returns a branch node from `branches.gql` with the given page row and number.
     pub fn get_branch_node(&self, row_location: &RowLocation) -> Result<BranchNode, String> {
-        let row = get_row(&self.branches_table, &row_location)?;
+        let row = &self.branches_table.get_row(&row_location)?;
         Ok(BranchNode::new(&row)?)
     }
 
@@ -213,7 +213,7 @@ impl Branches {
         new_node.push(Value::Bool(false));
         
         // Insert the new branch node
-        let insert_diff: InsertDiff = insert_rows(&mut self.branches_table, vec![new_node])?;
+        let insert_diff: InsertDiff = self.branches_table.insert_rows(vec![new_node])?;
 
         // Verify that the insert was successful
         match insert_diff.rows.get(0) {
@@ -239,7 +239,7 @@ impl Branches {
                         pagenum: prev_pagenum as u32,
                         rownum: prev_rownum as u16
                     };
-                    let mut prev_row: Row = get_row(&self.branches_table, &prev_row_location)?;
+                    let mut prev_row: Row = self.branches_table.get_row(&prev_row_location)?;
                     prev_row[6] = Value::Bool(false);
                     let prev_row_info: RowInfo = RowInfo {
                         pagenum: prev_row_location.pagenum as u32,
@@ -267,8 +267,7 @@ impl Branches {
                 new_row.row[5] = Value::I32(row.rownum as i32);  // curr_rownum column
                 new_row.row[6] = Value::Bool(set_is_head);       // is_head column
                 rows_to_rewrite.push(new_row);
-                rewrite_rows(&mut self.branches_table, rows_to_rewrite)?;
-
+                self.branches_table.rewrite_rows(rows_to_rewrite)?;
                 Ok(())
             },
             None => return Err("Branch node was not created correctly".to_string())

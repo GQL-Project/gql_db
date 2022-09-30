@@ -9,7 +9,7 @@ use crate::{
         databaseio,
         header::{write_header, Header, Schema},
         pageio::*,
-        tableio::{insert_rows, Table},
+        tableio::{Table},
     },
     util::{
         dbtype::{Column, Value},
@@ -209,7 +209,7 @@ impl CommitFile {
             Value::String(header.commit_hash.clone()),
             Value::I32(header.pagenum as i32),
         ];
-        insert_rows(&mut self.header_table, vec![row])?;
+        self.header_table.insert_rows(vec![row])?;
         Ok(())
     }
 

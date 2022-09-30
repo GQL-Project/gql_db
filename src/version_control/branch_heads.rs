@@ -178,7 +178,7 @@ impl BranchHEADs {
                 Value::I32(branch_head.rownum),
             ],
         ];
-        insert_rows(&mut self.branch_heads_table, rows)?;
+        self.branch_heads_table.insert_rows(rows)?;
         Ok(())
     }
 
@@ -212,7 +212,7 @@ impl BranchHEADs {
                 };
 
                 // Update the row in the branch heads file
-                rewrite_rows(&mut self.branch_heads_table, vec![updated_row_info])?;
+                self.branch_heads_table.rewrite_rows(vec![updated_row_info])?;
 
                 return Ok(());
             }
@@ -261,8 +261,7 @@ impl BranchHEADs {
 
             // If the branch name matches, delete the row
             if row_branch_name == *branch_name {
-                remove_rows(
-                    &mut self.branch_heads_table,
+                self.branch_heads_table.remove_rows(
                     vec![RowLocation {
                         pagenum: row_info.pagenum,
                         rownum: row_info.rownum,

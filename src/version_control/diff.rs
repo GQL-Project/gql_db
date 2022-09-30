@@ -79,16 +79,16 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
         match diff {
             Diff::Update(update_diff) => {
                 let table = Table::new(table_dir, &update_diff.table_name, None)?;
-                rewrite_rows(&table, update_diff.rows.clone())?;
+                table.rewrite_rows(update_diff.rows.clone())?;
             }
             Diff::Insert(insert_diff) => {
                 let mut table = Table::new(table_dir, &insert_diff.table_name, None)?;
                 // We write the rows instead of inserting because this allows us to dictate the row nums to insert to
-                write_rows(&mut table, insert_diff.rows.clone())?;
+                table.write_rows(insert_diff.rows.clone())?;
             }
             Diff::Remove(remove_diff) => {
                 let table = Table::new(table_dir, &remove_diff.table_name, None)?;
-                remove_rows(&table, remove_diff.row_locations.clone())?;
+                table.remove_rows(remove_diff.row_locations.clone())?;
             }
             Diff::TableCreate(table_create_diff) => {
                 create_table_in_dir(&table_create_diff.table_name, &table_create_diff.schema, table_dir)?;
@@ -166,9 +166,9 @@ mod tests {
             vec![Value::I32(5), Value::String("Bill".to_string()), Value::I32(31)],
             vec![Value::I32(6), Value::String("Bucky".to_string()), Value::I32(32)],
         ];
-        let insert_diff1: InsertDiff = insert_rows(&mut table1, rows1).unwrap();
+        let insert_diff1: InsertDiff = table1.insert_rows(rows1).unwrap();
         diffs.push(Diff::Insert(insert_diff1.clone()));
-        let insert_diff2: InsertDiff = insert_rows(&mut table1, rows2).unwrap();
+        let insert_diff2: InsertDiff = table1.insert_rows(rows2).unwrap();
         diffs.push(Diff::Insert(insert_diff2.clone()));
 
         // Construct the table from the diffs and then read it in
@@ -207,7 +207,7 @@ mod tests {
             vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)],
             vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)],
         ];
-        let insert_diff1: InsertDiff = insert_rows(&mut table1, rows1).unwrap();
+        let insert_diff1: InsertDiff = table1.insert_rows(rows1).unwrap();
         diffs.push(Diff::Insert(insert_diff1.clone()));
 
         // Update 2 of the inserted rows
@@ -223,7 +223,7 @@ mod tests {
                 row: vec![Value::I32(100), Value::String("Joe Schmoe".to_string()), Value::I32(55)],
             },
         ];
-        let update_diff1: UpdateDiff = rewrite_rows(&mut table1, rows_to_change).unwrap();
+        let update_diff1: UpdateDiff = table1.rewrite_rows(rows_to_change).unwrap();
         diffs.push(Diff::Update(update_diff1.clone()));
 
         // Construct the table from the diffs and then read it in
@@ -269,20 +269,20 @@ mod tests {
             vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)],
             vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)],
         ];
-        insert_rows(&mut table1, rows1).unwrap();
+        table1.insert_rows(rows1).unwrap();
 
         // Insert rows into table2
         let rows2: Vec<Row> = vec![
             vec![Value::I32(45), Value::String("Bob".to_string()), Value::I32(240)],
         ];
-        insert_rows(&mut table2, rows2).unwrap();
+        table2.insert_rows(rows2).unwrap();
 
         // Insert rows into table3
         let rows3: Vec<Row> = vec![
             vec![Value::I32(12), Value::Double(3.14)],
             vec![Value::I32(39), Value::Double(2.718)],
         ];
-        insert_rows(&mut table3, rows3).unwrap();
+        table3.insert_rows(rows3).unwrap();
         
         // Copy the 3 tables to the build directory
         std::fs::create_dir(&dir_to_build_in).unwrap();
@@ -315,14 +315,14 @@ mod tests {
                 row: vec![Value::I32(100), Value::String("Joe Schmoe".to_string()), Value::I32(55)],
             },
         ];
-        let update_diff1: UpdateDiff = rewrite_rows(&mut table1, rows_to_change).unwrap();
+        let update_diff1: UpdateDiff = table1.rewrite_rows(rows_to_change).unwrap();
         diffs.push(Diff::Update(update_diff1.clone()));
 
         // Insert another row in table2
         let rows_to_insert: Vec<Row> = vec![
             vec![Value::I32(46), Value::String("Bob2".to_string()), Value::I32(241)],
         ];
-        let insert_diff1: InsertDiff = insert_rows(&mut table2, rows_to_insert).unwrap();
+        let insert_diff1: InsertDiff = table2.insert_rows(rows_to_insert).unwrap();
         diffs.push(Diff::Insert(insert_diff1.clone()));
 
         // Now delete table2
@@ -335,7 +335,7 @@ mod tests {
             vec![Value::I32(59), Value::Double(1.23456)],
             vec![Value::I32(40), Value::Double(2.7182)],
         ];
-        let insert_diff2: InsertDiff = insert_rows(&mut table3, rows_to_insert).unwrap();
+        let insert_diff2: InsertDiff = table3.insert_rows(rows_to_insert).unwrap();
         diffs.push(Diff::Insert(insert_diff2.clone()));
 
         // Delete a row from table3
@@ -345,7 +345,7 @@ mod tests {
                 pagenum: insert_diff2.rows[1].pagenum,
             },
         ];
-        let delete_diff2: RemoveDiff = remove_rows(&mut table3, rows_to_delete).unwrap();
+        let delete_diff2: RemoveDiff = table3.remove_rows(rows_to_delete).unwrap();
         diffs.push(Diff::Remove(delete_diff2.clone()));
         
         // Construct the tables from the diffs and then read it in

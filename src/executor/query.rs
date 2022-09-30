@@ -162,7 +162,7 @@ pub fn insert(values: Vec<Row>, table_name: String, database: Database) -> Resul
     })?;
     // Actually insert the values into the table
     let len = values.len();
-    insert_rows(&mut table, values)?;
+    table.insert_rows(values)?;
     Ok(format!("{} rows were successfully inserted.", len))
 }
 
@@ -202,7 +202,7 @@ mod tests {
             Value::String("Spiderman".to_string()),
             Value::I32(20),
         ];
-        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+        table1.insert_rows([row1, row2].to_vec()).unwrap();
 
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
 
@@ -275,12 +275,12 @@ mod tests {
             Value::String("Tom Holland".to_string()),
             Value::I32(20),
         ];
-        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+        table1.insert_rows([row1, row2].to_vec()).unwrap();
 
         // Write rows to second table
         let row1 = vec![Value::I32(1), Value::String("United States".to_string())];
         let row2 = vec![Value::I32(2), Value::String("Britain".to_string())];
-        insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
+        table2.insert_rows([row1, row2].to_vec()).unwrap();
 
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
@@ -368,7 +368,7 @@ mod tests {
             Value::String("Doctor Strange".to_string()),
             Value::I32(35),
         ];
-        insert_rows(&mut table1, [row1, row2, row3].to_vec()).unwrap();
+        table1.insert_rows([row1, row2, row3].to_vec()).unwrap();
 
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
@@ -436,7 +436,7 @@ mod tests {
             Value::String("Tom Holland".to_string()),
             Value::I32(20),
         ];
-        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+        table1.insert_rows([row1, row2].to_vec()).unwrap();
 
         let schema2: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -452,7 +452,7 @@ mod tests {
 
         let row1 = vec![Value::I32(5), Value::String("United States".to_string())];
         let row2 = vec![Value::I32(6), Value::String("Britain".to_string())];
-        insert_rows(&mut table2, [row1, row2].to_vec()).unwrap();
+        table2.insert_rows([row1, row2].to_vec()).unwrap();
 
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone()).unwrap();
@@ -528,7 +528,7 @@ mod tests {
             Value::String("Tom Holland".to_string()),
             Value::I32(20),
         ];
-        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+        table1.insert_rows([row1, row2].to_vec()).unwrap();
 
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone());
@@ -578,7 +578,7 @@ mod tests {
             Value::String("Tom Holland".to_string()),
             Value::I32(20),
         ];
-        insert_rows(&mut table1, [row1, row2].to_vec()).unwrap();
+        table1.insert_rows([row1, row2].to_vec()).unwrap();
 
         // Run the SELECT query
         let result = select(&columns.to_owned(), &tables, new_db.clone());
