@@ -192,7 +192,7 @@ impl Database {
     }
 
     /// Returns the file path to the table if it exists on the current branch
-    pub fn get_table_path(&self, table_name: String) -> Result<String, String> {
+    pub fn get_table_path(&self, table_name: &String) -> Result<String, String> {
         let mut table_path = self.get_current_branch_path();
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str(table_name.as_str());
@@ -464,7 +464,7 @@ mod tests {
 
         // Make sure the table path is correct
         assert_eq!(
-            new_db.get_table_path("test_table".to_string()).unwrap(),
+            new_db.get_table_path(&"test_table".to_string()).unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"
@@ -519,7 +519,7 @@ mod tests {
 
         // Make sure the table path is correct
         assert_eq!(
-            loaded_db.get_table_path("test_table".to_string()).unwrap(),
+            loaded_db.get_table_path(&"test_table".to_string()).unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"

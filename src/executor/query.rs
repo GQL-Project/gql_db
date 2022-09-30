@@ -1,5 +1,6 @@
 use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
+use crate::util::row::Row;
 use itertools::Itertools;
 use sqlparser::ast::Statement;
 
@@ -35,7 +36,6 @@ pub fn select(
     // Read in the tables into a vector of tuples where they are represented as (table, alias)
     let mut tables: Vec<(Table, String)> = Vec::new();
     for (table_name, alias) in table_names {
-        database.get_table_path(table_name.to_string())?;
         let table_dir: String = database.get_current_branch_path();
         tables.push((Table::new(&table_dir, &table_name, None)?, alias.clone()));
     }
@@ -127,6 +127,43 @@ pub fn select(
     }
 
     Ok((selected_schema, selected_rows))
+}
+
+/// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
+/// into the table. It returns a string containing the number of rows inserted.
+/// If the table does not exist, it returns an error.
+/// If the number of values to be inserted does not match the number of columns in the table, it returns an error.
+/// If the values to be inserted are not of the correct type, it returns an error.
+pub fn insert(values: Vec<Row>, table_name: String, database: Database) -> Result<String, String> {
+    database.get_table_path(&table_name)?;
+    let table_dir: String = database.get_current_branch_path();
+    let mut table = Table::new(&table_dir, &table_name, None)?;
+    // Ensure that the number of values to be inserted matches the number of columns in the table
+    values.iter().try_for_each(|vec| {
+        if vec.len() != table.schema.len() {
+            return Err(format!(
+                "Error: Values Inserted did not match Schema {}",
+                table_name
+            ));
+        }
+        vec.iter()
+            .zip(table.schema.iter())
+            .try_for_each(|(val, (_, col_type))| {
+                if col_type.match_value(&val) {
+                    return Err(format!(
+                        "Error: Value {} is not of type {}",
+                        val.to_string(),
+                        col_type.to_string()
+                    ));
+                }
+                Ok(())
+            })?;
+        Ok(())
+    })?;
+    // Actually insert the values into the table
+    let len = values.len();
+    insert_rows(&mut table, values)?;
+    Ok(format!("{} rows were successfully inserted.", len))
 }
 
 #[cfg(test)]
