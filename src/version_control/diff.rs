@@ -1,4 +1,7 @@
-use crate::{fileio::{header::*, databaseio::*, tableio::*}, util::row::*};
+use crate::{
+    fileio::{databaseio::*, header::*, tableio::*},
+    util::row::*,
+};
 
 /***************************************************************************************************/
 /*                                         Diff Structs                                            */
@@ -50,13 +53,21 @@ pub struct TableRemoveDiff {
 
 impl UpdateDiff {
     pub fn new(table_name: String, schema: Schema, rows: Vec<RowInfo>) -> Self {
-        Self { table_name, schema, rows }
+        Self {
+            table_name,
+            schema,
+            rows,
+        }
     }
 }
 
 impl InsertDiff {
     pub fn new(table_name: String, schema: Schema, rows: Vec<RowInfo>) -> Self {
-        Self { table_name, schema, rows }
+        Self {
+            table_name,
+            schema,
+            rows,
+        }
     }
 }
 
@@ -68,7 +79,6 @@ impl RemoveDiff {
         }
     }
 }
-
 
 /// This method takes in a directory along with the diffs that are to be applied to it and applies them.
 /// There are a couple assumptions:
@@ -91,7 +101,11 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
                 table.remove_rows(remove_diff.row_locations.clone())?;
             }
             Diff::TableCreate(table_create_diff) => {
-                create_table_in_dir(&table_create_diff.table_name, &table_create_diff.schema, table_dir)?;
+                create_table_in_dir(
+                    &table_create_diff.table_name,
+                    &table_create_diff.schema,
+                    table_dir,
+                )?;
             }
             Diff::TableRemove(table_remove_diff) => {
                 delete_table_in_dir(&table_remove_diff.table_name, table_dir)?;
@@ -101,12 +115,11 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::util::dbtype::*;
-    use file_diff::{diff};
+    use file_diff::diff;
 
     #[test]
     fn test_create_table_diff() {
@@ -121,7 +134,8 @@ mod tests {
 
         let mut diffs: Vec<Diff> = Vec::new();
 
-        let result: (Table, TableCreateDiff) = create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
         let table1: Table = result.0;
         diffs.push(Diff::TableCreate(result.1.clone()));
 
@@ -130,7 +144,12 @@ mod tests {
         let table2: Table = Table::new(&dir_to_build_in, &table_name, None).unwrap();
 
         // Make sure table1 and table2 are the same and that they point to the right directories
-        assert!(compare_tables(&table1, &table2, &dir_to_create_in, &dir_to_build_in));
+        assert!(compare_tables(
+            &table1,
+            &table2,
+            &dir_to_create_in,
+            &dir_to_build_in
+        ));
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
@@ -151,20 +170,45 @@ mod tests {
         let mut diffs: Vec<Diff> = Vec::new();
 
         // Create Table
-        let result: (Table, TableCreateDiff) = create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
         let mut table1: Table = result.0;
         diffs.push(Diff::TableCreate(result.1.clone()));
 
         // Insert 2 sets of rows
         let rows1: Vec<Row> = vec![
-            vec![Value::I32(1), Value::String("John".to_string()), Value::I32(20)],
-            vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)],
-            vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)],
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(21),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(22),
+            ],
         ];
         let rows2: Vec<Row> = vec![
-            vec![Value::I32(4), Value::String("Bob".to_string()), Value::I32(30)],
-            vec![Value::I32(5), Value::String("Bill".to_string()), Value::I32(31)],
-            vec![Value::I32(6), Value::String("Bucky".to_string()), Value::I32(32)],
+            vec![
+                Value::I32(4),
+                Value::String("Bob".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(5),
+                Value::String("Bill".to_string()),
+                Value::I32(31),
+            ],
+            vec![
+                Value::I32(6),
+                Value::String("Bucky".to_string()),
+                Value::I32(32),
+            ],
         ];
         let insert_diff1: InsertDiff = table1.insert_rows(rows1).unwrap();
         diffs.push(Diff::Insert(insert_diff1.clone()));
@@ -176,7 +220,12 @@ mod tests {
         let table2 = Table::new(&dir_to_build_in, &table_name, None).unwrap();
 
         // Make sure table1 and table2 are the same and that they point to the right directories
-        assert!(compare_tables(&table1, &table2, &dir_to_create_in, &dir_to_build_in));
+        assert!(compare_tables(
+            &table1,
+            &table2,
+            &dir_to_create_in,
+            &dir_to_build_in
+        ));
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
@@ -197,15 +246,28 @@ mod tests {
         let mut diffs: Vec<Diff> = Vec::new();
 
         // Create Table
-        let result: (Table, TableCreateDiff) = create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
         let mut table1: Table = result.0;
         diffs.push(Diff::TableCreate(result.1.clone()));
 
         // Insert rows
         let rows1: Vec<Row> = vec![
-            vec![Value::I32(1), Value::String("John".to_string()), Value::I32(20)],
-            vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)],
-            vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)],
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(21),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(22),
+            ],
         ];
         let insert_diff1: InsertDiff = table1.insert_rows(rows1).unwrap();
         diffs.push(Diff::Insert(insert_diff1.clone()));
@@ -215,12 +277,20 @@ mod tests {
             RowInfo {
                 rownum: insert_diff1.rows[0].rownum,
                 pagenum: insert_diff1.rows[0].pagenum,
-                row: vec![Value::I32(1), Value::String("John2".to_string()), Value::I32(30)],
+                row: vec![
+                    Value::I32(1),
+                    Value::String("John2".to_string()),
+                    Value::I32(30),
+                ],
             },
             RowInfo {
                 rownum: insert_diff1.rows[2].rownum,
                 pagenum: insert_diff1.rows[2].pagenum,
-                row: vec![Value::I32(100), Value::String("Joe Schmoe".to_string()), Value::I32(55)],
+                row: vec![
+                    Value::I32(100),
+                    Value::String("Joe Schmoe".to_string()),
+                    Value::I32(55),
+                ],
             },
         ];
         let update_diff1: UpdateDiff = table1.rewrite_rows(rows_to_change).unwrap();
@@ -231,7 +301,12 @@ mod tests {
         let table2 = Table::new(&dir_to_build_in, &table_name, None).unwrap();
 
         // Make sure table1 and table2 are the same and that they point to the right directories
-        assert!(compare_tables(&table1, &table2, &dir_to_create_in, &dir_to_build_in));
+        assert!(compare_tables(
+            &table1,
+            &table2,
+            &dir_to_create_in,
+            &dir_to_build_in
+        ));
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
@@ -256,25 +331,42 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("value".to_string(), Column::Double),
         ];
-        let result: (Table, TableCreateDiff) = create_table_in_dir(&table1_name, &schema, &dir_to_create_in).unwrap();
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table1_name, &schema, &dir_to_create_in).unwrap();
         let mut table1: Table = result.0;
-        let result: (Table, TableCreateDiff) = create_table_in_dir(&table2_name, &schema, &dir_to_create_in).unwrap();
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table2_name, &schema, &dir_to_create_in).unwrap();
         let mut table2: Table = result.0;
-        let result: (Table, TableCreateDiff) = create_table_in_dir(&table3_name, &schema3, &dir_to_create_in).unwrap();
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table3_name, &schema3, &dir_to_create_in).unwrap();
         let mut table3: Table = result.0;
 
         // Insert rows into table1
         let rows1: Vec<Row> = vec![
-            vec![Value::I32(1), Value::String("John".to_string()), Value::I32(20)],
-            vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)],
-            vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)],
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(21),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(22),
+            ],
         ];
         table1.insert_rows(rows1).unwrap();
 
         // Insert rows into table2
-        let rows2: Vec<Row> = vec![
-            vec![Value::I32(45), Value::String("Bob".to_string()), Value::I32(240)],
-        ];
+        let rows2: Vec<Row> = vec![vec![
+            Value::I32(45),
+            Value::String("Bob".to_string()),
+            Value::I32(240),
+        ]];
         table2.insert_rows(rows2).unwrap();
 
         // Insert rows into table3
@@ -283,21 +375,24 @@ mod tests {
             vec![Value::I32(39), Value::Double(2.718)],
         ];
         table3.insert_rows(rows3).unwrap();
-        
+
         // Copy the 3 tables to the build directory
         std::fs::create_dir(&dir_to_build_in).unwrap();
         std::fs::copy(
-            &format!("{}/{}.db", dir_to_create_in, table1_name), 
-            &format!("{}/{}.db", dir_to_build_in, table1_name)
-        ).unwrap();
+            &format!("{}/{}.db", dir_to_create_in, table1_name),
+            &format!("{}/{}.db", dir_to_build_in, table1_name),
+        )
+        .unwrap();
         std::fs::copy(
-            &format!("{}/{}.db", dir_to_create_in, table2_name), 
-            &format!("{}/{}.db", dir_to_build_in, table2_name)
-        ).unwrap();
+            &format!("{}/{}.db", dir_to_create_in, table2_name),
+            &format!("{}/{}.db", dir_to_build_in, table2_name),
+        )
+        .unwrap();
         std::fs::copy(
-            &format!("{}/{}.db", dir_to_create_in, table3_name), 
-            &format!("{}/{}.db", dir_to_build_in, table3_name)
-        ).unwrap();
+            &format!("{}/{}.db", dir_to_create_in, table3_name),
+            &format!("{}/{}.db", dir_to_build_in, table3_name),
+        )
+        .unwrap();
 
         // Create a vector of diffs to apply to the tables in the create directory
         let mut diffs: Vec<Diff> = Vec::new();
@@ -307,26 +402,37 @@ mod tests {
             RowInfo {
                 rownum: 0,
                 pagenum: 0,
-                row: vec![Value::I32(1), Value::String("John2".to_string()), Value::I32(30)],
+                row: vec![
+                    Value::I32(1),
+                    Value::String("John2".to_string()),
+                    Value::I32(30),
+                ],
             },
             RowInfo {
                 rownum: 2,
                 pagenum: 0,
-                row: vec![Value::I32(100), Value::String("Joe Schmoe".to_string()), Value::I32(55)],
+                row: vec![
+                    Value::I32(100),
+                    Value::String("Joe Schmoe".to_string()),
+                    Value::I32(55),
+                ],
             },
         ];
         let update_diff1: UpdateDiff = table1.rewrite_rows(rows_to_change).unwrap();
         diffs.push(Diff::Update(update_diff1.clone()));
 
         // Insert another row in table2
-        let rows_to_insert: Vec<Row> = vec![
-            vec![Value::I32(46), Value::String("Bob2".to_string()), Value::I32(241)],
-        ];
+        let rows_to_insert: Vec<Row> = vec![vec![
+            Value::I32(46),
+            Value::String("Bob2".to_string()),
+            Value::I32(241),
+        ]];
         let insert_diff1: InsertDiff = table2.insert_rows(rows_to_insert).unwrap();
         diffs.push(Diff::Insert(insert_diff1.clone()));
 
         // Now delete table2
-        let delete_diff1: TableRemoveDiff = delete_table_in_dir(&table2.name, &dir_to_create_in).unwrap();
+        let delete_diff1: TableRemoveDiff =
+            delete_table_in_dir(&table2.name, &dir_to_create_in).unwrap();
         diffs.push(Diff::TableRemove(delete_diff1.clone()));
 
         // Insert more rows into table3
@@ -339,15 +445,13 @@ mod tests {
         diffs.push(Diff::Insert(insert_diff2.clone()));
 
         // Delete a row from table3
-        let rows_to_delete: Vec<RowLocation> = vec![
-            RowLocation {
-                rownum: insert_diff2.rows[1].rownum,
-                pagenum: insert_diff2.rows[1].pagenum,
-            },
-        ];
+        let rows_to_delete: Vec<RowLocation> = vec![RowLocation {
+            rownum: insert_diff2.rows[1].rownum,
+            pagenum: insert_diff2.rows[1].pagenum,
+        }];
         let delete_diff2: RemoveDiff = table3.remove_rows(rows_to_delete).unwrap();
         diffs.push(Diff::Remove(delete_diff2.clone()));
-        
+
         // Construct the tables from the diffs and then read it in
         construct_tables_from_diffs(&dir_to_build_in, &diffs).unwrap();
         let table1_built = Table::new(&dir_to_build_in, &table1_name, None).unwrap();
@@ -358,44 +462,50 @@ mod tests {
         let table3_built = Table::new(&dir_to_build_in, &table3_name, None).unwrap();
 
         // Make sure that table1 and table1_built are the same and they point to the right directories
-        assert!(compare_tables(&table1, &table1_built, &dir_to_create_in, &dir_to_build_in));
+        assert!(compare_tables(
+            &table1,
+            &table1_built,
+            &dir_to_create_in,
+            &dir_to_build_in
+        ));
 
         // Make sure that table2 does not exist in the build directory
         assert_eq!(table2_exists, false);
 
         // Make sure that table3 and table3_built are the same and they point to the right directories
-        assert!(compare_tables(&table3, &table3_built, &dir_to_create_in, &dir_to_build_in));
+        assert!(compare_tables(
+            &table3,
+            &table3_built,
+            &dir_to_create_in,
+            &dir_to_build_in
+        ));
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
         std::fs::remove_dir_all(&dir_to_build_in).unwrap();
     }
 
-
     /// Compares two tables to make sure that they are identical, but in separate directories
-    fn compare_tables(table1: &Table, table2: &Table, table1dir: &String, table2dir: &String) -> bool {
+    fn compare_tables(
+        table1: &Table,
+        table2: &Table,
+        table1dir: &String,
+        table2dir: &String,
+    ) -> bool {
         if table1dir == table2dir {
             return false;
         }
-        
+
         // Make sure that table3 and table3_built are the same and they point to the right directories
-        if std::path::Path::new(&table1.path) != std::path::Path::new(
-            &format!(
-                "{}/{}.db", 
-                table1dir, 
-                table1.name
-            )
-        ) {
+        if std::path::Path::new(&table1.path)
+            != std::path::Path::new(&format!("{}/{}.db", table1dir, table1.name))
+        {
             return false;
         }
 
-        if std::path::Path::new(&table2.path) != std::path::Path::new(
-            &format!(
-                "{}/{}.db", 
-                table2dir, 
-                table1.name
-            )
-        ) {
+        if std::path::Path::new(&table2.path)
+            != std::path::Path::new(&format!("{}/{}.db", table2dir, table1.name))
+        {
             return false;
         }
 

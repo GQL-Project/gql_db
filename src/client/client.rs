@@ -35,13 +35,14 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             command.push_str(&last_input);
 
             // stop reading if there's a semi colon
-            if last_input.contains(";")
-            {
+            if last_input.contains(";") {
                 break;
             }
 
             // makes sure these are in the first line (VC commands and exit)
-            if (last_input.contains("exit") || last_input.starts_with("GQL ")) && command == last_input {
+            if (last_input.contains("exit") || last_input.starts_with("GQL "))
+                && command == last_input
+            {
                 break;
             }
 
@@ -68,13 +69,20 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // GQL
         if command.starts_with("GQL ") {
-            client.run_version_control_command(Request::new(request.clone())).await?;
+            client
+                .run_version_control_command(Request::new(request.clone()))
+                .await?;
         } else {
             client.run_query(Request::new(request.clone())).await?;
         }
 
         let result = QueryResult {
-            column_names: vec!["Name".to_string(), "Age".to_string(), "Height".to_string(), "Weight".to_string()],
+            column_names: vec![
+                "Name".to_string(),
+                "Age".to_string(),
+                "Height".to_string(),
+                "Weight".to_string(),
+            ],
             row_values: vec![],
         };
     }

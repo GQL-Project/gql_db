@@ -9,7 +9,7 @@ use crate::{
         databaseio,
         header::{write_header, Header, Schema},
         pageio::*,
-        tableio::{Table},
+        tableio::Table,
     },
     util::{
         dbtype::{Column, Value},

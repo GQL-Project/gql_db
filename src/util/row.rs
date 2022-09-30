@@ -5,7 +5,7 @@ pub type Row = Vec<Value>;
 #[derive(Clone, Debug, PartialEq)]
 pub struct RowLocation {
     pub pagenum: u32,
-    pub rownum: u16
+    pub rownum: u16,
 }
 
 #[derive(Clone, Debug, PartialEq)]
