@@ -1,15 +1,11 @@
-use connection::database_connection_client::DatabaseConnectionClient;
-use connection::{ConnectResult, QueryRequest};
 use std::io::{self, BufRead, Write};
 use std::string::String;
 use tonic::Request;
 
-use crate::client::client::connection::QueryResult;
+use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
+use crate::server::server::db_connection::{ConnectResult, QueryRequest, QueryResult};
+use crate::util::convert::to_row_value;
 use crate::util::dbtype::Value;
-
-pub mod connection {
-    tonic::include_proto!("db_connection");
-}
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
@@ -82,6 +78,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Age".to_string(),
                 "Height".to_string(),
                 "Weight".to_string(),
+                "Location".to_string(),
             ],
             row_values: vec![],
         };
