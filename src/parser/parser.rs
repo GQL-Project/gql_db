@@ -68,7 +68,7 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
                 println!("{:?}", "Valid Branch Command");
             }
         }
-        "switch branch" => {
+        "switch_branch" => {
             // merge
             // Needs an argument
             println!("{:?}", "switch branch command");
@@ -122,4 +122,100 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
         }
     }
     Ok("1".to_string()) // temporary, need to fix it somehow
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_vc_cmd() {
+        let query = "GQL commit -m \"This is a commit message\"";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd2() {
+        let query = "GQL commit";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd3() {
+        let query = "GQL branch";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd4() {
+        let query = "GQL branch branch_name";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd5() {
+        let query = "GQL branch branch name";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd6() {
+        let query = "GQL switch_branch branch_name";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd7() {
+        let query = "GQL switch_branch branch name";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd8() {
+        let query = "GQL log";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd9() {
+        let query = "GQL log -m";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd10() {
+        let query = "GQL revert commit_hash";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd11() {
+        let query = "GQL revert";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd12() {
+        let query = "GQL status";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_vc_cmd13() {
+        let query = "GQL status -m";
+        let result = parse_vc_cmd(query);
+        assert!(result.is_err());
+    }
 }
