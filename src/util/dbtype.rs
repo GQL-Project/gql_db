@@ -93,6 +93,11 @@ impl Column {
             (Column::Double, Value::Double(x)) => write_type(page, offset, *x),
             (Column::Bool, Value::Bool(x)) => write_type(page, offset, *x),
             (Column::Timestamp, Value::Timestamp(x)) => write_type(page, offset, x.clone()),
+            // Type conversions:
+            (Column::I32, Value::I64(x)) => write_type(page, offset, *x as i32),
+            (Column::I64, Value::I32(x)) => write_type(page, offset, *x as i64),
+            (Column::Float, Value::Double(x)) => write_type(page, offset, *x as f32),
+            (Column::Double, Value::Float(x)) => write_type(page, offset, *x as f64),
             (Column::String(size), Value::String(x)) => {
                 write_string(page, offset, &x, *size as usize)
             }
@@ -122,6 +127,11 @@ impl Column {
             (Column::Bool, Value::Bool(_)) => true,
             (Column::Timestamp, Value::Timestamp(_)) => true,
             (Column::String(_), Value::String(_)) => true,
+            // Type coercions
+            (Column::I64, Value::I32(_)) => true,
+            (Column::Double, Value::Float(_)) => true,
+            (Column::Float, Value::Double(_)) => true,
+            (Column::I32, Value::I64(x)) => i32::try_from(*x).is_ok(),
             _ => false,
         }
     }

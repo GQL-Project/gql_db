@@ -640,4 +640,255 @@ mod tests {
         // Delete the test database
         new_db.delete_database().unwrap();
     }
+
+    #[test]
+    #[serial]
+    fn test_insert_columns() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = ["T.id".to_string(), "T.name".to_string()];
+        let tables = [("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Iron Man".to_string()),
+                Value::I32(40),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I32(35),
+            ],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::I32(100),
+            ],
+            vec![
+                Value::I32(5),
+                Value::String("Thor".to_string()),
+                Value::I32(1000),
+            ],
+        ];
+        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 5);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+        assert_eq!(diff.rows[4].row, rows[4]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let result = select(&columns.to_owned(), &tables, &new_db).unwrap();
+
+        assert_eq!(result.0[0], ("id".to_string(), Column::I32));
+        assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 5);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(4));
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+
+        // Assert that the fifth row is correct
+        assert_eq!(result.1[4][0], Value::I32(5));
+        assert_eq!(result.1[4][1], Value::String("Thor".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_insert() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Iron Man".to_string()),
+                Value::I32(40),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::I32(20),
+            ],
+            vec![Value::I32(3), Value::I32(35)],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::I32(100),
+            ],
+        ];
+
+        assert!(insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert can cast values to the correct type if possible
+    fn test_insert_casts() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = ["T.id".to_string(), "T.name".to_string()];
+        let tables = [("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::Double),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        let rows = vec![
+            vec![
+                Value::I64(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Float(3.456),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Double(322.456),
+            ],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::Double(12.456),
+            ],
+        ];
+
+        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 4);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let result = select(&columns.to_owned(), &tables, &new_db).unwrap();
+
+        assert_eq!(result.0[0], ("id".to_string(), Column::I32));
+        assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(4));
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert exits if a value cannot be casted
+    fn test_insert_invalid_casts() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::Double),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        let rows = vec![
+            vec![
+                Value::I64(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::String("Robert Downey".to_string()),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Double(322.456),
+            ],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::Double(12.456),
+            ],
+        ];
+
+        assert!(insert(rows.clone(), "test_table1".to_string(), &new_db.clone()).is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
 }
