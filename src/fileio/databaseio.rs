@@ -328,7 +328,7 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fileio::header::Schema, util::dbtype::Column};
+    use crate::{executor::query::create_table, fileio::header::Schema, util::dbtype::Column};
     use serial_test::serial;
 
     #[test]
