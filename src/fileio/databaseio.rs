@@ -1,5 +1,5 @@
 use super::tableio::*;
-use crate::{version_control::{branch_heads::*}};
+use crate::{version_control::{branch_heads::*, branches::BranchNode}};
 use glob::glob;
 use std::env;
 use std::path::Path;

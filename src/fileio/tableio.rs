@@ -16,7 +16,8 @@ pub struct Table {
 }
 
 impl Table {
-    // Construct a new table from an already existing file.
+    /// Construct a new table from an already existing file.
+    /// The table_extension parameter is optional. If you do not specify it, it will use the default.
     pub fn new(
         directory: &String,
         table_name: &String,
@@ -110,11 +111,25 @@ pub fn create_table(
     database: &Database,
 ) -> Result<(Table, TableCreateDiff), String> {
     let table_dir: String = database.get_current_branch_path();
-    // Create a table file
-    let table_path: String = table_dir.clone()
-        + std::path::MAIN_SEPARATOR.to_string().as_str()
-        + &table_name
-        + TABLE_FILE_EXTENSION.to_string().as_str();
+    // Create a table file and return it
+    create_table_in_dir(table_name, schema, &table_dir)
+}
+
+
+/// Create a new table within a given directory named <table_name><TABLE_FILE_EXTENSION>
+pub fn create_table_in_dir(
+    table_name: &String,
+    schema: &Schema,
+    table_dir: &String,
+) -> Result<(Table, TableCreateDiff), String> {
+    // Construct the path to the table file.
+    let filename: String = table_name.clone() + &TABLE_FILE_EXTENSION.to_string();
+    let mut table_path = filename.clone();
+    if table_dir.len() > 0 {
+        table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
+    }
+
+    // Create the file
     create_file(&table_path).map_err(|e| e.to_string())?;
 
     // Write the header
@@ -138,6 +153,42 @@ pub fn create_table(
     ))
 }
 
+
+/// Delete a table from the given database.
+pub fn delete_table(
+    table_name: &String,
+    database: &Database,
+) -> Result<TableRemoveDiff, String> {
+    let table_dir: String = database.get_current_branch_path();
+    // Delete the table file and return it
+    delete_table_in_dir(table_name, &table_dir)
+}
+
+
+/// Delete a table from the given directory.
+pub fn delete_table_in_dir(
+    table_name: &String,
+    table_dir: &String,
+) -> Result<TableRemoveDiff, String> {
+    // Create the path to the table file.
+    let filename: String = table_name.clone() + &TABLE_FILE_EXTENSION.to_string();
+    let mut table_path = filename.clone();
+    if table_dir.len() > 0 {
+        table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
+    }
+
+    // Delete the table file
+    std::fs::remove_file(&table_path).map_err(|e| e.to_string())?;
+
+    // Return the diff
+    Ok(
+        TableRemoveDiff {
+            table_name: table_name.clone(),
+        },
+    )
+}
+
+
 /// This function is helpful when doing Updates
 /// It allows us to rewrite a specific row from the table.
 /// It returns a diff of the rows that were updated.
@@ -146,10 +197,11 @@ pub fn rewrite_rows(table: &Table, mut rows: Vec<RowInfo>) -> Result<UpdateDiff,
     let mut diff: UpdateDiff =
         UpdateDiff::new(table.name.clone(), table.schema.clone(), Vec::new());
 
-    // To reduce page updates, we sort the rows by page number.
     if rows.len() < 1 {
         return Ok(diff);
     }
+
+    // To reduce page updates, we sort the rows by page number.
     rows.sort();
     let mut pagenum = rows[0].pagenum;
     let mut page = read_page(pagenum, &table.path)?;
@@ -209,6 +261,53 @@ pub fn insert_rows(table: &mut Table, rows: Vec<Row>) -> Result<InsertDiff, Stri
     write_page(pagenum, &table.path, page.as_mut())?;
     Ok(diff)
 }
+
+
+/// This function is helpful when building a table from a diff.
+/// It allows us to insert a row into the table, at a specific location
+/// This is a dangerous operation because it could overwrite existing data.
+pub fn write_rows(table: &mut Table, mut rows: Vec<RowInfo>) -> Result<InsertDiff, String> {
+    // Keep track of how the rows have changed.
+    let mut diff: InsertDiff =
+        InsertDiff::new(table.name.clone(), table.schema.clone(), Vec::new());
+
+    // Just return right away if we aren't inserting any rows
+    if rows.len() == 0 {
+        return Ok(diff);
+    }
+
+    // To reduce page updates, we sort the rows by page number.
+    rows.sort();
+    let mut pagenum: u32 = 0;
+    let mut page: Box<Page> = Box::new([0; 4096]);
+    for rowinfo in rows {
+        pagenum = rowinfo.pagenum;
+
+        // Allocate new pages if needed
+        while rowinfo.pagenum >= table.max_pages {
+            let new_page = Box::new([0; 4096]);
+            table.max_pages += 1;
+            write_page(table.max_pages - 1, &table.path, new_page.as_ref())?;
+        }
+        // Read in the page
+        page = read_page(rowinfo.pagenum, &table.path)?;
+
+        // Write the row to the page at the row number
+        write_row(&table.schema, page.as_mut(), &rowinfo.row, rowinfo.rownum)?;
+        write_page(rowinfo.pagenum, &table.path, page.as_ref())?;
+
+        // Add the information to the diff
+        diff.rows.push(RowInfo {
+            row: rowinfo.row.clone(),
+            pagenum: rowinfo.pagenum,
+            rownum: rowinfo.rownum,
+        });
+    }
+    // Write the last page
+    write_page(pagenum, &table.path, page.as_mut())?;
+    Ok(diff)
+}
+
 
 /// This function is helpful when doing Deletes
 /// It removes the rows from the table specified by the tuples (pagenum, rownum)
@@ -483,6 +582,112 @@ mod tests {
         assert_eq!(remove_diff.row_locations[0].pagenum, 3);
         assert_eq!(remove_diff.row_locations[0].rownum, 0);
 
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
+    fn test_delete_table() {
+        let tablename = "test_delete_table".to_string();
+        let tablename_with_extension = tablename.clone() + &TABLE_FILE_EXTENSION.to_string();
+        create_table(&tablename);
+
+        // Verify that the table exists
+        assert!(std::path::Path::new(&tablename_with_extension).exists());
+
+        delete_table_in_dir(&tablename, &"".to_string()).unwrap();
+
+        // Verify that the table does not exist
+        assert!(!std::path::Path::new(&tablename).exists());
+    }
+
+    #[test]
+    fn test_write_rows() {
+        let path: String = "test_write_rows".to_string();
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut table = create_table_in_dir(&path, &schema, &"".to_string()).unwrap().0;
+
+        let mut rows: Vec<RowInfo> = Vec::new();
+        rows.push(
+            RowInfo {
+                row: vec![
+                    Value::I32(3),
+                    Value::String("Alexander Hamilton".to_string()),
+                    Value::I32(60),
+                ],
+                pagenum: 3,
+                rownum: 4,
+            }
+        );
+        rows.push(
+            RowInfo {
+                row: vec![
+                    Value::I32(4),
+                    Value::String("Aaron Burr".to_string()),
+                    Value::I32(40),
+                ],
+                pagenum: 6,
+                rownum: 0,
+            }
+        );
+
+        // Try InsertDiff
+        let insert_diff: InsertDiff = write_rows(&mut table, rows).unwrap();
+
+        // Verify that the max pages were updated
+        assert_eq!(table.max_pages, 7);
+
+        // Verify that the insert_diff is correct
+        assert_eq!(insert_diff.table_name, "test_write_rows".to_string());
+        // Verify that the first row is correct
+        assert_eq!(insert_diff.rows[0].pagenum, 3);
+        assert_eq!(insert_diff.rows[0].rownum, 4);
+        assert_eq!(insert_diff.rows[0].row[0], Value::I32(3));
+        assert_eq!(
+            insert_diff.rows[0].row[1],
+            Value::String("Alexander Hamilton".to_string())
+        );
+        assert_eq!(insert_diff.rows[0].row[2], Value::I32(60));
+        // Verify that the second row is correct
+        assert_eq!(insert_diff.rows[1].pagenum, 6);
+        assert_eq!(insert_diff.rows[1].rownum, 0);
+        assert_eq!(insert_diff.rows[1].row[0], Value::I32(4));
+        assert_eq!(
+            insert_diff.rows[1].row[1],
+            Value::String("Aaron Burr".to_string())
+        );
+        assert_eq!(insert_diff.rows[1].row[2], Value::I32(40));
+
+        // Collect all rows in the table
+        let mut rows_from_table: Vec<RowInfo> = Vec::new();
+        for row in table {
+            rows_from_table.push(row);
+        }
+        // Assert that there are two rows
+        assert_eq!(rows_from_table.len(), 2);
+
+        let row1: RowInfo = rows_from_table[0].clone();
+        // Verify that the first row is correct
+        if row1.pagenum == 3 && row1.rownum == 4 {
+            assert_eq!(row1.row[0], Value::I32(3));
+            assert_eq!(
+                row1.row[1],
+                Value::String("Alexander Hamilton".to_string())
+            );
+            assert_eq!(row1.row[2], Value::I32(60));
+        }
+        let row2: RowInfo = rows_from_table[1].clone();
+        // Verify that the second row is correct
+        if row2.pagenum == 6 && row2.rownum == 0 {
+            assert_eq!(row2.row[0], Value::I32(4));
+            assert_eq!(row2.row[1], Value::String("Aaron Burr".to_string()));
+            assert_eq!(row2.row[2], Value::I32(40));
+        }
+        
         // Clean up by removing file
         clean_table(&path);
     }

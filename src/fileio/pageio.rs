@@ -8,6 +8,11 @@ pub type Page = [u8; PAGE_SIZE]; // Array of Size 4KB
 
 // Creates file with given name and size of Page Size
 pub fn create_file(path: &String) -> Result<(), Error> {
+    // If the directory to the file does not exist, create it
+    let path_obj = std::path::Path::new(path);
+    let path_to_file_dir = path_obj.parent().unwrap();
+    std::fs::create_dir_all(path_to_file_dir).unwrap();
+
     let file = File::create(path)?;
     file.set_len(PAGE_SIZE as u64)?;
     Ok(())
