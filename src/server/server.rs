@@ -38,7 +38,7 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Execute the query represented by the AST.
-                query::execute(&tree.clone(), false).map_err(|e| Status::internal(e))?;
+                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
 
                 Ok(Response::new(to_query_result(vec![tree], vec![])))
             }

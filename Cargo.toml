@@ -9,10 +9,6 @@ default-run = "gql"
 name = "gql"
 path = "src/main.rs"
 
-[[bin]]
-name = "gql-client"
-path = "src/client/main.rs"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 # Currently going with the latest versions of each dependency, hope nothing breaks

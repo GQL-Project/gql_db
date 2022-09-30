@@ -4,12 +4,14 @@ use std::io::{self, BufRead, Write};
 use std::string::String;
 use tonic::Request;
 
+use crate::client::client::connection::QueryResult;
+use crate::util::dbtype::Value;
+
 pub mod connection {
     tonic::include_proto!("db_connection");
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
     let request = tonic::Request::new(());
     let response = client.connect_db(request).await?.into_inner();
@@ -62,14 +64,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        //let get_response;
         // GQL
         if command.starts_with("GQL ") {
             client.run_version_control_command(Request::new(request.clone())).await?;
         } else {
             client.run_query(Request::new(request.clone())).await?;
         }
-    }
 
+        let result = QueryResult {
+            column_names: vec!["Name".to_string(), "Age".to_string(), "Height".to_string(), "Weight".to_string()],
+            row_values: vec![],
+        };
+    }
     Ok(())
 }
