@@ -80,8 +80,7 @@ impl Application for WelcomePage {
                 .style(self.theme)
                 .padding(10)
                 .password()
-                .size(20)
-                ,
+                .size(20),
             )
             .push(
                 Button::new(&mut self.login, Text::new("Login"))

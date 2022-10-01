@@ -1,3 +1,3 @@
 pub mod main;
-pub mod welcome_page;
 pub mod style;
+pub mod welcome_page;
