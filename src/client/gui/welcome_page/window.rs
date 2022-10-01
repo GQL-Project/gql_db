@@ -3,11 +3,14 @@ use iced::{
     button, executor, text_input, Alignment, Application, Button, Column, Container, Element,
     Length, Sandbox, Space, Text, TextInput,
 };
+
+use crate::client::gui::style::style::DarkMode as Theme;
 #[derive(Default)]
 pub struct WelcomePage {
     email: String,
     password: String,
 
+    theme: Theme,
     input_email: text_input::State,
     input_password: text_input::State,
     login: button::State,
@@ -49,8 +52,8 @@ impl Application for WelcomePage {
 
     fn view(&mut self) -> Element<'_, Self::Message> {
         let image = Image::new("src/client/gui/assets/gql.png")
-            .width(Length::Units(256))
-            .height(Length::Units(256));
+            .width(Length::Units(128))
+            .height(Length::Units(128));
         let content = Column::new()
             .push(Text::new("Welcome to GQL - Database Client").size(50))
             .push(image)
@@ -62,6 +65,7 @@ impl Application for WelcomePage {
                     &self.email,
                     Message::EmailChanged,
                 )
+                .style(self.theme)
                 .padding(10)
                 .size(20),
             )
@@ -73,11 +77,17 @@ impl Application for WelcomePage {
                     Message::PasswordChanged,
                 )
                 .on_submit(Message::ButtonPressed)
+                .style(self.theme)
                 .padding(10)
                 .password()
-                .size(20),
+                .size(20)
+                ,
             )
-            .push(Button::new(&mut self.login, Text::new("Login")).on_press(Message::ButtonPressed))
+            .push(
+                Button::new(&mut self.login, Text::new("Login"))
+                    .on_press(Message::ButtonPressed)
+                    .style(self.theme),
+            )
             .spacing(20)
             .padding(20)
             .align_items(Alignment::Center);
@@ -87,6 +97,7 @@ impl Application for WelcomePage {
             .height(Length::Fill)
             .center_x()
             .center_y()
+            .style(Theme::default())
             .into()
     }
 }

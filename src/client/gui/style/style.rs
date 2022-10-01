@@ -3,134 +3,71 @@ use iced::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Theme {
-    Light,
-    Dark,
-}
+pub struct DarkMode {}
 
-impl Theme {
-    pub const ALL: [Theme; 2] = [Theme::Light, Theme::Dark];
-}
-
-impl Default for Theme {
-    fn default() -> Theme {
-        Theme::Light
+impl Default for DarkMode {
+    fn default() -> DarkMode {
+        DarkMode {}
     }
 }
 
-impl<'a> From<Theme> for Box<dyn container::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Container.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn container::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::Container.into()
     }
 }
 
-impl<'a> From<Theme> for Box<dyn radio::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Radio.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn radio::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::Radio.into()
     }
 }
 
-impl<'a> From<Theme> for Box<dyn text_input::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::TextInput.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn text_input::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::TextInput.into()
     }
 }
 
-impl<'a> From<Theme> for Box<dyn button::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => light::Button.into(),
-            Theme::Dark => dark::Button.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn button::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::Button.into()
     }
 }
 
-impl<'a> From<Theme> for Box<dyn scrollable::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Scrollable.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn scrollable::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::Scrollable.into()
     }
 }
 
-impl<'a> From<Theme> for Box<dyn slider::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Slider.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn slider::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::Slider.into()
     }
 }
 
-impl From<Theme> for Box<dyn progress_bar::StyleSheet> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::ProgressBar.into(),
-        }
+impl From<DarkMode> for Box<dyn progress_bar::StyleSheet> {
+    fn from(_: DarkMode) -> Self {
+        dark::ProgressBar.into()
     }
 }
 
-impl<'a> From<Theme> for Box<dyn checkbox::StyleSheet + 'a> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Checkbox.into(),
-        }
+impl<'a> From<DarkMode> for Box<dyn checkbox::StyleSheet + 'a> {
+    fn from(_: DarkMode) -> Self {
+        dark::Checkbox.into()
     }
 }
 
-impl From<Theme> for Box<dyn toggler::StyleSheet> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Toggler.into(),
-        }
+impl From<DarkMode> for Box<dyn toggler::StyleSheet> {
+    fn from(_: DarkMode) -> Self {
+        dark::Toggler.into()
     }
 }
 
-impl From<Theme> for Box<dyn rule::StyleSheet> {
-    fn from(theme: Theme) -> Self {
-        match theme {
-            Theme::Light => Default::default(),
-            Theme::Dark => dark::Rule.into(),
-        }
-    }
-}
-
-mod light {
-    use iced::{button, Color, Vector};
-
-    pub struct Button;
-
-    impl button::StyleSheet for Button {
-        fn active(&self) -> button::Style {
-            button::Style {
-                background: Color::from_rgb(0.11, 0.42, 0.87).into(),
-                border_radius: 12.0,
-                shadow_offset: Vector::new(1.0, 1.0),
-                text_color: Color::from_rgb8(0xEE, 0xEE, 0xEE),
-                ..button::Style::default()
-            }
-        }
-
-        fn hovered(&self) -> button::Style {
-            button::Style {
-                text_color: Color::WHITE,
-                shadow_offset: Vector::new(1.0, 2.0),
-                ..self.active()
-            }
-        }
+impl From<DarkMode> for Box<dyn rule::StyleSheet> {
+    fn from(_: DarkMode) -> Self {
+        dark::Rule.into()
     }
 }
 
