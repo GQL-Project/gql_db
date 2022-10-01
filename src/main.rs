@@ -17,6 +17,9 @@ struct Args {
     #[clap(short, long)]
     client: bool,
 
+    #[clap(short, long)]
+    gui: bool,
+
     // IP Address
     #[clap(short, long, default_value = "[::1]")]
     ip: String,
@@ -31,6 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     if args.client {
         client::client::main().await?;
+    } else if args.gui {
+        client::gui::main::main()?;
     } else {
         let addr = format!("{}:{}", args.ip, args.port).parse().unwrap();
         let db_service = Connection::default();
