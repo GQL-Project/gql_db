@@ -1,11 +1,11 @@
+use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
+use crate::server::server::db_connection::ConnectResult;
+use futures::executor::block_on;
 use iced::{
     button, scrollable, slider, text_input, Alignment, Button, Checkbox, Column, Container,
     Element, Length, ProgressBar, Radio, Row, Rule, Sandbox, Scrollable, Settings, Slider, Space,
     Text, TextInput, Toggler,
 };
-use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
-use crate::server::server::db_connection::{ConnectResult};
-use futures::executor::block_on;
 
 pub fn main() -> iced::Result {
     Styling::run(Settings::default())
@@ -57,12 +57,10 @@ impl Sandbox for Styling {
             Message::ButtonPressed => {
                 // Test connecting to the server.
                 // block_on is used to run the async function synchronously.
-                let client_result = block_on(
-                        DatabaseConnectionClient::connect("http://[::1]:50051")
-                    ).map_err(
-                        map_client_conn_error
-                    );
-                    
+                let client_result =
+                    block_on(DatabaseConnectionClient::connect("http://[::1]:50051"))
+                        .map_err(map_client_conn_error);
+
                 // Check the result of the client
                 match client_result {
                     Ok(mut client) => {
@@ -75,12 +73,12 @@ impl Sandbox for Styling {
                                 // Successfully Connected
                                 let response: ConnectResult = response.into_inner();
                                 println!("Connected to server with id: {}", response.id);
-                            },
+                            }
                             Err(err) => {
                                 println!("Connect error: {:?}", err);
                             }
                         }
-                    },
+                    }
                     Err(err) => {
                         println!("Error connecting to server: {}", err);
                     }
