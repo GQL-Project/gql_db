@@ -6,18 +6,24 @@ use iced::{
 
 use crate::client::gui::style::style::DarkMode as Theme;
 #[derive(Default)]
-pub struct WelcomePage {
-    exit: bool,
+pub struct Login {
+    email: String,
+    password: String,
+
     theme: Theme,
+    input_email: text_input::State,
+    input_password: text_input::State,
     login: button::State,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    EmailChanged(String),
+    PasswordChanged(String),
     ButtonPressed,
 }
 
-impl Application for WelcomePage {
+impl Application for Login {
     type Executor = executor::Default;
 
     type Message = Message;
@@ -25,7 +31,7 @@ impl Application for WelcomePage {
     type Flags = ();
 
     fn new(_: Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        (WelcomePage::default(), iced::Command::none())
+        (Login::default(), iced::Command::none())
     }
 
     fn title(&self) -> String {
@@ -34,8 +40,10 @@ impl Application for WelcomePage {
 
     fn update(&mut self, message: Self::Message) -> iced::Command<Self::Message> {
         match message {
+            Message::EmailChanged(email) => self.email = email,
+            Message::PasswordChanged(password) => self.password = password,
             Message::ButtonPressed => {
-                self.exit = true;
+                println!("{} {}", self.email, self.password);
             }
         }
 
@@ -47,11 +55,35 @@ impl Application for WelcomePage {
             .width(Length::Units(128))
             .height(Length::Units(128));
         let content = Column::new()
-            .push(Text::new("Welcome to GQL - Database Client").size(50))
+            .push(Text::new("Login").size(50))
             .push(image)
             .push(Space::with_height(Length::Units(50)))
             .push(
-                Button::new(&mut self.login, Text::new("Proceed to Login"))
+                TextInput::new(
+                    &mut self.input_email,
+                    "Email",
+                    &self.email,
+                    Message::EmailChanged,
+                )
+                .style(self.theme)
+                .padding(10)
+                .size(20),
+            )
+            .push(
+                TextInput::new(
+                    &mut self.input_password,
+                    "Password",
+                    &self.password,
+                    Message::PasswordChanged,
+                )
+                .on_submit(Message::ButtonPressed)
+                .style(self.theme)
+                .padding(10)
+                .password()
+                .size(20),
+            )
+            .push(
+                Button::new(&mut self.login, Text::new("Login"))
                     .on_press(Message::ButtonPressed)
                     .style(self.theme)
                     .padding(10),
@@ -67,9 +99,5 @@ impl Application for WelcomePage {
             .center_y()
             .style(Theme::default())
             .into()
-    }
-
-    fn should_exit(&self) -> bool {
-        self.exit
     }
 }

@@ -1,7 +1,6 @@
-use iced::window::Icon;
-use iced::{Application, Settings};
+use iced::{window::Icon, Application, Settings};
 
-use crate::client::gui::welcome_page::window::WelcomePage;
+use super::{login::window::Login, welcome_page::window::WelcomePage};
 
 pub fn main() -> iced::Result {
     let mut settings = Settings::default();
@@ -15,5 +14,9 @@ pub fn main() -> iced::Result {
     } else {
         println!("Failed to load icon {}", icon.unwrap().unwrap_err());
     }
-    WelcomePage::run(settings)
+    // There is a better way to do this: Creating a common window with the main "view" and "message"
+    // functions, and then delegating the actual view and message to the `current` window.
+    WelcomePage::run(settings.clone())?;
+    Login::run(settings.clone())?;
+    Ok(())
 }
