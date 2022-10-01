@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.client {
         client::client::main().await?;
     } else if args.gui {
-        client::gui::window::main()?;
+        client::gui::main::main()?;
     } else {
         let addr = format!("{}:{}", args.ip, args.port).parse().unwrap();
         let db_service = Connection::default();
