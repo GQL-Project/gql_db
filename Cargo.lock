@@ -894,6 +894,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "file_diff",
+ "futures",
  "glob",
  "iced",
  "itertools",

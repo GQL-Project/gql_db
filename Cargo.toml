@@ -26,6 +26,7 @@ sqlparser = "0.23.0"
 glob = "0.3.0"
 file_diff = "1.0.0"
 iced = "0.4"
+futures = "0.3.24"
 
 [build-dependencies]
 tonic-build = "0.8.0"

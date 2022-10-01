@@ -3,6 +3,9 @@ use iced::{
     Element, Length, ProgressBar, Radio, Row, Rule, Sandbox, Scrollable, Settings, Slider, Space,
     Text, TextInput, Toggler,
 };
+use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
+use crate::server::server::db_connection::{ConnectResult};
+use futures::executor::block_on;
 
 pub fn main() -> iced::Result {
     Styling::run(Settings::default())
@@ -31,6 +34,11 @@ enum Message {
     TogglerToggled(bool),
 }
 
+/// These functions map errors from the RPC stuff
+fn map_client_conn_error(err: tonic::transport::Error) -> String {
+    format!("IO Error: {}", err)
+}
+
 impl Sandbox for Styling {
     type Message = Message;
 
@@ -46,7 +54,38 @@ impl Sandbox for Styling {
         match message {
             Message::ThemeChanged(theme) => self.theme = theme,
             Message::InputChanged(value) => self.input_value = value,
-            Message::ButtonPressed => {}
+            Message::ButtonPressed => {
+                // Test connecting to the server.
+                // block_on is used to run the async function synchronously.
+                let client_result = block_on(
+                        DatabaseConnectionClient::connect("http://[::1]:50051")
+                    ).map_err(
+                        map_client_conn_error
+                    );
+                    
+                // Check the result of the client
+                match client_result {
+                    Ok(mut client) => {
+                        let request = tonic::Request::new(());
+                        let response_result = block_on(client.connect_db(request));
+
+                        // Check the result of the connect_db call
+                        match response_result {
+                            Ok(response) => {
+                                // Successfully Connected
+                                let response: ConnectResult = response.into_inner();
+                                println!("Connected to server with id: {}", response.id);
+                            },
+                            Err(err) => {
+                                println!("Connect error: {:?}", err);
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        println!("Error connecting to server: {}", err);
+                    }
+                }
+            }
             Message::SliderChanged(value) => self.slider_value = value,
             Message::CheckboxToggled(value) => self.checkbox_value = value,
             Message::TogglerToggled(value) => self.toggler_value = value,
