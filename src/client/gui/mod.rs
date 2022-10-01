@@ -1,4 +1,5 @@
-pub mod main;
-pub mod welcome_page;
 pub mod login;
+pub mod main;
 pub mod style;
+pub mod style;
+pub mod welcome_page;
