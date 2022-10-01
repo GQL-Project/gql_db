@@ -1,7 +1,7 @@
 use iced::widget::Image;
 use iced::{
-    button, executor, text_input, Alignment, Application, Button,
-    Column, Container, Element, Length, Sandbox, Space, Text, TextInput,
+    button, executor, text_input, Alignment, Application, Button, Column, Container, Element,
+    Length, Sandbox, Space, Text, TextInput,
 };
 #[derive(Default)]
 pub struct WelcomePage {
@@ -48,7 +48,7 @@ impl Application for WelcomePage {
     }
 
     fn view(&mut self) -> Element<'_, Self::Message> {
-        let image = Image::new("src/client/gui/welcome_page/assets/gql.png")
+        let image = Image::new("src/client/gui/assets/gql.png")
             .width(Length::Units(256))
             .height(Length::Units(256));
         let content = Column::new()
