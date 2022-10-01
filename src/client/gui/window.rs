@@ -1,7 +1,7 @@
 use iced::{
-    button, scrollable, slider, text_input, Alignment, Button, Checkbox,
-    Column, Container, Element, Length, ProgressBar, Radio, Row, Rule, Sandbox,
-    Scrollable, Settings, Slider, Space, Text, TextInput, Toggler,
+    button, scrollable, slider, text_input, Alignment, Button, Checkbox, Column, Container,
+    Element, Length, ProgressBar, Radio, Row, Rule, Sandbox, Scrollable, Settings, Slider, Space,
+    Text, TextInput, Toggler,
 };
 
 pub fn main() -> iced::Result {
@@ -92,8 +92,7 @@ impl Sandbox for Styling {
         )
         .style(self.theme);
 
-        let progress_bar =
-            ProgressBar::new(0.0..=100.0, self.slider_value).style(self.theme);
+        let progress_bar = ProgressBar::new(0.0..=100.0, self.slider_value).style(self.theme);
 
         let scrollable = Scrollable::new(&mut self.scroll)
             .width(Length::Fill)
@@ -103,12 +102,8 @@ impl Sandbox for Styling {
             .push(Space::with_height(Length::Units(800)))
             .push(Text::new("You did it!"));
 
-        let checkbox = Checkbox::new(
-            self.checkbox_value,
-            "Check me!",
-            Message::CheckboxToggled,
-        )
-        .style(self.theme);
+        let checkbox = Checkbox::new(self.checkbox_value, "Check me!", Message::CheckboxToggled)
+            .style(self.theme);
 
         let toggler = Toggler::new(
             self.toggler_value,
@@ -156,8 +151,8 @@ impl Sandbox for Styling {
 
 mod style {
     use iced::{
-        button, checkbox, container, progress_bar, radio, rule, scrollable,
-        slider, text_input, toggler,
+        button, checkbox, container, progress_bar, radio, rule, scrollable, slider, text_input,
+        toggler,
     };
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,8 +289,8 @@ mod style {
 
     mod dark {
         use iced::{
-            button, checkbox, container, progress_bar, radio, rule, scrollable,
-            slider, text_input, toggler, Color,
+            button, checkbox, container, progress_bar, radio, rule, scrollable, slider, text_input,
+            toggler, Color,
         };
 
         const SURFACE: Color = Color::from_rgb(
@@ -526,8 +521,7 @@ mod style {
         impl checkbox::StyleSheet for Checkbox {
             fn active(&self, is_checked: bool) -> checkbox::Style {
                 checkbox::Style {
-                    background: if is_checked { ACTIVE } else { SURFACE }
-                        .into(),
+                    background: if is_checked { ACTIVE } else { SURFACE }.into(),
                     checkmark_color: Color::WHITE,
                     border_radius: 2.0,
                     border_width: 1.0,
