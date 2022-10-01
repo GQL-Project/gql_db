@@ -1,4 +1,4 @@
-use iced::window::{Icon};
+use iced::window::Icon;
 use iced::{Application, Settings};
 
 use crate::client::gui::welcome_page::window::WelcomePage;

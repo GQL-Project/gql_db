@@ -1,7 +1,7 @@
 use iced::widget::Image;
 use iced::{
-    button, executor, text_input, Alignment, Application, Button,
-    Column, Container, Element, Length, Sandbox, Space, Text, TextInput,
+    button, executor, text_input, Alignment, Application, Button, Column, Container, Element,
+    Length, Sandbox, Space, Text, TextInput,
 };
 #[derive(Default)]
 pub struct WelcomePage {
