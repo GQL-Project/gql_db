@@ -168,7 +168,7 @@ impl CommitFile {
             *pagenum = *pagenum + 1;
             *page = *self.sread_page(*pagenum)?
         }
-        self.swrite_type::<u8>(page, pagenum, offset, 1)?;
+        self.swrite_type::<u8>(page, pagenum, offset, 1u8)?;
         schema
             .iter()
             .zip(row.iter())

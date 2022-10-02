@@ -236,7 +236,7 @@ impl CommitFile {
             let diff: Diff = match difftype {
                 0 | 1 => {
                     // Update or Insert
-                    let num_rows: usize = self.sread_type(page, pagenum, offset)?;
+                    let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
                     let schema: Schema = self.sread_schema(page, pagenum, offset)?;
                     let mut rows: Vec<RowInfo> = Vec::new();
                     for _ in 0..num_rows {
@@ -264,7 +264,7 @@ impl CommitFile {
                 }
                 2 => {
                     // Delete
-                    let num_rows: usize = self.sread_type(page, pagenum, offset)?;
+                    let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
                     let mut rows: Vec<RowLocation> = Vec::new();
                     for _ in 0..num_rows {
                         let page_num: u32 = self.sread_type(page, pagenum, offset)?;
@@ -312,8 +312,8 @@ impl CommitFile {
                     self.swrite_type(page, pagenum, offset, 0u32)?;
                     self.sdwrite_string(page, pagenum, offset, &update.table_name)?;
                     self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
+                    self.swrite_schema(page, pagenum, offset, &update.schema)?;
                     for row in &update.rows {
-                        self.swrite_schema(page, pagenum, offset, &update.schema)?;
                         self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
@@ -323,8 +323,8 @@ impl CommitFile {
                     self.swrite_type(page, pagenum, offset, 1u32)?;
                     self.sdwrite_string(page, pagenum, offset, &insert.table_name)?;
                     self.swrite_type(page, pagenum, offset, insert.rows.len() as u32)?;
+                    self.swrite_schema(page, pagenum, offset, &insert.schema)?;
                     for row in &insert.rows {
-                        self.swrite_schema(page, pagenum, offset, &insert.schema)?;
                         self.swrite_row(page, pagenum, offset, &row.row, &insert.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
@@ -357,7 +357,13 @@ impl CommitFile {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        executor::query::{create_table, insert, select},
+        fileio::databaseio::Database,
+    };
+
     use super::*;
+    use rand::seq::SliceRandom;
     use serial_test::serial;
 
     #[test]
@@ -389,7 +395,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_simple_header() {
+    fn test_remove_commits() {
         let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
         let schema = vec![
             ("t1".to_string(), Column::String(60)),
@@ -400,16 +406,135 @@ mod tests {
             "test_timestamp".to_string(),
             "test_message".to_string(),
             "test_command".to_string(),
+            vec![
+                Diff::TableCreate(TableCreateDiff {
+                    table_name: "test_table".to_string(),
+                    schema: schema.clone(),
+                }),
+                Diff::TableRemove(TableRemoveDiff {
+                    table_name: "test_table".to_string(),
+                }),
+            ],
+        );
+
+        let commit2 = Commit::new(
+            "hasher2".to_string(),
+            "test_timestamp".to_string(),
+            "test_message".to_string(),
+            "test_command".to_string(),
+            vec![Diff::Remove(RemoveDiff {
+                table_name: "test_table".to_string(),
+                row_locations: vec![
+                    RowLocation {
+                        pagenum: 0,
+                        rownum: 0,
+                    },
+                    RowLocation {
+                        pagenum: 23,
+                        rownum: 66,
+                    },
+                    RowLocation {
+                        pagenum: 23,
+                        rownum: 11,
+                    },
+                ],
+            })],
+        );
+        delta.store_commit(&commit).unwrap();
+        delta.store_commit(&commit2).unwrap();
+        let commit4 = delta.fetch_commit(&"hasher2".to_string()).unwrap();
+        assert_eq!(commit2, commit4);
+        let commit3 = delta.fetch_commit(&"test_hash".to_string()).unwrap();
+        assert_eq!(commit, commit3);
+
+        // Delete the test files
+        std::fs::remove_file(delta.delta_path).unwrap();
+        std::fs::remove_file(delta.header_path).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_insert_commits() {
+        let new_db: Database = Database::new("commit_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(225)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        let mut rows = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Iron Man".to_string()),
+                Value::I32(40),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I32(35),
+            ],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::I32(100),
+            ],
+            vec![
+                Value::I32(5),
+                Value::String("Thor".to_string()),
+                Value::I32(1000),
+            ],
+        ];
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        let (x, y) = rows.split_at(21); // 40 rows
+        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db).unwrap();
+        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db).unwrap();
+        let commit1 = Commit::new(
+            "hash1".to_string(),
+            "timestamp1".to_string(),
+            "message1".to_string(),
+            "cmd1".to_string(),
             vec![Diff::TableCreate(TableCreateDiff {
                 table_name: "test_table".to_string(),
                 schema: schema.clone(),
             })],
         );
-        delta.store_commit(&commit).unwrap();
-        let commit2 = delta.fetch_commit(&"test_hash".to_string()).unwrap();
-        assert_eq!(commit, commit2);
+        let commit2 = Commit::new(
+            "hash2".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff1)],
+        );
+        let commit3 = Commit::new(
+            "hash3".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff2)],
+        );
 
-        // Delete the test files
+        new_db.delete_database().unwrap();
+
+        let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
+        delta.store_commit(&commit1).unwrap();
+        delta.store_commit(&commit2).unwrap();
+        delta.store_commit(&commit3).unwrap();
+        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        assert_eq!(commit3, commit13);
+        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        assert_eq!(commit1, commit11);
+        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        assert_eq!(commit2, commit12);
+
+        // Delete the test database
         std::fs::remove_file(delta.delta_path).unwrap();
         std::fs::remove_file(delta.header_path).unwrap();
     }
