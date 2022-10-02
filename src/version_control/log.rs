@@ -48,6 +48,8 @@ pub fn log() -> Result<(String, Vec<Vec<String>>), String> {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use crate::{
         executor::query::create_table,
         fileio::{
@@ -61,6 +63,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[serial]
     fn test_log_single_commit() {
         // Keep track of the diffs throughout the test
         let mut diffs: Vec<Diff> = Vec::new();
@@ -109,6 +112,87 @@ mod tests {
         assert_eq!(result[0][0], commit.hash);
         assert_eq!(result[0][1], commit.timestamp);
         assert_eq!(result[0][2], commit.message);
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_log_multiple_command() {
+        // Keep track of the diffs throughout the test
+        let mut diffs: Vec<Diff> = Vec::new();
+
+        // Create the database
+        create_db_instance(&"log_test_db1".to_string()).unwrap();
+
+        // Create the schema
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        // Create a new table
+        let result =
+            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap()).unwrap();
+        let mut table = result.0;
+        diffs.push(Diff::TableCreate(result.1));
+
+        // Insert rows into the table
+        let mut insert_diff = table
+            .insert_rows(vec![vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(20),
+            ]])
+            .unwrap();
+        diffs.push(Diff::Insert(insert_diff));
+
+        insert_diff = table
+            .insert_rows(vec![vec![
+                Value::I32(2),
+                Value::String("Saul Goodman".to_string()),
+                Value::I32(42),
+            ]])
+            .unwrap();
+        diffs.push(Diff::Insert(insert_diff));
+
+        // Commit the changes
+        let mut commit_result = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &diffs,
+                &"First commit".to_string(),
+                &"Create table1; Insert 1 Row;".to_string(),
+            )
+            .unwrap();
+        let commit: Commit = commit_result.1;
+        //println!("Commit.message: {:?}", commit.message);
+
+        commit_result = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &diffs,
+                &"Second commit".to_string(),
+                &"Create table2; Insert 2 Row;".to_string(),
+            )
+            .unwrap();
+        let second_commit: Commit = commit_result.1;
+        //println!("Commit.message: {:?}", second_commit.message);
+
+        // Log the commits
+        let result: Vec<Vec<String>> = log().unwrap().1;
+        //println!("{}", (result[0][2]).to_string());
+        //println!("{}", (result[1][2]).to_string());
+
+        // Assert that the result is correct
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0][0], commit.hash);
+        assert_eq!(result[0][1], commit.timestamp);
+        assert_eq!(result[0][2], commit.message);
+        assert_eq!(result[1][0], second_commit.hash);
+        assert_eq!(result[1][1], second_commit.timestamp);
+        assert_eq!(result[1][2], second_commit.message);
 
         // Delete the database
         delete_db_instance().unwrap();
