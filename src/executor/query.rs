@@ -303,8 +303,28 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
+        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+
+        insert(
+            [
+                vec![
+                    Value::I32(1),
+                    Value::String("Iron Man".to_string()),
+                    Value::I32(40),
+                ],
+                vec![
+                    Value::I32(2),
+                    Value::String("Spiderman".to_string()),
+                    Value::I32(20),
+                ],
+            ]
+            .to_vec(),
+            "test_table1".to_string(),
+            &new_db,
+        )
+        .unwrap();
+
         let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
-        print!("Result: {:?}", result);
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
