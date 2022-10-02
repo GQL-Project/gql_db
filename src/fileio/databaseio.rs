@@ -1,4 +1,6 @@
 use super::tableio::*;
+use crate::version_control::branches::BranchNode;
+use crate::version_control::commit::Commit;
 use crate::version_control::{
     branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
 };
@@ -55,6 +57,20 @@ pub fn create_db_instance(database_name: &String) -> Result<(), String> {
         database_instance = Some(Database::new(database_name.clone())?);
     }
     Ok(())
+}
+
+pub fn delete_db_instance() -> Result<(), String> {
+    unsafe {
+        match database_instance {
+            Some(ref mut db) => {
+                db.delete_database_dir()?;
+                database_instance = None;
+
+                return Ok(());
+            },
+            None => { return Err("Database::get_instance() Error: Database instance not set".to_owned()); },
+        }
+    }
 }
 
 impl Database {
@@ -181,31 +197,31 @@ impl Database {
         diffs: &Vec<Diff>,
         commit_msg: &String,
         command: &String,
-    ) -> Result<(), String> {
+    ) -> Result<(BranchNode, Commit), String> {
         let commit = self.commit_file.create_commit(
             commit_msg.to_string(),
             command.to_string(),
             diffs.clone(),
         )?;
         if self.branch_heads.get_all_branch_heads()?.len() == 0 {
-            self.branches.create_branch_node(
+            let node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 None,
                 &self.branch_name,
                 &commit.hash,
             )?;
-        } else {
-            let prev_node = self
-                .branch_heads
-                .get_branch_node_from_head(&self.branch_name, &self.branches)?;
-            self.branches.create_branch_node(
-                &mut self.branch_heads,
-                Some(&prev_node),
-                &self.branch_name,
-                &commit.hash,
-            )?;
-        }
-        Ok(())
+            return Ok((node, commit));
+        } 
+        let prev_node = self
+            .branch_heads
+            .get_branch_node_from_head(&self.branch_name, &self.branches)?;
+        let node = self.branches.create_branch_node(
+            &mut self.branch_heads,
+            Some(&prev_node),
+            &self.branch_name,
+            &commit.hash,
+        )?;
+        Ok((node, commit))
     }
 
     /// Returns the database's name
@@ -326,9 +342,16 @@ impl Database {
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {
         // Remove the directory and all files within it
-        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
+        self.delete_database_dir()?;
         // Destroy self
         drop(self);
+        Ok(())
+    }
+
+    /// Deletes the directories of the database
+    pub fn delete_database_dir(&self) -> Result<(), String> {
+        // Remove the directory and all files within it
+        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -427,7 +450,7 @@ mod tests {
         util::{
             dbtype::{Column, Value},
             row::Row,
-        },
+        }, executor::query::create_table, version_control,
     };
     use serial_test::serial;
 
@@ -639,7 +662,7 @@ mod tests {
             + &db_branch_name.clone();
 
         // Create the database
-        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
+        create_db_instance(&db_name).unwrap();
 
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
@@ -650,7 +673,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let table_result = create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
+        let table_result = create_table(&"test_table".to_string(), &schema, &get_db_instance().unwrap()).unwrap();
         let mut table = table_result.0;
 
         let rows: Vec<Row> = vec![
@@ -677,24 +700,28 @@ mod tests {
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
-        let results = new_db.create_commit_and_node(&diffs, &"commit_msg".to_string(), &"create table; insert rows".to_string()).unwrap();
+        let results = get_db_instance().unwrap().create_commit_and_node(&diffs, &"commit_msg".to_string(), &"create table; insert rows".to_string()).unwrap();
 
         let branch_node = results.0;
         let commit = results.1;
         // Make sure commit is correct
-        let fetched_commit = new_db.get_commit_file_mut().fetch_commit(&commit.hash).unwrap();
+        let fetched_commit = get_db_instance().unwrap().get_commit_file_mut().fetch_commit(&commit.hash).unwrap();
 
         // compare commit and fetched commit
         assert_eq!(commit, fetched_commit);
 
         // Make sure branch node is correct
-        let fetched_branch_node = new_db.get_branch_heads_file_mut().get_branch_head(&new_db.get_current_branch_name()).unwrap();
+        let fetched_branch_node = get_db_instance().unwrap().get_branch_heads_file_mut().get_branch_head(&get_db_instance().unwrap().get_current_branch_name()).unwrap();
 
         //compare branch node and fetched branch node
-        assert_eq!(fetched_branch_node.branch_name, new_db.get_current_branch_name());
+        assert_eq!(fetched_branch_node.branch_name, get_db_instance().unwrap().get_current_branch_name());
 
-        let target_node = new_db.get_branch_heads_file_mut().get_branch_node_from_head(&fetched_branch_node.branch_name, new_db.get_branch_file()).unwrap();
+        let target_node = get_db_instance().unwrap().get_branch_heads_file_mut().get_branch_node_from_head(&fetched_branch_node.branch_name, get_db_instance().unwrap().get_branch_file()).unwrap();
+
+        // Assert that the target node and the branch node are the same
+        assert_eq!(target_node, branch_node);
+
         // Delete the database
-        new_db.delete_database().unwrap();
+        delete_db_instance().unwrap();
     }
 }

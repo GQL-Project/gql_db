@@ -9,7 +9,7 @@ use crate::util::{dbtype::*, row::*};
 
 /// This represents a branch node in the database. It is a single row in the `branches.gql` table.
 /// A branch node is in a linked list of other branch nodes. It is singly linked, pointing backwards.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct BranchNode {
     pub branch_name: String, // The name of the branch this node is on.
     pub commit_hash: String, // The commit hash that this node is associated with.
