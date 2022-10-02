@@ -108,7 +108,7 @@ impl BranchHEADs {
         branch_name: &String,
         branches: &Branches
     ) -> Result<BranchNode, String> {
-        let branch_head: BranchHead = self.get_branch_head(branch_name)?;
+        let branch_head: &mut BranchHead = &mut self.get_branch_head(branch_name)?;
         Ok(branches.get_branch_node(&RowLocation {
             pagenum: branch_head.pagenum as u32,
             rownum: branch_head.rownum as u16,

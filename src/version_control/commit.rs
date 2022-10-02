@@ -26,11 +26,11 @@ pub struct CommitHeader {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Commit {
-    hash: String,
-    timestamp: String, // TODO: Change to a DateTime object
-    message: String,
-    command: String, // Command that was run to create this commit
-    diffs: Vec<Diff>,
+    pub hash: String,
+    pub timestamp: String, // TODO: Change to a DateTime object
+    pub message: String,
+    pub command: String, // Command that was run to create this commit
+    pub diffs: Vec<Diff>,
 }
 
 impl Commit {
@@ -147,8 +147,8 @@ impl CommitFile {
     /// Search for a commit header by its commit hash.
     /// Returns the page number and row number of the commit header.
 
-    pub fn fetch_commit(&self, commit_hash: String) -> Result<Commit, String> {
-        let header = self.find_header(commit_hash)?;
+    pub fn fetch_commit(&self, commit_hash: &String) -> Result<Commit, String> {
+        let header = self.find_header(commit_hash.clone())?;
         if let Some(header) = header {
             self.read_commit(header.pagenum)
         } else {
@@ -406,7 +406,7 @@ mod tests {
             })],
         );
         delta.store_commit(&commit).unwrap();
-        let commit2 = delta.fetch_commit("test_hash".to_string()).unwrap();
+        let commit2 = delta.fetch_commit(&"test_hash".to_string()).unwrap();
         assert_eq!(commit, commit2);
 
         // Delete the test files

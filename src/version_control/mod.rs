@@ -5,3 +5,4 @@ pub mod branches;
 pub mod commitfile;
 pub mod commit;
 pub mod diff;
+pub mod log;

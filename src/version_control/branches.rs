@@ -160,8 +160,6 @@ impl Branches {
 
 
     /// Traverse backwards through the nodes starting from the given branch node.
-    /// Returns a list of all nodes in the branch in reverse order. 
-    /// The first node returned in the list is the origin and the last is the branch node given.
     pub fn traverse_branch_nodes(&self, branch_node: &BranchNode) -> Result<Vec<BranchNode>, String> {
         let mut branch_nodes: Vec<BranchNode> = Vec::new();
         let mut current_branch_node: BranchNode = branch_node.clone();
@@ -172,7 +170,6 @@ impl Branches {
                 None => break,              // If None, that means we are trying to go before the original node
             };
         }
-        branch_nodes.reverse();
         Ok(branch_nodes)
     }
 
@@ -275,8 +272,6 @@ impl Branches {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
