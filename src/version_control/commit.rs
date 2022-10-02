@@ -406,13 +406,15 @@ mod tests {
             "test_timestamp".to_string(),
             "test_message".to_string(),
             "test_command".to_string(),
-            vec![Diff::TableCreate(TableCreateDiff {
-                table_name: "test_table".to_string(),
-                schema: schema.clone(),
-            }), 
-            Diff::TableRemove(TableRemoveDiff {
-                table_name: "test_table".to_string(),
-            })],
+            vec![
+                Diff::TableCreate(TableCreateDiff {
+                    table_name: "test_table".to_string(),
+                    schema: schema.clone(),
+                }),
+                Diff::TableRemove(TableRemoveDiff {
+                    table_name: "test_table".to_string(),
+                }),
+            ],
         );
 
         let commit2 = Commit::new(
@@ -422,18 +424,20 @@ mod tests {
             "test_command".to_string(),
             vec![Diff::Remove(RemoveDiff {
                 table_name: "test_table".to_string(),
-                row_locations: vec![RowLocation {
-                    pagenum: 0,
-                    rownum: 0,
-                }, 
-                RowLocation {
-                    pagenum: 23,
-                    rownum: 66,
-                },
-                RowLocation {
-                    pagenum: 23,
-                    rownum: 11,
-                }],
+                row_locations: vec![
+                    RowLocation {
+                        pagenum: 0,
+                        rownum: 0,
+                    },
+                    RowLocation {
+                        pagenum: 23,
+                        rownum: 66,
+                    },
+                    RowLocation {
+                        pagenum: 23,
+                        rownum: 11,
+                    },
+                ],
             })],
         );
         delta.store_commit(&commit).unwrap();
@@ -516,7 +520,7 @@ mod tests {
             "cmd2".to_string(),
             vec![Diff::Insert(diff2)],
         );
-        
+
         new_db.delete_database().unwrap();
 
         let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
