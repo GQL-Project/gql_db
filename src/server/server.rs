@@ -11,20 +11,18 @@ pub mod db_connection {
     tonic::include_proto!("db_connection");
 }
 
-type Empty = db_connection::Empty;
-
 // Shared fields across all instances go here.
 #[tonic::async_trait]
 impl DatabaseConnection for Connection {
-    async fn connect_db(&self, _: Request<Empty>) -> Result<Response<ConnectResult>, Status> {
+    async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
         let id = self.new_client();
         println!("New client connected with id: {}", id);
         Ok(Response::new(to_connect_result(id)))
     }
 
-    async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<Empty>, Status> {
+    async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<()>, Status> {
         self.remove_client(request.into_inner().id);
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(()))
     }
 
     async fn run_query(
@@ -94,14 +92,14 @@ mod tests {
     #[tokio::test]
     async fn connect_db() {
         let conn = Connection::new();
-        let result = conn.connect_db(Request::new(Empty {})).await;
+        let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn disconnect_db() {
         let conn = Connection::new();
-        let result = conn.connect_db(Request::new(Empty {})).await;
+        let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let result = conn
             .disconnect_db(Request::new(result.unwrap().into_inner()))
@@ -112,7 +110,7 @@ mod tests {
     #[tokio::test]
     async fn run_query() {
         let conn = Connection::new();
-        let result = conn.connect_db(Request::new(Empty {})).await;
+        let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
         let result = conn

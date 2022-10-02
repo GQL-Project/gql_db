@@ -3,14 +3,13 @@ use std::string::String;
 use tonic::Request;
 
 use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
-use crate::server::server::db_connection::{self, ConnectResult, QueryRequest, QueryResult};
+use crate::server::server::db_connection::{ConnectResult, QueryRequest, QueryResult};
 use crate::util::convert::to_row_value;
 use crate::util::dbtype::Value;
 
-type Empty = db_connection::Empty;
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
-    let request = tonic::Request::new(Empty {});
+    let request = tonic::Request::new(());
     let response = client.connect_db(request).await?.into_inner();
 
     loop {

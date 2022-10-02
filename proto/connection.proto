@@ -1,14 +1,10 @@
 syntax = "proto3";
 
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
 package db_connection;
 
-// Imported Types
-message Empty {}
-message Timestamp {
-    int64 seconds = 13;
-    int32 nanos = 14;
-}
-  
 /* 
  * This allows us to form a general implementation for all platforms.
  * Messages are the data objects passed between the client and server.
@@ -56,7 +52,7 @@ message CellValue {
     oneof cell_type {
         string col_string = 6;
         int32 col_i32 = 7;
-        Timestamp col_time = 8;
+        google.protobuf.Timestamp col_time = 8;
         float col_float = 9;
         double col_double = 16;
         int64 col_i64 = 17;
@@ -67,8 +63,8 @@ message CellValue {
 // Services are the "functions" exposed by the server.
 service DatabaseConnection {
     // We can optionally have a VC query function here, or just parse that within Update
-    rpc ConnectDB(Empty) returns (ConnectResult);
-    rpc DisconnectDB(ConnectResult) returns (Empty);
+    rpc ConnectDB(google.protobuf.Empty) returns (ConnectResult);
+    rpc DisconnectDB(ConnectResult) returns (google.protobuf.Empty);
     rpc RunQuery(QueryRequest) returns (QueryResult);
     rpc RunUpdate(QueryRequest) returns (UpdateResult);
     rpc RunVersionControlCommand(QueryRequest) returns (VersionControlResult);
