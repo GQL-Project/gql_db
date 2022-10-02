@@ -67,8 +67,10 @@ pub fn delete_db_instance() -> Result<(), String> {
                 database_instance = None;
 
                 return Ok(());
-            },
-            None => { return Err("Database::get_instance() Error: Database instance not set".to_owned()); },
+            }
+            None => {
+                return Err("Database::get_instance() Error: Database instance not set".to_owned());
+            }
         }
     }
 }
@@ -211,7 +213,7 @@ impl Database {
                 &commit.hash,
             )?;
             return Ok((node, commit));
-        } 
+        }
         let prev_node = self
             .branch_heads
             .get_branch_node_from_head(&self.branch_name, &self.branches)?;
@@ -446,11 +448,13 @@ impl Database {
 mod tests {
     use super::*;
     use crate::{
+        executor::query::create_table,
         fileio::header::Schema,
         util::{
             dbtype::{Column, Value},
             row::Row,
-        }, executor::query::create_table, version_control,
+        },
+        version_control,
     };
     use serial_test::serial;
 
@@ -673,7 +677,12 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let table_result = create_table(&"test_table".to_string(), &schema, &get_db_instance().unwrap()).unwrap();
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            &get_db_instance().unwrap(),
+        )
+        .unwrap();
         let mut table = table_result.0;
 
         let rows: Vec<Row> = vec![
@@ -702,23 +711,48 @@ mod tests {
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
-        let results = get_db_instance().unwrap().create_commit_and_node(&diffs, &"commit_msg".to_string(), &"create table; insert rows".to_string()).unwrap();
+        let results = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &diffs,
+                &"commit_msg".to_string(),
+                &"create table; insert rows".to_string(),
+            )
+            .unwrap();
 
         let branch_node = results.0;
         let commit = results.1;
         // Make sure commit is correct
-        let fetched_commit = get_db_instance().unwrap().get_commit_file_mut().fetch_commit(&commit.hash).unwrap();
+        let fetched_commit = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .fetch_commit(&commit.hash)
+            .unwrap();
 
         // compare commit and fetched commit
         assert_eq!(commit, fetched_commit);
 
         // Make sure branch node is correct
-        let fetched_branch_node = get_db_instance().unwrap().get_branch_heads_file_mut().get_branch_head(&get_db_instance().unwrap().get_current_branch_name()).unwrap();
+        let fetched_branch_node = get_db_instance()
+            .unwrap()
+            .get_branch_heads_file_mut()
+            .get_branch_head(&get_db_instance().unwrap().get_current_branch_name())
+            .unwrap();
 
         //compare branch node and fetched branch node
-        assert_eq!(fetched_branch_node.branch_name, get_db_instance().unwrap().get_current_branch_name());
+        assert_eq!(
+            fetched_branch_node.branch_name,
+            get_db_instance().unwrap().get_current_branch_name()
+        );
 
-        let target_node = get_db_instance().unwrap().get_branch_heads_file_mut().get_branch_node_from_head(&fetched_branch_node.branch_name, get_db_instance().unwrap().get_branch_file()).unwrap();
+        let target_node = get_db_instance()
+            .unwrap()
+            .get_branch_heads_file_mut()
+            .get_branch_node_from_head(
+                &fetched_branch_node.branch_name,
+                get_db_instance().unwrap().get_branch_file(),
+            )
+            .unwrap();
 
         // Assert that the target node and the branch node are the same
         assert_eq!(target_node, branch_node);

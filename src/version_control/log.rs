@@ -31,11 +31,7 @@ pub fn log() -> Result<Vec<Vec<String>>, String> {
         println!("Commit message: {}", commit.message);
         println!("-----------------------");
 
-        let printed_vals: Vec<String> = vec![
-            commit.hash,
-            commit.timestamp,
-            commit.message,
-        ];
+        let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
         log_strings.push(printed_vals);
     }
 
@@ -44,7 +40,15 @@ pub fn log() -> Result<Vec<Vec<String>>, String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{fileio::{databaseio::{create_db_instance, delete_db_instance}, header::Schema}, version_control::{diff::Diff, commit::Commit}, executor::query::create_table, util::dbtype::*};
+    use crate::{
+        executor::query::create_table,
+        fileio::{
+            databaseio::{create_db_instance, delete_db_instance},
+            header::Schema,
+        },
+        util::dbtype::*,
+        version_control::{commit::Commit, diff::Diff},
+    };
 
     use super::*;
 
@@ -63,16 +67,30 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
         // Create a new table
-        let result = create_table(&"table1".to_string(), &schema, get_db_instance().unwrap()).unwrap();
+        let result =
+            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap()).unwrap();
         let mut table = result.0;
         diffs.push(Diff::TableCreate(result.1));
 
         // Insert rows into the table
-        let insert_diff = table.insert_rows(vec![vec![Value::I32(1), Value::String("John".to_string()), Value::I32(20)]]).unwrap();
+        let insert_diff = table
+            .insert_rows(vec![vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(20),
+            ]])
+            .unwrap();
         diffs.push(Diff::Insert(insert_diff));
 
         // Commit the changes
-        let commit_result = get_db_instance().unwrap().create_commit_and_node(&diffs, &"First commit".to_string(), &"Create table1; Insert 1 Row;".to_string()).unwrap();
+        let commit_result = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &diffs,
+                &"First commit".to_string(),
+                &"Create table1; Insert 1 Row;".to_string(),
+            )
+            .unwrap();
         let commit: Commit = commit_result.1;
 
         // Log the commits
