@@ -41,11 +41,11 @@ pub struct Database {
                                     // TODO: maybe add permissions here
 }
 
-static mut database_instance: Option<Database> = None;
+static mut DATABASE_INSTANCE: Option<Database> = None;
 
 pub fn get_db_instance() -> Result<&'static mut Database, String> {
     unsafe {
-        match database_instance {
+        match DATABASE_INSTANCE {
             Some(ref mut db) => Ok(db),
             None => Err("Database::get_instance() Error: Database instance not set".to_owned()),
         }
@@ -54,17 +54,17 @@ pub fn get_db_instance() -> Result<&'static mut Database, String> {
 
 pub fn create_db_instance(database_name: &String) -> Result<(), String> {
     unsafe {
-        database_instance = Some(Database::new(database_name.clone())?);
+        DATABASE_INSTANCE = Some(Database::new(database_name.clone())?);
     }
     Ok(())
 }
 
 pub fn delete_db_instance() -> Result<(), String> {
     unsafe {
-        match database_instance {
+        match DATABASE_INSTANCE {
             Some(ref mut db) => {
                 db.delete_database_dir()?;
-                database_instance = None;
+                DATABASE_INSTANCE = None;
 
                 return Ok(());
             }
