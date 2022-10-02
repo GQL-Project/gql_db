@@ -76,7 +76,7 @@ impl DatabaseConnection for Connection {
 
         /* Creating Result */
         match result {
-            Ok(tree) => Ok(Response::new(to_vc_cmd_result(tree))),
+            Ok(value) => Ok(Response::new(to_vc_cmd_result(value))),
             // Err(err) => Ok(Response::new(to_vc_cmd_result(err))), // Changed it because the other one would end the command line, but this does not pass the test cases
             Err(err) => Err(Status::cancelled(&err)),
         }

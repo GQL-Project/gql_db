@@ -93,9 +93,10 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
                 return Err("Invalid VC Command".to_string());
             }
 
-            log::log()?;
+            let log_results = log::log()?;
+            let log_string: String = log_results.0;
 
-            return Ok("Valid Log Command".to_string());
+            return Ok(log_string);
         }
         "revert" => {
             // revert (Needs an argument)
@@ -126,6 +127,8 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{fileio::{databaseio::{create_db_instance, delete_db_instance, get_db_instance}, header::Schema}, util::dbtype::Column, executor::query::create_table, version_control::diff::Diff};
+
     use super::*;
 
     #[test]
@@ -180,8 +183,12 @@ mod tests {
     #[test]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
+        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+
         let result = parse_vc_cmd(query);
         assert!(result.is_ok());
+
+        delete_db_instance().unwrap();
     }
 
     #[test]

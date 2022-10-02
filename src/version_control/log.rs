@@ -2,14 +2,20 @@ use crate::fileio::databaseio::get_db_instance;
 
 use super::branches::{BranchNode, Branches};
 
-pub fn log() -> Result<Vec<Vec<String>>, String> {
+/// This function implements the GQL log command
+pub fn log() -> Result<(String, Vec<Vec<String>>), String> {
     let branch_name: String = get_db_instance()?.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
     // seperate to make debug easier
-    let branch_instance = get_db_instance()?.get_branch_heads_file_mut();
+    let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
 
-    let branch_node = branch_instance
+    // If there are no commits, return an empty vector
+    if branch_heads_instance.get_all_branch_heads()?.len() == 0 {
+        return Ok(("No Commits!".to_string(), vec![]));
+    }
+
+    let branch_node = branch_heads_instance
         .get_branch_node_from_head(&branch_name, &branches_from_head)
         .unwrap();
 
@@ -21,21 +27,23 @@ pub fn log() -> Result<Vec<Vec<String>>, String> {
 
     // String to capture all the output
     let mut log_strings: Vec<Vec<String>> = Vec::new();
+    let mut log_string: String = String::new();
 
     for node in branch_nodes {
         let commit = get_db_instance()?
             .get_commit_file_mut()
             .fetch_commit(&node.commit_hash)?;
-        println!("Commit Hash: {}", commit.hash);
-        println!("Commit time stamp: {}", commit.timestamp);
-        println!("Commit message: {}", commit.message);
-        println!("-----------------------");
+        
+        log_string = format!("{}\nCommit {}", log_string, commit.hash);
+        log_string = format!("{}\nMessage {}", log_string, commit.message);
+        log_string = format!("{}\nTimestamp {}", log_string, commit.timestamp);
+        log_string = format!("{}\n-----------------------\n", log_string);
 
         let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
         log_strings.push(printed_vals);
     }
 
-    Ok(log_strings)
+    Ok((log_string, log_strings))
 }
 
 #[cfg(test)]
@@ -94,7 +102,7 @@ mod tests {
         let commit: Commit = commit_result.1;
 
         // Log the commits
-        let result: Vec<Vec<String>> = log().unwrap();
+        let result: Vec<Vec<String>> = log().unwrap().1;
 
         // Assert that the result is correct
         assert_eq!(result.len(), 1);
