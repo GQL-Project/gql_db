@@ -16,6 +16,7 @@ pub mod db_connection {
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
         let id = self.new_client();
+        println!("New client connected with id: {}", id);
         Ok(Response::new(to_connect_result(id)))
     }
 

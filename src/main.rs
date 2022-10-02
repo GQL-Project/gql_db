@@ -17,6 +17,9 @@ struct Args {
     #[clap(short, long)]
     client: bool,
 
+    #[clap(short, long)]
+    gui: bool,
+
     // IP Address
     #[clap(short, long, default_value = "[::1]")]
     ip: String,

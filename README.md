@@ -1,4 +1,4 @@
-# GQL Database Server
+# GQL Database Server and GUI Client
 
 ## Setting up GQL_DB
 Refer to [SETUP.md](SETUP.md)
