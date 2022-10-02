@@ -33,7 +33,7 @@ pub fn log() -> Result<(String, Vec<Vec<String>>), String> {
         let commit = get_db_instance()?
             .get_commit_file_mut()
             .fetch_commit(&node.commit_hash)?;
-        
+
         log_string = format!("{}\nCommit {}", log_string, commit.hash);
         log_string = format!("{}\nMessage {}", log_string, commit.message);
         log_string = format!("{}\nTimestamp {}", log_string, commit.timestamp);
