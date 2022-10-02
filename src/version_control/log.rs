@@ -8,7 +8,6 @@ pub fn log() -> Result<(), String> {
 
     // seperate to make debug easier
     let branch_instance = get_db_instance()?.get_branch_heads_file_mut();
-    
 
     let branch_node = branch_instance
         .get_branch_node_from_head(&branch_name, &branches_from_head)

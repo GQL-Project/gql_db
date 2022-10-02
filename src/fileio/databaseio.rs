@@ -695,7 +695,9 @@ mod tests {
         ];
 
         let mut diffs: Vec<Diff> = Vec::new();
-        diffs.push(version_control::diff::Diff::TableCreate(table_result.1.clone()));
+        diffs.push(version_control::diff::Diff::TableCreate(
+            table_result.1.clone(),
+        ));
         let insert_diff = table.insert_rows(rows).unwrap();
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
