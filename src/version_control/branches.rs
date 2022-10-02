@@ -1,3 +1,4 @@
+use super::{branch_heads::*, diff::*};
 use crate::fileio::{
     databaseio::{self},
     header::*,
@@ -5,7 +6,6 @@ use crate::fileio::{
     tableio::*,
 };
 use crate::util::{dbtype::*, row::*};
-use super::{diff::*, branch_heads::*};
 
 /// This represents a branch node in the database. It is a single row in the `branches.gql` table.
 /// A branch node is in a linked list of other branch nodes. It is singly linked, pointing backwards.
@@ -13,11 +13,11 @@ use super::{diff::*, branch_heads::*};
 pub struct BranchNode {
     pub branch_name: String, // The name of the branch this node is on.
     pub commit_hash: String, // The commit hash that this node is associated with.
-    pub prev_pagenum: i32,   // The page number of the previous branch node. Will be -1 if this is the first node.
-    pub prev_rownum: i32,    // The row number of the previous branch node. Will be -1 if this is the first node.
-    pub curr_pagenum: i32,   // The page number of the current branch node.
-    pub curr_rownum: i32,    // The row number of the current branch node.
-    pub is_head: bool,       // Whether or not this node is the head of the branch.
+    pub prev_pagenum: i32, // The page number of the previous branch node. Will be -1 if this is the first node.
+    pub prev_rownum: i32, // The row number of the previous branch node. Will be -1 if this is the first node.
+    pub curr_pagenum: i32, // The page number of the current branch node.
+    pub curr_rownum: i32, // The row number of the current branch node.
+    pub is_head: bool,    // Whether or not this node is the head of the branch.
 }
 
 /// This is designed to represent the branches.gql file for a database.
@@ -49,15 +49,15 @@ impl BranchNode {
         };
         let curr_pagenum: i32 = match row.get(4) {
             Some(Value::I32(i)) => *i,
-            _ => return Err("Invalid page number".to_string())
+            _ => return Err("Invalid page number".to_string()),
         };
         let curr_rownum: i32 = match row.get(5) {
             Some(Value::I32(i)) => *i,
-            _ => return Err("Invalid row number".to_string())
+            _ => return Err("Invalid row number".to_string()),
         };
         let is_head: bool = match row.get(6) {
             Some(Value::Bool(i)) => *i,
-            _ => return Err("Invalid is_head value".to_string())
+            _ => return Err("Invalid is_head value".to_string()),
         };
 
         Ok(Self {
@@ -72,26 +72,22 @@ impl BranchNode {
     }
 }
 
-
 impl Branches {
     /// Creates a new Branches object.
     /// This object is used to store all the branch nodes across all branches in the database.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
-    pub fn new(
-        dir_path: &String, 
-        create_file: bool
-    ) -> Result<Branches, String> {
+    pub fn new(dir_path: &String, create_file: bool) -> Result<Branches, String> {
         // Get filepath info
         let branch_filename: String = format!(
-            "{}{}", 
-            databaseio::BRANCHES_FILE_NAME.to_string(), 
+            "{}{}",
+            databaseio::BRANCHES_FILE_NAME.to_string(),
             databaseio::BRANCHES_FILE_EXTENSION.to_string()
         );
         let mut filepath: String = format!(
-            "{}{}{}", 
-            dir_path, 
-            std::path::MAIN_SEPARATOR, 
+            "{}{}{}",
+            dir_path,
+            std::path::MAIN_SEPARATOR,
             branch_filename
         );
         // If the directory path is not given, use the current directory
@@ -132,22 +128,23 @@ impl Branches {
         })
     }
 
-
     // Immutable getter access to filepath.
     pub fn filepath(&self) -> &str {
         &self.filepath
     }
 
-
     /// Returns a branch node from `branches.gql` with the given page row and number.
     pub fn get_branch_node(&self, row_location: &RowLocation) -> Result<BranchNode, String> {
-        let row = get_row(&self.branches_table, &row_location)?;
+        let row = &self.branches_table.get_row(&row_location)?;
         Ok(BranchNode::new(&row)?)
     }
 
     /// Returns the previous branch node from the given branch node
     /// Returns None if the given branch node is the original node in the database
-    pub fn get_prev_branch_node(&self, branch_node: &BranchNode) -> Result<Option<BranchNode>, String> {
+    pub fn get_prev_branch_node(
+        &self,
+        branch_node: &BranchNode,
+    ) -> Result<Option<BranchNode>, String> {
         if branch_node.prev_pagenum == -1 || branch_node.prev_rownum == -1 {
             return Ok(None);
         }
@@ -158,36 +155,39 @@ impl Branches {
         Ok(Some(self.get_branch_node(&row_location)?))
     }
 
-
     /// Traverse backwards through the nodes starting from the given branch node.
-    pub fn traverse_branch_nodes(&self, branch_node: &BranchNode) -> Result<Vec<BranchNode>, String> {
+    /// Returns a list of all nodes in the branch in reverse order.
+    /// The first node returned in the list is the origin and the last is the branch node given.
+    pub fn traverse_branch_nodes(
+        &self,
+        branch_node: &BranchNode,
+    ) -> Result<Vec<BranchNode>, String> {
         let mut branch_nodes: Vec<BranchNode> = Vec::new();
         let mut current_branch_node: BranchNode = branch_node.clone();
         loop {
             branch_nodes.push(current_branch_node.clone());
             current_branch_node = match self.get_prev_branch_node(&current_branch_node)? {
                 Some(bn) => bn, // If Some, we have a previous node
-                None => break,              // If None, that means we are trying to go before the original node
+                None => break,  // If None, that means we are trying to go before the original node
             };
         }
         Ok(branch_nodes)
     }
 
-
     /// Creates a new branch node and adds it to the branches table with the given branch name and commit hash.
     /// Also updates the branch HEADs table appropriately.
     /// It branches the node off the prev_node given. If prev_node is None, it becomes the original node.
     pub fn create_branch_node(
-        &mut self, 
-        branch_heads_table: &mut BranchHEADs, 
-        prev_node: Option<&BranchNode>, 
-        branch_name: &String, 
-        commit_hash: &String
+        &mut self,
+        branch_heads_table: &mut BranchHEADs,
+        prev_node: Option<&BranchNode>,
+        branch_name: &String,
+        commit_hash: &String,
     ) -> Result<(), String> {
         // Determine if we are creating the first commit on the database, or if this commit is on an existing branch
-        let mut prev_pagenum: i32 = -1;                    // Default value for first commit
-        let mut prev_rownum: i32 = -1;                     // Default value for first commit
-        let mut prev_is_head: bool = true;                 // Default value for first commit
+        let mut prev_pagenum: i32 = -1; // Default value for first commit
+        let mut prev_rownum: i32 = -1; // Default value for first commit
+        let mut prev_is_head: bool = true; // Default value for first commit
         let mut prev_branch_name: String = "".to_string(); // Default value for first commit
         match prev_node {
             Some(prev_node_values) => {
@@ -195,10 +195,10 @@ impl Branches {
                 prev_rownum = prev_node_values.curr_rownum;
                 prev_is_head = prev_node_values.is_head;
                 prev_branch_name = prev_node_values.branch_name.clone();
-            },
+            }
             None => { /* Do nothing */ }
         }
-        
+
         // Create the new branch node
         let mut new_node: Vec<Value> = Vec::new();
         new_node.push(Value::String(branch_name.clone()));
@@ -208,9 +208,9 @@ impl Branches {
         new_node.push(Value::I32(-1)); // Default value until after we write the row to the table
         new_node.push(Value::I32(-1)); // Default value until after we write the row to the table
         new_node.push(Value::Bool(false));
-        
+
         // Insert the new branch node
-        let insert_diff: InsertDiff = insert_rows(&mut self.branches_table, vec![new_node])?;
+        let insert_diff: InsertDiff = self.branches_table.insert_rows(vec![new_node])?;
 
         // Verify that the insert was successful
         match insert_diff.rows.get(0) {
@@ -223,52 +223,49 @@ impl Branches {
                 if prev_is_head && prev_branch_name == branch_name.clone() {
                     // Set the new node to be the head using the location where the new node was inserted
                     branch_heads_table.set_branch_head(
-                        branch_name, 
-                        &RowLocation { 
-                            pagenum: row.pagenum, 
-                            rownum: row.rownum 
-                        }
+                        branch_name,
+                        &RowLocation {
+                            pagenum: row.pagenum,
+                            rownum: row.rownum,
+                        },
                     )?;
                     set_is_head = true;
 
                     // We need to update the previous node to no longer be the head in the table
                     let prev_row_location: RowLocation = RowLocation {
                         pagenum: prev_pagenum as u32,
-                        rownum: prev_rownum as u16
+                        rownum: prev_rownum as u16,
                     };
-                    let mut prev_row: Row = get_row(&self.branches_table, &prev_row_location)?;
+                    let mut prev_row: Row = self.branches_table.get_row(&prev_row_location)?;
                     prev_row[6] = Value::Bool(false);
                     let prev_row_info: RowInfo = RowInfo {
                         pagenum: prev_row_location.pagenum as u32,
                         rownum: prev_row_location.rownum as u16,
-                        row: prev_row
+                        row: prev_row,
                     };
                     rows_to_rewrite.push(prev_row_info);
                 }
                 // If the previous node was a different branch name, this node needs to be a new HEAD node
                 else if prev_branch_name != branch_name.clone() {
                     // Create a new branch HEAD node
-                    branch_heads_table.create_branch_head(
-                        &BranchHead { 
-                            branch_name: branch_name.clone(), 
-                            pagenum: row.pagenum as i32, 
-                            rownum: row.rownum as i32 
-                        }
-                    )?;
+                    branch_heads_table.create_branch_head(&BranchHead {
+                        branch_name: branch_name.clone(),
+                        pagenum: row.pagenum as i32,
+                        rownum: row.rownum as i32,
+                    })?;
                     set_is_head = true;
                 }
 
                 // Write the updated values to the table
                 let mut new_row: RowInfo = row.clone();
                 new_row.row[4] = Value::I32(row.pagenum as i32); // curr_pagenum column
-                new_row.row[5] = Value::I32(row.rownum as i32);  // curr_rownum column
-                new_row.row[6] = Value::Bool(set_is_head);       // is_head column
+                new_row.row[5] = Value::I32(row.rownum as i32); // curr_rownum column
+                new_row.row[6] = Value::Bool(set_is_head); // is_head column
                 rows_to_rewrite.push(new_row);
-                rewrite_rows(&mut self.branches_table, rows_to_rewrite)?;
-
+                self.branches_table.rewrite_rows(rows_to_rewrite)?;
                 Ok(())
-            },
-            None => return Err("Branch node was not created correctly".to_string())
+            }
+            None => return Err("Branch node was not created correctly".to_string()),
         }
     }
 }
@@ -285,9 +282,13 @@ mod tests {
         let mut branch_heads_table: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
         let commit_hash: String = "12345678901234567890123456789012".to_string();
         let branch_name: String = "test_branch".to_string();
-        branches_file.create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash).unwrap();
+        branches_file
+            .create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash)
+            .unwrap();
         let branch_head: BranchHead = branch_heads_table.get_branch_head(&branch_name).unwrap();
-        let branch_node: BranchNode = branches_file.get_branch_node(&branch_head.get_branch_node_location()).unwrap();
+        let branch_node: BranchNode = branches_file
+            .get_branch_node(&branch_head.get_branch_node_location())
+            .unwrap();
         assert_eq!(branch_node.branch_name, branch_name);
         assert_eq!(branch_node.commit_hash, commit_hash);
         assert_eq!(branch_node.prev_pagenum, -1);
@@ -306,9 +307,13 @@ mod tests {
         let mut branch_heads_table: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
         let commit_hash1: String = "12345678901234567890123456789012".to_string();
         let branch_name: String = "test_branch".to_string();
-        branches_file.create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash1).unwrap();
+        branches_file
+            .create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash1)
+            .unwrap();
         let branch_head: BranchHead = branch_heads_table.get_branch_head(&branch_name).unwrap();
-        let branch_node: BranchNode = branches_file.get_branch_node(&branch_head.get_branch_node_location()).unwrap();
+        let branch_node: BranchNode = branches_file
+            .get_branch_node(&branch_head.get_branch_node_location())
+            .unwrap();
         assert_eq!(branch_node.branch_name, branch_name);
         assert_eq!(branch_node.commit_hash, commit_hash1);
         assert_eq!(branch_node.prev_pagenum, -1);
@@ -318,9 +323,18 @@ mod tests {
         // Create a second branch node
         let commit_hash2: String = "23456789012345678901234567890123".to_string();
         let branch_name2: String = "test_branch".to_string();
-        branches_file.create_branch_node(&mut branch_heads_table, Some(&branch_node), &branch_name2, &commit_hash2).unwrap();
+        branches_file
+            .create_branch_node(
+                &mut branch_heads_table,
+                Some(&branch_node),
+                &branch_name2,
+                &commit_hash2,
+            )
+            .unwrap();
         let branch_head2: BranchHead = branch_heads_table.get_branch_head(&branch_name2).unwrap();
-        let branch_node2: BranchNode = branches_file.get_branch_node(&branch_head2.get_branch_node_location()).unwrap();
+        let branch_node2: BranchNode = branches_file
+            .get_branch_node(&branch_head2.get_branch_node_location())
+            .unwrap();
         assert_eq!(branch_node2.branch_name, branch_name2);
         assert_eq!(branch_node2.commit_hash, commit_hash2);
         assert_eq!(branch_node2.prev_pagenum, 1);
@@ -328,7 +342,10 @@ mod tests {
         assert_eq!(branch_node2.is_head, true);
 
         // Verify that you can access first branch node from the second
-        let branch_node3: BranchNode = branches_file.get_prev_branch_node(&branch_node2).unwrap().unwrap();
+        let branch_node3: BranchNode = branches_file
+            .get_prev_branch_node(&branch_node2)
+            .unwrap()
+            .unwrap();
         assert_eq!(branch_node3.branch_name, branch_name2);
         assert_eq!(branch_node3.commit_hash, commit_hash1);
         assert_eq!(branch_node3.prev_pagenum, -1);
@@ -347,8 +364,12 @@ mod tests {
         let mut branch_heads_table: BranchHEADs = BranchHEADs::new(&"".to_string(), true).unwrap();
         let commit_hash1: String = "12345678901234567890123456789012".to_string();
         let branch_name: String = "test_branch".to_string();
-        branches_file.create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash1).unwrap();
-        let branch_node: BranchNode = branch_heads_table.get_branch_node_from_head(&branch_name, &branches_file).unwrap();
+        branches_file
+            .create_branch_node(&mut branch_heads_table, None, &branch_name, &commit_hash1)
+            .unwrap();
+        let branch_node: BranchNode = branch_heads_table
+            .get_branch_node_from_head(&branch_name, &branches_file)
+            .unwrap();
         assert_eq!(branch_node.branch_name, branch_name);
         assert_eq!(branch_node.commit_hash, commit_hash1);
         assert_eq!(branch_node.prev_pagenum, -1);

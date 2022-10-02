@@ -93,6 +93,11 @@ impl Column {
             (Column::Double, Value::Double(x)) => write_type(page, offset, *x),
             (Column::Bool, Value::Bool(x)) => write_type(page, offset, *x),
             (Column::Timestamp, Value::Timestamp(x)) => write_type(page, offset, x.clone()),
+            // Type conversions:
+            (Column::I32, Value::I64(x)) => write_type(page, offset, *x as i32),
+            (Column::I64, Value::I32(x)) => write_type(page, offset, *x as i64),
+            (Column::Float, Value::Double(x)) => write_type(page, offset, *x as f32),
+            (Column::Double, Value::Float(x)) => write_type(page, offset, *x as f64),
             (Column::String(size), Value::String(x)) => {
                 write_string(page, offset, &x, *size as usize)
             }
@@ -110,6 +115,52 @@ impl Column {
             Column::Bool => size_of::<bool>(),
             Column::Timestamp => size_of::<i32>(),
             Column::String(x) => (*x as usize) * size_of::<u8>(),
+        }
+    }
+
+    pub fn match_value(&self, val: &Value) -> bool {
+        match (self, val) {
+            (Column::I32, Value::I32(_)) => true,
+            (Column::I64, Value::I64(_)) => true,
+            (Column::Float, Value::Float(_)) => true,
+            (Column::Double, Value::Double(_)) => true,
+            (Column::Bool, Value::Bool(_)) => true,
+            (Column::Timestamp, Value::Timestamp(_)) => true,
+            (Column::String(_), Value::String(_)) => true,
+            // Type coercions
+            (Column::I64, Value::I32(_)) => true,
+            (Column::Double, Value::Float(_)) => true,
+            (Column::Float, Value::Double(_)) => true,
+            (Column::I32, Value::I64(x)) => i32::try_from(*x).is_ok(),
+            _ => false,
+        }
+    }
+}
+
+impl ToString for Column {
+    fn to_string(&self) -> String {
+        match self {
+            Column::I32 => "I32".to_string(),
+            Column::I64 => "I64".to_string(),
+            Column::Float => "Float".to_string(),
+            Column::Double => "Double".to_string(),
+            Column::Bool => "Bool".to_string(),
+            Column::Timestamp => "Timestamp".to_string(),
+            Column::String(x) => format!("String({})", x),
+        }
+    }
+}
+
+impl ToString for Value {
+    fn to_string(&self) -> String {
+        match self {
+            Value::I32(x) => format!("I32({})", x),
+            Value::I64(x) => format!("I64({})", x),
+            Value::Float(x) => format!("Float({})", x),
+            Value::Double(x) => format!("Double({})", x),
+            Value::Bool(x) => format!("Bool({})", x),
+            Value::Timestamp(x) => format!("Timestamp({})", x),
+            Value::String(x) => format!("String({})", x),
         }
     }
 }

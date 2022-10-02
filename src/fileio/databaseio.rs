@@ -27,11 +27,11 @@ pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
 #[derive(Clone)]
 pub struct Database {
-    db_path: String,                // This is the full patch to the database directory: <path>/<db_name>
-    db_name: String,                // This is the name of the database (not the path)
-    branch_path: String,            // This is the full path to the database branch directory: <path>/<db_name>/<branch_name>
-    branch_name: String,            // The name of the branch that this database is currently on
-    branch_heads: BranchHEADs,      // The BranchHEADs file object for this database
+    db_path: String, // This is the full patch to the database directory: <path>/<db_name>
+    db_name: String, // This is the name of the database (not the path)
+    branch_path: String, // This is the full path to the database branch directory: <path>/<db_name>/<branch_name>
+    branch_name: String, // The name of the branch that this database is currently on
+    branch_heads: BranchHEADs, // The BranchHEADs file object for this database
     connected_clients: Vec<String>, // The list of clients that are currently connected to this database at this branch
     branches: Branches,             // The Branches file object for this database
     commit_file: CommitFile,         // The CommitFile object for this database
@@ -87,7 +87,8 @@ impl Database {
         // Create the commit headers file, which holds all the headers for the commits
         // './databases/<database_name>/commitheaders.gql'
         let commit_headers_file_path = Database::append_commit_headers_file_path(db_path.clone());
-        std::fs::File::create(&commit_headers_file_path).map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+        std::fs::File::create(&commit_headers_file_path)
+            .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
         // Create the branches file, which holds all the branches for the database
         // './databases/<database_name>/branches.gql'
@@ -152,7 +153,7 @@ impl Database {
         main_branch_path.push_str(database_name.as_str());
         main_branch_path.push(DB_NAME_BRANCH_SEPARATOR);
         main_branch_path.push_str(MAIN_BRANCH_NAME);
-        
+
         // Load the branch_heads.gql file, which holds all the branch HEADs for the database
         let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), false)?;
 
@@ -244,14 +245,12 @@ impl Database {
         Database::append_commit_headers_file_path(db_dir_path.clone())
     }
 
-
     /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
     pub fn get_branches_file_path(&self) -> String {
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_branches_file_path(db_dir_path.clone())
     }
-
 
     /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
     pub fn get_branch_heads_file_path(&self) -> String {
@@ -266,7 +265,7 @@ impl Database {
     }
 
     /// Returns the file path to the table if it exists on the current branch
-    pub fn get_table_path(&self, table_name: String) -> Result<String, String> {
+    pub fn get_table_path(&self, table_name: &String) -> Result<String, String> {
         let mut table_path = self.get_current_branch_path();
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str(table_name.as_str());
@@ -321,8 +320,8 @@ impl Database {
         match self.branch_heads.get_branch_head(branch_name) {
             Ok(_) => {
                 return Err("Database::create_branch() Error: Branch already exists".to_owned());
-            },
-            Err(_) => { } // Do nothing, we expect this error
+            }
+            Err(_) => {} // Do nothing, we expect this error
         }
 
         //TODO: Ryan User Story 18
@@ -372,7 +371,6 @@ impl Database {
         deltas_file_path
     }
 
-
     /// Private static method that appends the commit_headers file path to the database_path
     fn append_commit_headers_file_path(database_path: String) -> String {
         let mut commit_headers_file_path = database_path;
@@ -381,7 +379,6 @@ impl Database {
         commit_headers_file_path.push_str(COMMIT_HEADERS_FILE_EXTENSION);
         commit_headers_file_path
     }
-
 
     /// Private static method that appends the branches file path to the database_path
     fn append_branches_file_path(database_path: String) -> String {
@@ -401,7 +398,6 @@ impl Database {
         branch_heads_file_path
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -487,11 +483,13 @@ mod tests {
         );
 
         // Make sure the commit headers file path is correct
-        assert_eq!(new_db.get_commit_headers_file_path(), 
-            db_base_path.clone() +
-                std::path::MAIN_SEPARATOR.to_string().as_str() +
-                COMMIT_HEADERS_FILE_NAME +
-                COMMIT_HEADERS_FILE_EXTENSION);
+        assert_eq!(
+            new_db.get_commit_headers_file_path(),
+            db_base_path.clone()
+                + std::path::MAIN_SEPARATOR.to_string().as_str()
+                + COMMIT_HEADERS_FILE_NAME
+                + COMMIT_HEADERS_FILE_EXTENSION
+        );
 
         // Delete the database
         new_db.delete_database().unwrap();
@@ -538,7 +536,7 @@ mod tests {
 
         // Make sure the table path is correct
         assert_eq!(
-            new_db.get_table_path("test_table".to_string()).unwrap(),
+            new_db.get_table_path(&"test_table".to_string()).unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"
@@ -567,7 +565,7 @@ mod tests {
 
         // Create the database
         let new_db: Database = Database::new(db_name.clone()).unwrap();
-        
+
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
@@ -593,7 +591,7 @@ mod tests {
 
         // Make sure the table path is correct
         assert_eq!(
-            loaded_db.get_table_path("test_table".to_string()).unwrap(),
+            loaded_db.get_table_path(&"test_table".to_string()).unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"

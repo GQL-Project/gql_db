@@ -16,6 +16,7 @@ pub mod db_connection {
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
         let id = self.new_client();
+        println!("New client connected with id: {}", id);
         Ok(Response::new(to_connect_result(id)))
     }
 
@@ -38,9 +39,9 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Execute the query represented by the AST.
-                query::execute(&tree.clone(), false).map_err(|e| Status::internal(e))?;
+                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
 
-                Ok(Response::new(to_query_result(vec![tree], vec![])))
+                Ok(Response::new(to_query_result(vec![], vec![])))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
@@ -55,7 +56,10 @@ impl DatabaseConnection for Connection {
         let result = parser::parse(&request.query, true);
         /* Creating Result */
         match result {
-            Ok(tree) => Ok(Response::new(to_update_result(tree))),
+            Ok(tree) => {
+                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
+                Ok(Response::new(to_update_result("1".to_string())))
+            }
             Err(err) => Err(Status::cancelled(&err)),
         }
     }
