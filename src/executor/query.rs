@@ -1,8 +1,19 @@
 use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
 use itertools::Itertools;
-use sqlparser::ast::Statement;
-use sqlparser::ast::{Query, SetExpr};
+use sqlparser::ast::{ColumnDef, DataType, Query, SetExpr, Statement};
+
+pub fn parse_col_def(data_type: DataType) -> Option<u64> {
+    let data_tuple = match data_type {
+        DataType::Char(size) => size,
+        DataType::Varchar(size) => size,
+        DataType::Nvarchar(size) => size,
+        DataType::Int(size) => size,
+        DataType::Float(size) => size,
+        _ => Some(0),
+    };
+    data_tuple
+}
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -38,8 +49,18 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                     print!("Not a select\n");
                 }
             },
-            Statement::CreateTable { .. } => {
-                println!("Create Table");
+            Statement::CreateTable { name, columns, .. } => {
+                let table_name = name.0[0].value.to_string();
+                println!("Table name: {}", table_name);
+                let mut column_names: Vec<(String, String)> = Vec::new();
+                for c in columns.iter() {
+                    let column_name = c.name.value.to_string();
+                    let column_type = c.data_type.to_string();
+                    column_names.push((column_name, column_type));
+                }
+                let database: Database = Database::new("test_db".to_string()).unwrap();
+                // let result = create(table_name, column_names); //
+                // println!("{:?}", result);
             }
             Statement::Insert { .. } => {
                 println!("Insert");
