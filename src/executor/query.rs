@@ -70,12 +70,7 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                 ..
             } => {
                 let table_name = table_name.0[0].value.to_string();
-                let mut column_names = Vec::new();
-                for c in columns.iter() {
-                    column_names.push(c.value.to_string());
-                }
                 let mut all_data = Vec::new();
-                let mut values: Vec<Row> = Vec::new();
                 match *source.body.clone() {
                     SetExpr::Values(values) => {
                         let values_list = values.0;
@@ -88,6 +83,9 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                                     }
                                     Expr::Value(sqlparser::ast::Value::Number(s, _)) => {
                                         data.push(s);
+                                    }
+                                    Expr::Value(sqlparser::ast::Value::Boolean(s)) => {
+                                        data.push(s.to_string());
                                     }
                                     _ => print!("Not a string\n"),
                                 }
