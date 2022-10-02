@@ -32,8 +32,8 @@ pub struct InsertDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RemoveDiff {
-    pub table_name: String,         // The name of the table that the rows were removed from
-    pub schema: Schema,             // The schema of the table
+    pub table_name: String, // The name of the table that the rows were removed from
+    pub schema: Schema,     // The schema of the table
     pub rows_removed: Vec<RowInfo>, // The rows that were removed
 }
 
@@ -124,35 +124,35 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
 /// 2. The diffs are in the order that the changes were made.
 pub fn revert_branch(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String> {
     //Reversing the list of diffs since we are undoing the changes made to the table
-        let reversed_diffs = diffs.iter().rev();
-        for diff in reversed_diffs {
-            match diff {
-                Diff::Update(update_diff) => {
-                    let table = Table::new(table_dir, &update_diff.table_name, None)?;
-                    table.rewrite_rows(update_diff.rows.clone())?;
-                }
-                // We remove rows instead of inserting as we're reverting the change
-                Diff::Insert(insert_diff) => {
-                    let table = Table::new(table_dir, &insert_diff.table_name, None)?;
-                    table.remove_rows(insert_diff.rows.clone())?;
-                }
-                // Insert instead of remove as we're reverting the change
-                Diff::Remove(remove_diff) => {
-                    let mut table = Table::new(table_dir, &remove_diff.table_name, None)?;
-                    table.write_rows(remove_diff.rows_removed.clone())?;
-                }
-                Diff::TableCreate(table_create_diff) => {
-                    delete_table_in_dir(&table_create_diff.table_name, table_dir)?;
-                }
-                Diff::TableRemove(table_remove_diff) => {
-                    create_table_in_dir(
-                        &table_remove_diff.table_name,
-                        &table_remove_diff.schema,
-                        table_dir,
-                    )?;
-                }
+    let reversed_diffs = diffs.iter().rev();
+    for diff in reversed_diffs {
+        match diff {
+            Diff::Update(update_diff) => {
+                let table = Table::new(table_dir, &update_diff.table_name, None)?;
+                table.rewrite_rows(update_diff.rows.clone())?;
+            }
+            // We remove rows instead of inserting as we're reverting the change
+            Diff::Insert(insert_diff) => {
+                let table = Table::new(table_dir, &insert_diff.table_name, None)?;
+                table.remove_rows(insert_diff.rows.clone())?;
+            }
+            // Insert instead of remove as we're reverting the change
+            Diff::Remove(remove_diff) => {
+                let mut table = Table::new(table_dir, &remove_diff.table_name, None)?;
+                table.write_rows(remove_diff.rows_removed.clone())?;
+            }
+            Diff::TableCreate(table_create_diff) => {
+                delete_table_in_dir(&table_create_diff.table_name, table_dir)?;
+            }
+            Diff::TableRemove(table_remove_diff) => {
+                create_table_in_dir(
+                    &table_remove_diff.table_name,
+                    &table_remove_diff.schema,
+                    table_dir,
+                )?;
             }
         }
+    }
     Ok(())
 }
 

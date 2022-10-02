@@ -423,7 +423,10 @@ mod tests {
     #[test]
     fn test_removes() {
         //TODO: Complete Test post changes made to remove_diff
-        assert!(false, "TODO: Complete Test post changes made to remove_diff");
+        assert!(
+            false,
+            "TODO: Complete Test post changes made to remove_diff"
+        );
         /* let path = "test_removerator".to_string();
         let table = create_table(&path);
 
@@ -562,7 +565,10 @@ mod tests {
             pagenum: insert_diff.rows[0].clone().pagenum,
             rownum: insert_diff.rows[0].clone().rownum,
         }];
-        assert!(false, "TODO: Complete Test post changes made to remove_diff");
+        assert!(
+            false,
+            "TODO: Complete Test post changes made to remove_diff"
+        );
         /* let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());

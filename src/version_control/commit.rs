@@ -277,7 +277,7 @@ impl CommitFile {
                 4 => {
                     // Remove Table
                     let schema = self.sread_schema(page, pagenum, offset)?;
-                    Diff::TableRemove(TableRemoveDiff { table_name, schema})
+                    Diff::TableRemove(TableRemoveDiff { table_name, schema })
                 }
                 _ => return Err("Invalid diff type".to_string()),
             };
