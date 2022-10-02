@@ -672,28 +672,48 @@ mod tests {
         ];
 
         let mut diffs: Vec<Diff> = Vec::new();
-        diffs.push(version_control::diff::Diff::TableCreate(table_result.1.clone()));
+        diffs.push(version_control::diff::Diff::TableCreate(
+            table_result.1.clone(),
+        ));
         let insert_diff = table.insert_rows(rows).unwrap();
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
-        let results = new_db.create_commit_and_node(&diffs, &"commit_msg".to_string(), &"create table; insert rows".to_string()).unwrap();
+        let results = new_db
+            .create_commit_and_node(
+                &diffs,
+                &"commit_msg".to_string(),
+                &"create table; insert rows".to_string(),
+            )
+            .unwrap();
 
         let branch_node = results.0;
         let commit = results.1;
         // Make sure commit is correct
-        let fetched_commit = new_db.get_commit_file_mut().fetch_commit(&commit.hash).unwrap();
+        let fetched_commit = new_db
+            .get_commit_file_mut()
+            .fetch_commit(&commit.hash)
+            .unwrap();
 
         // compare commit and fetched commit
         assert_eq!(commit, fetched_commit);
 
         // Make sure branch node is correct
-        let fetched_branch_node = new_db.get_branch_heads_file_mut().get_branch_head(&new_db.get_current_branch_name()).unwrap();
+        let fetched_branch_node = new_db
+            .get_branch_heads_file_mut()
+            .get_branch_head(&new_db.get_current_branch_name())
+            .unwrap();
 
         //compare branch node and fetched branch node
-        assert_eq!(fetched_branch_node.branch_name, new_db.get_current_branch_name());
+        assert_eq!(
+            fetched_branch_node.branch_name,
+            new_db.get_current_branch_name()
+        );
 
-        let target_node = new_db.get_branch_heads_file_mut().get_branch_node_from_head(&fetched_branch_node.branch_name, new_db.get_branch_file()).unwrap();
+        let target_node = new_db
+            .get_branch_heads_file_mut()
+            .get_branch_node_from_head(&fetched_branch_node.branch_name, new_db.get_branch_file())
+            .unwrap();
         // Delete the database
         new_db.delete_database().unwrap();
     }
