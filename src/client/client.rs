@@ -36,8 +36,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // stop reading if there's a semi colon or if command doesn't start with SELECT
-            if last_input.contains(";") || !command.starts_with("SELECT")
-            {
+            if last_input.contains(";") || !command.starts_with("SELECT") {
                 break;
             }
 
@@ -64,14 +63,16 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // GQL
         if command.starts_with("GQL ") {
-            let result = client.run_version_control_command(Request::new(request.clone())).await;
+            let result = client
+                .run_version_control_command(Request::new(request.clone()))
+                .await;
             if result.is_ok() {
                 let get_response = result.unwrap().into_inner();
                 println!("{}", get_response.message);
             } else {
                 println!("Error: {}", result.unwrap_err().message());
             }
-        } else if command.starts_with("SELECT "){
+        } else if command.starts_with("SELECT ") {
             let result = client.run_query(Request::new(request.clone())).await;
             if result.is_ok() {
                 // Parsing here

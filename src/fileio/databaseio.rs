@@ -1,5 +1,7 @@
 use super::tableio::*;
-use crate::{version_control::{branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff}};
+use crate::version_control::{
+    branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
+};
 use glob::glob;
 use std::env;
 use std::path::Path;
@@ -24,7 +26,6 @@ pub const BRANCHES_FILE_EXTENSION: &str = ".gql";
 pub const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
 pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
-
 #[derive(Clone)]
 pub struct Database {
     db_path: String, // This is the full patch to the database directory: <path>/<db_name>
@@ -34,7 +35,7 @@ pub struct Database {
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
     connected_clients: Vec<String>, // The list of clients that are currently connected to this database at this branch
     branches: Branches,             // The Branches file object for this database
-    commit_file: CommitFile,         // The CommitFile object for this database
+    commit_file: CommitFile,        // The CommitFile object for this database
                                     // TODO: maybe add permissions here
 }
 
@@ -131,7 +132,6 @@ impl Database {
         })
     }
 
-
     /// Opens an existing database at the given path.
     /// It will return an error if the database doesn't exist.
     pub fn load_db(database_name: String) -> Result<Database, String> {
@@ -176,14 +176,34 @@ impl Database {
     }
 
     /// Creates a commit and a branch node in the appropriate files.
-    pub fn create_commit_and_node(&mut self, diffs: &Vec<Diff>, commit_msg: &String, command: &String) -> Result<(), String> {
-        let commit = self.commit_file.create_commit(commit_msg.to_string(), command.to_string(), diffs.clone())?;
+    pub fn create_commit_and_node(
+        &mut self,
+        diffs: &Vec<Diff>,
+        commit_msg: &String,
+        command: &String,
+    ) -> Result<(), String> {
+        let commit = self.commit_file.create_commit(
+            commit_msg.to_string(),
+            command.to_string(),
+            diffs.clone(),
+        )?;
         if self.branch_heads.get_all_branch_heads()?.len() == 0 {
-            self.branches.create_branch_node(&mut self.branch_heads, None, &self.branch_name, &commit.hash)?;
-        }
-        else {
-            let prev_node = self.branch_heads.get_branch_node_from_head(&self.branch_name, &self.branches)?;
-            self.branches.create_branch_node(&mut self.branch_heads, Some(&prev_node), &self.branch_name, &commit.hash)?;
+            self.branches.create_branch_node(
+                &mut self.branch_heads,
+                None,
+                &self.branch_name,
+                &commit.hash,
+            )?;
+        } else {
+            let prev_node = self
+                .branch_heads
+                .get_branch_node_from_head(&self.branch_name, &self.branches)?;
+            self.branches.create_branch_node(
+                &mut self.branch_heads,
+                Some(&prev_node),
+                &self.branch_name,
+                &commit.hash,
+            )?;
         }
         Ok(())
     }
@@ -227,7 +247,7 @@ impl Database {
     }
 
     /// returns the database's commit file
-    pub fn get_commit_file_mut (&mut self) -> &mut CommitFile {
+    pub fn get_commit_file_mut(&mut self) -> &mut CommitFile {
         &mut self.commit_file
     }
 
@@ -403,8 +423,11 @@ impl Database {
 mod tests {
     use super::*;
     use crate::{
-        fileio::{header::Schema},
-        util::{dbtype::{Column, Value}, row::Row},
+        fileio::header::Schema,
+        util::{
+            dbtype::{Column, Value},
+            row::Row,
+        },
     };
     use serial_test::serial;
 
@@ -631,14 +654,25 @@ mod tests {
         let table = table_result.0;
 
         let rows: Vec<Row> = vec![
-            vec![Value::I32(1), Value::String("John".to_string()), Value::I32(30)],
-            vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(25)],
-            vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(20)],
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(20),
+            ],
         ];
 
         let mut diffs: Vec<Diff> = Vec::new();
-        diffs.push(Diff::TableCreateDiff(table_result.1.clone())); 
-
+        diffs.push(Diff::TableCreateDiff(table_result.1.clone()));
 
         // Create a commit branch node
         let commit_branch_node: CommitBranchNode = new_db
@@ -646,7 +680,10 @@ mod tests {
             .unwrap();
 
         // Make sure the commit branch node is correct
-        assert_eq!(commit_branch_node.get_branch_name(), "test_branch".to_string());
+        assert_eq!(
+            commit_branch_node.get_branch_name(),
+            "test_branch".to_string()
+        );
         assert_eq!(commit_branch_node.get_commit_id(), 0);
         assert_eq!(commit_branch_node.get_parent_commit_id(), 0);
 
