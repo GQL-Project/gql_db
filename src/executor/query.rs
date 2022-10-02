@@ -61,8 +61,7 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                 for c in columns.iter() {
                     schema.push((c.name.clone().value, parse_col_def(c.clone()).unwrap()));
                 }
-                let database: Database = Database::new("test_db1".to_string()).unwrap();
-                let result = create_table(&table_name, &schema, &database);
+                // let result = create_table(&table_name, &schema, &database);
             }
             Statement::Insert {
                 table_name,
@@ -100,9 +99,7 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                         print!("Not a values\n");
                     }
                 }
-                // let database: Database = Database::new("test_db".to_string()).unwrap();
                 // let result = insert(table_name, column_names, all_data); //
-                // println!("{:?}", result);
             }
             _ => {
                 println!("Not a query");
