@@ -1,15 +1,13 @@
-use connection::database_connection_client::DatabaseConnectionClient;
-use connection::{ConnectResult, QueryRequest};
 use std::io::{self, BufRead, Write};
 use std::string::String;
 use tonic::Request;
 
-pub mod connection {
-    tonic::include_proto!("db_connection");
-}
+use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
+use crate::server::server::db_connection::{ConnectResult, QueryRequest, QueryResult};
+use crate::util::convert::to_row_value;
+use crate::util::dbtype::Value;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
     let request = tonic::Request::new(());
     let response = client.connect_db(request).await?.into_inner();
@@ -33,13 +31,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             command.push_str(&last_input);
 
             // stop reading if there's a semi colon
-            if last_input.contains(";")
-            {
+            if last_input.contains(";") {
                 break;
             }
 
             // makes sure these are in the first line (VC commands and exit)
-            if (last_input.contains("exit") || last_input.starts_with("GQL ")) && command == last_input {
+            if (last_input.contains("exit") || last_input.starts_with("GQL "))
+                && command == last_input
+            {
                 break;
             }
 
@@ -64,14 +63,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        //let get_response;
         // GQL
         if command.starts_with("GQL ") {
-            client.run_version_control_command(Request::new(request.clone())).await?;
+            client
+                .run_version_control_command(Request::new(request.clone()))
+                .await?;
         } else {
             client.run_query(Request::new(request.clone())).await?;
         }
-    }
 
+        let result = QueryResult {
+            column_names: vec![
+                "Name".to_string(),
+                "Age".to_string(),
+                "Height".to_string(),
+                "Weight".to_string(),
+                "Location".to_string(),
+            ],
+            row_values: vec![],
+        };
+    }
     Ok(())
 }

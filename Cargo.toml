@@ -9,10 +9,6 @@ default-run = "gql"
 name = "gql"
 path = "src/main.rs"
 
-[[bin]]
-name = "gql-client"
-path = "src/client/main.rs"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 # Currently going with the latest versions of each dependency, hope nothing breaks
@@ -28,6 +24,7 @@ itertools = "0.10.5"
 serial_test = "0.9.0"
 sqlparser = "0.23.0"
 glob = "0.3.0"
+file_diff = "1.0.0"
 
 [build-dependencies]
 tonic-build = "0.8.0"

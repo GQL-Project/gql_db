@@ -13,7 +13,7 @@ pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
 
     let ast = Parser::parse_sql(&dialect, query);
 
-    println!("AST: {:?}", ast);
+    // println!("AST: {:?}", ast);
     ast.map_err(|e| e.to_string())
 }
 

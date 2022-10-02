@@ -34,7 +34,7 @@ message QueryResult {
 
 // Result from executing an SQL Update Command 
 message UpdateResult {
-    string message = 2;
+    string message = 1;
 }
 
 // Result from executing a Version Control Command

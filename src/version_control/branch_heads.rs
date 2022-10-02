@@ -3,7 +3,7 @@ use crate::util::{dbtype::*, row::*};
 use crate::version_control::branches::*;
 
 /// This represents a branch head. It is a single row in the `branch_heads.gql` table.
-/// It points to a branch node in the `branches.gql` table. 
+/// It points to a branch node in the `branches.gql` table.
 #[derive(Clone)]
 pub struct BranchHead {
     pub branch_name: String, // The name of the branch that this head points to.
@@ -18,17 +18,15 @@ pub struct BranchHEADs {
     branch_heads_table: Table,
 }
 
-
 impl BranchHead {
     /// Gets the branch node location within `branches.gql` from a given branch HEAD
     pub fn get_branch_node_location(&self) -> RowLocation {
         RowLocation {
             pagenum: self.pagenum as u32,
-            rownum: self.rownum as u16
+            rownum: self.rownum as u16,
         }
     }
 }
-
 
 impl BranchHEADs {
     /// Creates a new BranchHEADs object to store the branch heads for the database.
@@ -82,12 +80,10 @@ impl BranchHEADs {
         })
     }
 
-
     // Immutable getter access to filepath.
     pub fn filepath(&self) -> &str {
         &self.filepath
     }
-
 
     /// Takes in a branch name and returns the corresponding branch HEAD.
     pub fn get_branch_head(&mut self, branch_name: &String) -> Result<BranchHead, String> {
@@ -106,7 +102,7 @@ impl BranchHEADs {
     pub fn get_branch_node_from_head(
         &mut self,
         branch_name: &String,
-        branches: &Branches
+        branches: &Branches,
     ) -> Result<BranchNode, String> {
         let branch_head: BranchHead = self.get_branch_head(branch_name)?;
         Ok(branches.get_branch_node(&RowLocation {
@@ -158,10 +154,7 @@ impl BranchHEADs {
 
     /// Writes a new branch head to the branch heads file.
     /// Returns an error if a branch head with the given name already exists.
-    pub fn create_branch_head(
-        &mut self, 
-        branch_head: &BranchHead
-    ) -> Result<(), String> {
+    pub fn create_branch_head(&mut self, branch_head: &BranchHead) -> Result<(), String> {
         // Make sure that a branch head doesn't already have the same branch name
         let branch_heads: Vec<BranchHead> = self.get_all_branch_heads()?;
         for branch in branch_heads {
@@ -178,7 +171,7 @@ impl BranchHEADs {
                 Value::I32(branch_head.rownum),
             ],
         ];
-        insert_rows(&mut self.branch_heads_table, rows)?;
+        self.branch_heads_table.insert_rows(rows)?;
         Ok(())
     }
 
@@ -212,7 +205,8 @@ impl BranchHEADs {
                 };
 
                 // Update the row in the branch heads file
-                rewrite_rows(&mut self.branch_heads_table, vec![updated_row_info])?;
+                self.branch_heads_table
+                    .rewrite_rows(vec![updated_row_info])?;
 
                 return Ok(());
             }
@@ -222,26 +216,24 @@ impl BranchHEADs {
         Err("Error: Branch name was not present".to_string())
     }
 
-
     /// Set branch head object to point to a new branch node within `branches.gql`
     /// This function is used when an existing branch gets a new branch node appended to it.
     pub fn set_branch_head(
-        &mut self, 
+        &mut self,
         branch_name: &String,
         new_branch_node_loc: &RowLocation,
     ) -> Result<(), String> {
         // Get the branch head
         let mut branch_head: BranchHead = self.get_branch_head(branch_name)?;
-    
+
         // Update the branch head
         branch_head.pagenum = new_branch_node_loc.pagenum as i32;
         branch_head.rownum = new_branch_node_loc.rownum as i32;
-    
+
         // Update the branch head in the branch heads file
         self.update_branch_head(&branch_head)?;
         Ok(())
     }
-
 
     /// Deletes a branch head from the branch heads file
     /// Returns an error if the branch name is not present in the branch heads file
@@ -261,13 +253,10 @@ impl BranchHEADs {
 
             // If the branch name matches, delete the row
             if row_branch_name == *branch_name {
-                remove_rows(
-                    &mut self.branch_heads_table,
-                    vec![RowLocation {
-                        pagenum: row_info.pagenum,
-                        rownum: row_info.rownum,
-                    }],
-                )?;
+                self.branch_heads_table.remove_rows(vec![RowLocation {
+                    pagenum: row_info.pagenum,
+                    rownum: row_info.rownum,
+                }])?;
                 return Ok(());
             }
         }
