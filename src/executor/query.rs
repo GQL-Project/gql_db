@@ -1,7 +1,7 @@
 use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
 use itertools::Itertools;
-use sqlparser::ast::{ColumnDef, DataType, Query, SetExpr, Statement};
+use sqlparser::ast::{ColumnDef, DataType, Expr, Query, SetExpr, Statement};
 
 pub fn parse_col_def(data_type: DataType) -> Option<u64> {
     let data_tuple = match data_type {
@@ -62,8 +62,44 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                 // let result = create(table_name, column_names); //
                 // println!("{:?}", result);
             }
-            Statement::Insert { .. } => {
-                println!("Insert");
+            Statement::Insert {
+                table_name,
+                columns,
+                source,
+                ..
+            } => {
+                let table_name = table_name.0[0].value.to_string();
+                let mut column_names = Vec::new();
+                for c in columns.iter() {
+                    column_names.push(c.value.to_string());
+                }
+                let mut all_data = Vec::new();
+                match *source.body.clone() {
+                    SetExpr::Values(values) => {
+                        let values_list = values.0;
+                        for row in values_list {
+                            let mut data = Vec::new();
+                            for k in row {
+                                match k {
+                                    Expr::Value(sqlparser::ast::Value::SingleQuotedString(s)) => {
+                                        data.push(s);
+                                    }
+                                    Expr::Value(sqlparser::ast::Value::Number(s, _)) => {
+                                        data.push(s);
+                                    }
+                                    _ => print!("Not a string\n"),
+                                }
+                            }
+                            all_data.push(data);
+                        }
+                    }
+                    _ => {
+                        print!("Not a values\n");
+                    }
+                }
+                // let database: Database = Database::new("test_db".to_string()).unwrap();
+                // let result = insert(table_name, column_names, all_data); //
+                // println!("{:?}", result);
             }
             _ => {
                 println!("Not a query");
