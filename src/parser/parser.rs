@@ -1,3 +1,4 @@
+use crate::version_control::log;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -40,16 +41,15 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             if vec.len() > 2 {
                 if vec[2] != "-m" {
                     // error message here
-                    println!("{:?}", "Invalid VC Command");
                     return Err("Invalid Flag for Commit VC Command".to_string());
                 } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
-                    println!("{:?}", "Commit with message");
+                    return Ok("Commit with message".to_string());
                 }
-            } else if vec.len() == 2 {
+            } else {
                 // commit with no message
-                println!("{:?}", "Commit with no message");
+                return Ok("Commit with no message".to_string());
             }
         }
         "branch" => {
@@ -58,16 +58,14 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "branch command");
             if vec.len() < 3 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                println!("{:?}", "Invalid Branch Name");
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
-                println!("{:?}", "Valid Branch Command");
+                return Ok("Valid Branch Command".to_string());
             }
         }
         "switch_branch" => {
@@ -76,16 +74,14 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "switch branch command");
             if vec.len() < 3 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                println!("{:?}", "Invalid Branch Name");
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
-                println!("{:?}", "Valid Switch Branch Command");
+                return Ok("Valid Switch Branch Command".to_string());
             }
         }
         "log" => {
@@ -94,19 +90,23 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
 
             if vec.len() != 2 {
                 // Error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             }
+
+            let log_results = log::log()?;
+            let log_string: String = log_results.0;
+
+            return Ok(log_string);
         }
         "revert" => {
             // revert (Needs an argument)
             println!("{:?}", "revert command");
             if vec.len() != 3 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             } else {
                 // vec[2] should be a commit hash
+                return Ok("Valid Revert Command".to_string());
             }
         }
         "status" => {
@@ -114,21 +114,29 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "status command");
             if vec.len() != 2 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             }
+            return Ok("Valid Status Command".to_string());
         }
         _ => {
             // error message here
-            println!("{:?}", "Invalid VC Command");
             return Err("Invalid VC Command".to_string());
         }
     }
-    Ok("1".to_string()) // temporary, need to fix it somehow
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        executor::query::create_table,
+        fileio::{
+            databaseio::{create_db_instance, delete_db_instance, get_db_instance},
+            header::Schema,
+        },
+        util::dbtype::Column,
+        version_control::diff::Diff,
+    };
+
     use super::*;
 
     #[test]
@@ -183,8 +191,12 @@ mod tests {
     #[test]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
+        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+
         let result = parse_vc_cmd(query);
         assert!(result.is_ok());
+
+        delete_db_instance().unwrap();
     }
 
     #[test]

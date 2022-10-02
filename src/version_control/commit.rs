@@ -26,11 +26,11 @@ pub struct CommitHeader {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Commit {
-    hash: String,
-    timestamp: String, // TODO: Change to a DateTime object
-    message: String,
-    command: String, // Command that was run to create this commit
-    diffs: Vec<Diff>,
+    pub hash: String,
+    pub timestamp: String, // TODO: Change to a DateTime object
+    pub message: String,
+    pub command: String, // Command that was run to create this commit
+    pub diffs: Vec<Diff>,
 }
 
 impl Commit {
@@ -147,8 +147,8 @@ impl CommitFile {
     /// Search for a commit header by its commit hash.
     /// Returns the page number and row number of the commit header.
 
-    pub fn fetch_commit(&self, commit_hash: String) -> Result<Commit, String> {
-        let header = self.find_header(commit_hash)?;
+    pub fn fetch_commit(&self, commit_hash: &String) -> Result<Commit, String> {
+        let header = self.find_header(commit_hash.clone())?;
         if let Some(header) = header {
             self.read_commit(header.pagenum)
         } else {
@@ -442,9 +442,9 @@ mod tests {
         );
         delta.store_commit(&commit).unwrap();
         delta.store_commit(&commit2).unwrap();
-        let commit4 = delta.fetch_commit("hasher2".to_string()).unwrap();
+        let commit4 = delta.fetch_commit(&"hasher2".to_string()).unwrap();
         assert_eq!(commit2, commit4);
-        let commit3 = delta.fetch_commit("test_hash".to_string()).unwrap();
+        let commit3 = delta.fetch_commit(&"test_hash".to_string()).unwrap();
         assert_eq!(commit, commit3);
 
         // Delete the test files
@@ -527,11 +527,11 @@ mod tests {
         delta.store_commit(&commit1).unwrap();
         delta.store_commit(&commit2).unwrap();
         delta.store_commit(&commit3).unwrap();
-        let commit13 = delta.fetch_commit("hash3".to_string()).unwrap();
+        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
         assert_eq!(commit3, commit13);
-        let commit11 = delta.fetch_commit("hash1".to_string()).unwrap();
+        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
         assert_eq!(commit1, commit11);
-        let commit12 = delta.fetch_commit("hash2".to_string()).unwrap();
+        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
         assert_eq!(commit2, commit12);
 
         // Delete the test database
