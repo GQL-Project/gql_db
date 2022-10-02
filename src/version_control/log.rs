@@ -8,7 +8,7 @@ pub fn log () -> Result<(), String> {
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
     // seperate to make debug easier
-    let branch_instance = get_db_instance()?.get_current_branch_head_mut();
+    let branch_instance = get_db_instance()?.get_branch_heads_file_mut();
     
 
     let branch_node = branch_instance
@@ -45,6 +45,6 @@ mod tests {
     #[test]
     fn test_log2() {
         create_db_instance(&"log_test_db".to_string()).unwrap();
-        
+
     }
 }

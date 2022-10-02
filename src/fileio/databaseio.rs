@@ -1,5 +1,5 @@
 use super::tableio::*;
-use crate::{version_control::{branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff}};
+use crate::{version_control::{branch_heads::*, branches::{Branches, BranchNode}, commitfile::CommitFile, diff::Diff, commit::Commit}};
 use glob::glob;
 use std::env;
 use std::path::Path;
@@ -176,16 +176,15 @@ impl Database {
     }
 
     /// Creates a commit and a branch node in the appropriate files.
-    pub fn create_commit_and_node(&mut self, diffs: &Vec<Diff>, commit_msg: &String, command: &String) -> Result<(), String> {
+    pub fn create_commit_and_node(&mut self, diffs: &Vec<Diff>, commit_msg: &String, command: &String) -> Result<(BranchNode, Commit), String> {
         let commit = self.commit_file.create_commit(commit_msg.to_string(), command.to_string(), diffs.clone())?;
         if self.branch_heads.get_all_branch_heads()?.len() == 0 {
-            self.branches.create_branch_node(&mut self.branch_heads, None, &self.branch_name, &commit.hash)?;
+            let node = self.branches.create_branch_node(&mut self.branch_heads, None, &self.branch_name, &commit.hash)?;
+            return Ok((node, commit));
         }
-        else {
-            let prev_node = self.branch_heads.get_branch_node_from_head(&self.branch_name, &self.branches)?;
-            self.branches.create_branch_node(&mut self.branch_heads, Some(&prev_node), &self.branch_name, &commit.hash)?;
-        }
-        Ok(())
+        let prev_node = self.branch_heads.get_branch_node_from_head(&self.branch_name, &self.branches)?;
+        let node = self.branches.create_branch_node(&mut self.branch_heads, Some(&prev_node), &self.branch_name, &commit.hash)?;
+        Ok((node, commit))
     }
 
     /// Returns the database's name
@@ -209,11 +208,11 @@ impl Database {
     }
 
     /// Returns the database's current branch HEAD
-    pub fn get_current_branch_head(&self) -> &BranchHEADs {
+    pub fn get_branch_heads_file(&self) -> &BranchHEADs {
         &self.branch_heads
     }
 
-    pub fn get_current_branch_head_mut(&mut self) -> &mut BranchHEADs {
+    pub fn get_branch_heads_file_mut(&mut self) -> &mut BranchHEADs {
         &mut self.branch_heads
     }
 
@@ -404,7 +403,8 @@ mod tests {
     use super::*;
     use crate::{
         fileio::{header::Schema},
-        util::{dbtype::{Column, Value}, row::Row},
+        util::{dbtype::{Column, Value}, row::Row}, executor::query::create_table,
+        version_control::{diff::*, self}
     };
     use serial_test::serial;
 
@@ -616,7 +616,7 @@ mod tests {
             + &db_branch_name.clone();
 
         // Create the database
-        let new_db: Database = Database::new(db_name.clone()).unwrap();
+        let mut new_db: Database = Database::new(db_name.clone()).unwrap();
 
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
@@ -628,7 +628,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
         let table_result = create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
-        let table = table_result.0;
+        let mut table = table_result.0;
 
         let rows: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("John".to_string()), Value::I32(30)],
@@ -637,19 +637,28 @@ mod tests {
         ];
 
         let mut diffs: Vec<Diff> = Vec::new();
-        diffs.push(Diff::TableCreateDiff(table_result.1.clone())); 
+        diffs.push(version_control::diff::Diff::TableCreate(table_result.1.clone()));
+        let insert_diff = table.insert_rows(rows).unwrap();
 
+        diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
-        // Create a commit branch node
-        let commit_branch_node: CommitBranchNode = new_db
-            .create_commit_branch_node("test_branch".to_string())
-            .unwrap();
+        let results = new_db.create_commit_and_node(&diffs, &"commit_msg".to_string(), &"create table; insert rows".to_string()).unwrap();
 
-        // Make sure the commit branch node is correct
-        assert_eq!(commit_branch_node.get_branch_name(), "test_branch".to_string());
-        assert_eq!(commit_branch_node.get_commit_id(), 0);
-        assert_eq!(commit_branch_node.get_parent_commit_id(), 0);
+        let branch_node = results.0;
+        let commit = results.1;
+        // Make sure commit is correct
+        let fetched_commit = new_db.get_commit_file_mut().fetch_commit(&commit.hash).unwrap();
 
+        // compare commit and fetched commit
+        assert_eq!(commit, fetched_commit);
+
+        // Make sure branch node is correct
+        let fetched_branch_node = new_db.get_branch_heads_file_mut().get_branch_head(&new_db.get_current_branch_name()).unwrap();
+
+        //compare branch node and fetched branch node
+        assert_eq!(fetched_branch_node.branch_name, new_db.get_current_branch_name());
+
+        let target_node = new_db.get_branch_heads_file_mut().get_branch_node_from_head(&fetched_branch_node.branch_name, new_db.get_branch_file()).unwrap();
         // Delete the database
         new_db.delete_database().unwrap();
     }

@@ -183,7 +183,7 @@ impl Branches {
         prev_node: Option<&BranchNode>,
         branch_name: &String,
         commit_hash: &String,
-    ) -> Result<(), String> {
+    ) -> Result<BranchNode, String> {
         // Determine if we are creating the first commit on the database, or if this commit is on an existing branch
         let mut prev_pagenum: i32 = -1; // Default value for first commit
         let mut prev_rownum: i32 = -1; // Default value for first commit
@@ -263,7 +263,17 @@ impl Branches {
                 new_row.row[6] = Value::Bool(set_is_head); // is_head column
                 rows_to_rewrite.push(new_row);
                 self.branches_table.rewrite_rows(rows_to_rewrite)?;
-                Ok(())
+
+                let node: BranchNode = BranchNode {
+                    branch_name: branch_name.clone(),
+                    commit_hash: commit_hash.clone(),
+                    prev_pagenum: prev_pagenum,
+                    prev_rownum: prev_rownum,
+                    curr_pagenum: row.pagenum as i32,
+                    curr_rownum: row.rownum as i32,
+                    is_head: set_is_head,
+                };
+                Ok(node)
             }
             None => return Err("Branch node was not created correctly".to_string()),
         }
