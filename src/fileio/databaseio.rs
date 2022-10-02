@@ -1,5 +1,9 @@
 use super::tableio::*;
-use crate::version_control::{branch_heads::*, branches::BranchNode};
+use crate::version_control::branches::BranchNode;
+use crate::version_control::commit::Commit;
+use crate::version_control::{
+    branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
+};
 use glob::glob;
 use std::env;
 use std::path::Path;
@@ -32,7 +36,43 @@ pub struct Database {
     branch_name: String, // The name of the branch that this database is currently on
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
     connected_clients: Vec<String>, // The list of clients that are currently connected to this database at this branch
+    branches: Branches,             // The Branches file object for this database
+    commit_file: CommitFile,        // The CommitFile object for this database
                                     // TODO: maybe add permissions here
+}
+
+static mut database_instance: Option<Database> = None;
+
+pub fn get_db_instance() -> Result<&'static mut Database, String> {
+    unsafe {
+        match database_instance {
+            Some(ref mut db) => Ok(db),
+            None => Err("Database::get_instance() Error: Database instance not set".to_owned()),
+        }
+    }
+}
+
+pub fn create_db_instance(database_name: &String) -> Result<(), String> {
+    unsafe {
+        database_instance = Some(Database::new(database_name.clone())?);
+    }
+    Ok(())
+}
+
+pub fn delete_db_instance() -> Result<(), String> {
+    unsafe {
+        match database_instance {
+            Some(ref mut db) => {
+                db.delete_database_dir()?;
+                database_instance = None;
+
+                return Ok(());
+            }
+            None => {
+                return Err("Database::get_instance() Error: Database instance not set".to_owned());
+            }
+        }
+    }
 }
 
 impl Database {
@@ -79,6 +119,12 @@ impl Database {
         // './databases/<database_name>/branch_heads.gql'
         let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), true)?;
 
+        // Create the branches file object
+        let branches: Branches = Branches::new(&db_path.clone(), true)?;
+
+        // Create the commit file object
+        let commit_file: CommitFile = CommitFile::new(&db_path.clone(), true)?;
+
         // Now create the directory for the main branch
         // './databases/<database_name>/<database_name>-<branch_name>/'
         let mut main_branch_path = db_path.clone();
@@ -99,6 +145,8 @@ impl Database {
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
             branch_heads: branch_heads,
             connected_clients: Vec::new(),
+            branches: branches,
+            commit_file: commit_file,
         })
     }
 
@@ -127,6 +175,12 @@ impl Database {
         // Load the branch_heads.gql file, which holds all the branch HEADs for the database
         let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), false)?;
 
+        // Create the branches file object
+        let branches: Branches = Branches::new(&db_path.clone(), false)?;
+
+        // Create the commit file object
+        let commit_file: CommitFile = CommitFile::new(&db_path.clone(), false)?;
+
         Ok(Database {
             db_path: db_path,
             db_name: database_name,
@@ -134,7 +188,42 @@ impl Database {
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
             branch_heads: branch_heads,
             connected_clients: Vec::new(),
+            branches: branches,
+            commit_file: commit_file,
         })
+    }
+
+    /// Creates a commit and a branch node in the appropriate files.
+    pub fn create_commit_and_node(
+        &mut self,
+        diffs: &Vec<Diff>,
+        commit_msg: &String,
+        command: &String,
+    ) -> Result<(BranchNode, Commit), String> {
+        let commit = self.commit_file.create_commit(
+            commit_msg.to_string(),
+            command.to_string(),
+            diffs.clone(),
+        )?;
+        if self.branch_heads.get_all_branch_heads()?.len() == 0 {
+            let node = self.branches.create_branch_node(
+                &mut self.branch_heads,
+                None,
+                &self.branch_name,
+                &commit.hash,
+            )?;
+            return Ok((node, commit));
+        }
+        let prev_node = self
+            .branch_heads
+            .get_branch_node_from_head(&self.branch_name, &self.branches)?;
+        let node = self.branches.create_branch_node(
+            &mut self.branch_heads,
+            Some(&prev_node),
+            &self.branch_name,
+            &commit.hash,
+        )?;
+        Ok((node, commit))
     }
 
     /// Returns the database's name
@@ -155,6 +244,29 @@ impl Database {
     /// Returns the database's current branch path: <path>/<db_name>/<branch_name>
     pub fn get_current_branch_path(&self) -> String {
         self.branch_path.clone()
+    }
+
+    /// Returns the database's current branch HEAD
+    pub fn get_branch_heads_file(&self) -> &BranchHEADs {
+        &self.branch_heads
+    }
+
+    pub fn get_branch_heads_file_mut(&mut self) -> &mut BranchHEADs {
+        &mut self.branch_heads
+    }
+
+    /// Returns the database's branch
+    pub fn get_branch_file(&self) -> &Branches {
+        &self.branches
+    }
+
+    pub fn get_branch_file_mut(&mut self) -> &mut Branches {
+        &mut self.branches
+    }
+
+    /// returns the database's commit file
+    pub fn get_commit_file_mut(&mut self) -> &mut CommitFile {
+        &mut self.commit_file
     }
 
     /// Returns the path to the database's deltas file: <path>/<db_name>/deltas.gql
@@ -232,9 +344,16 @@ impl Database {
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {
         // Remove the directory and all files within it
-        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
+        self.delete_database_dir()?;
         // Destroy self
         drop(self);
+        Ok(())
+    }
+
+    /// Deletes the directories of the database
+    pub fn delete_database_dir(&self) -> Result<(), String> {
+        // Remove the directory and all files within it
+        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -328,7 +447,15 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{executor::query::create_table, fileio::header::Schema, util::dbtype::Column};
+    use crate::{
+        executor::query::create_table,
+        fileio::header::Schema,
+        util::{
+            dbtype::{Column, Value},
+            row::Row,
+        },
+        version_control,
+    };
     use serial_test::serial;
 
     #[test]
@@ -523,5 +650,114 @@ mod tests {
 
         // Delete the database
         loaded_db.delete_database().unwrap();
+    }
+
+    #[test]
+    fn test_create_commit_branch_node() {
+        // This tests creating a commit branch node
+        let db_name = "test_create_commit_branch_node".to_string();
+        let db_branch_name: String =
+            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
+        let db_base_path: String = Database::get_database_base_path().unwrap()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + db_name.clone().as_str();
+        let full_path_to_branch: String = db_base_path.clone()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + &db_branch_name.clone();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Make sure database does exist now
+        assert_eq!(Path::new(&db_base_path).exists(), true);
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            &get_db_instance().unwrap(),
+        )
+        .unwrap();
+        let mut table = table_result.0;
+
+        let rows: Vec<Row> = vec![
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(20),
+            ],
+        ];
+
+        let mut diffs: Vec<Diff> = Vec::new();
+        diffs.push(version_control::diff::Diff::TableCreate(
+            table_result.1.clone(),
+        ));
+        let insert_diff = table.insert_rows(rows).unwrap();
+
+        diffs.push(version_control::diff::Diff::Insert(insert_diff));
+
+        let results = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &diffs,
+                &"commit_msg".to_string(),
+                &"create table; insert rows".to_string(),
+            )
+            .unwrap();
+
+        let branch_node = results.0;
+        let commit = results.1;
+        // Make sure commit is correct
+        let fetched_commit = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .fetch_commit(&commit.hash)
+            .unwrap();
+
+        // compare commit and fetched commit
+        assert_eq!(commit, fetched_commit);
+
+        // Make sure branch node is correct
+        let fetched_branch_node = get_db_instance()
+            .unwrap()
+            .get_branch_heads_file_mut()
+            .get_branch_head(&get_db_instance().unwrap().get_current_branch_name())
+            .unwrap();
+
+        //compare branch node and fetched branch node
+        assert_eq!(
+            fetched_branch_node.branch_name,
+            get_db_instance().unwrap().get_current_branch_name()
+        );
+
+        let target_node = get_db_instance()
+            .unwrap()
+            .get_branch_heads_file_mut()
+            .get_branch_node_from_head(
+                &fetched_branch_node.branch_name,
+                get_db_instance().unwrap().get_branch_file(),
+            )
+            .unwrap();
+
+        // Assert that the target node and the branch node are the same
+        assert_eq!(target_node, branch_node);
+
+        // Delete the database
+        delete_db_instance().unwrap();
     }
 }
