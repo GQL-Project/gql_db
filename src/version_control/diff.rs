@@ -32,8 +32,9 @@ pub struct InsertDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RemoveDiff {
-    pub table_name: String, // The name of the table that the rows were removed from
-    pub row_locations: Vec<RowLocation>, // The rows that were removed.
+    pub table_name: String,         // The name of the table that the rows were removed from
+    pub schema: Schema,             // The schema of the table
+    pub rows_removed: Vec<RowInfo>, // The rows that were removed
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,6 +46,7 @@ pub struct TableCreateDiff {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableRemoveDiff {
     pub table_name: String, // The name of the table that was removed.
+    pub schema: Schema,
 }
 
 /***************************************************************************************************/
@@ -72,10 +74,11 @@ impl InsertDiff {
 }
 
 impl RemoveDiff {
-    pub fn new(table_name: String, row_locations: Vec<RowLocation>) -> Self {
+    pub fn new(table_name: String, schema: Schema, rows_removed: Vec<RowInfo>) -> Self {
         Self {
             table_name,
-            row_locations,
+            schema,
+            rows_removed,
         }
     }
 }
@@ -98,7 +101,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
             }
             Diff::Remove(remove_diff) => {
                 let table = Table::new(table_dir, &remove_diff.table_name, None)?;
-                table.remove_rows(remove_diff.row_locations.clone())?;
+                table.remove_rows(remove_diff.rows_removed.clone())?;
             }
             Diff::TableCreate(table_create_diff) => {
                 create_table_in_dir(
@@ -112,6 +115,44 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
             }
         }
     }
+    Ok(())
+}
+
+/// This method takes in a directory along with the diffs that are to be undone to the database.
+/// There are a couple assumptions:
+/// 1. The table_dir exists and is where the table files are/will be stored.
+/// 2. The diffs are in the order that the changes were made.
+pub fn revert_branch(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String> {
+    //Reversing the list of diffs since we are undoing the changes made to the table
+        let reversed_diffs = diffs.iter().rev();
+        for diff in reversed_diffs {
+            match diff {
+                Diff::Update(update_diff) => {
+                    let table = Table::new(table_dir, &update_diff.table_name, None)?;
+                    table.rewrite_rows(update_diff.rows.clone())?;
+                }
+                // We remove rows instead of inserting as we're reverting the change
+                Diff::Insert(insert_diff) => {
+                    let table = Table::new(table_dir, &insert_diff.table_name, None)?;
+                    table.remove_rows(insert_diff.rows.clone())?;
+                }
+                // Insert instead of remove as we're reverting the change
+                Diff::Remove(remove_diff) => {
+                    let mut table = Table::new(table_dir, &remove_diff.table_name, None)?;
+                    table.write_rows(remove_diff.rows_removed.clone())?;
+                }
+                Diff::TableCreate(table_create_diff) => {
+                    delete_table_in_dir(&table_create_diff.table_name, table_dir)?;
+                }
+                Diff::TableRemove(table_remove_diff) => {
+                    create_table_in_dir(
+                        &table_remove_diff.table_name,
+                        &table_remove_diff.schema,
+                        table_dir,
+                    )?;
+                }
+            }
+        }
     Ok(())
 }
 
@@ -445,10 +486,7 @@ mod tests {
         diffs.push(Diff::Insert(insert_diff2.clone()));
 
         // Delete a row from table3
-        let rows_to_delete: Vec<RowLocation> = vec![RowLocation {
-            rownum: insert_diff2.rows[1].rownum,
-            pagenum: insert_diff2.rows[1].pagenum,
-        }];
+        let rows_to_delete: Vec<RowInfo> = vec![insert_diff2.rows[1].clone()];
         let delete_diff2: RemoveDiff = table3.remove_rows(rows_to_delete).unwrap();
         diffs.push(Diff::Remove(delete_diff2.clone()));
 

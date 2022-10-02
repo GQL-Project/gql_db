@@ -155,6 +155,8 @@ pub fn delete_table_in_dir(
     // Create the path to the table file.
     let filename: String = table_name.clone() + &TABLE_FILE_EXTENSION.to_string();
     let mut table_path = filename.clone();
+    //Extracting Schema to use when commits are being reverted
+    let schema = Table::new(&table_dir.clone(), &table_name.clone(), None)?.schema;
     if table_dir.len() > 0 {
         table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
     }
@@ -165,6 +167,7 @@ pub fn delete_table_in_dir(
     // Return the diff
     Ok(TableRemoveDiff {
         table_name: table_name.clone(),
+        schema: schema.clone(),
     })
 }
 
@@ -173,6 +176,7 @@ impl Table {
     /// It allows us to rewrite a specific row from the table.
     /// It returns a diff of the rows that were updated.
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
+        //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
         let mut diff: UpdateDiff =
             UpdateDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
@@ -291,15 +295,17 @@ impl Table {
     /// This function is helpful when doing Deletes
     /// It removes the rows from the table specified by the tuples (pagenum, rownum)
     /// It returns a diff of the rows that were removed.
-    pub fn remove_rows(&self, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
+    pub fn remove_rows(&self, rows: Vec<RowInfo>) -> Result<RemoveDiff, String> {
         // Keep track of how the rows have changed.
-        let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), Vec::new());
+        let schema = self.schema.clone();
+        let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), schema, Vec::new());
 
         // Return right away if we aren't removing any rows
         if rows.len() == 0 {
             return Ok(diff);
         }
 
+        // Keep track of the row number we are removing
         let mut curr_page = 1;
         let mut page = read_page(curr_page, &self.path)?;
         for row_location in rows {
@@ -313,7 +319,7 @@ impl Table {
             clear_row(&self.schema, page.as_mut(), rownum)?;
 
             // Add changes to the diff
-            diff.row_locations.push(RowLocation { pagenum, rownum });
+            diff.rows_removed.push(row_location);
         }
         // Write the last page
         write_page(curr_page, &self.path, page.as_ref())?;
@@ -416,7 +422,9 @@ mod tests {
 
     #[test]
     fn test_removes() {
-        let path = "test_removerator".to_string();
+        //TODO: Complete Test post changes made to remove_diff
+        assert!(false, "TODO: Complete Test post changes made to remove_diff");
+        /* let path = "test_removerator".to_string();
         let table = create_table(&path);
 
         let rows: Vec<(u32, u16)> = (10..50)
@@ -435,7 +443,7 @@ mod tests {
         // Assert that we have (69 * 2 - 60) rows remaining
         assert_eq!(table.into_iter().count(), 78);
         // Clean up by removing file
-        clean_table(&path);
+        clean_table(&path); */
     }
 
     #[test]
@@ -554,14 +562,15 @@ mod tests {
             pagenum: insert_diff.rows[0].clone().pagenum,
             rownum: insert_diff.rows[0].clone().rownum,
         }];
-        let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
+        assert!(false, "TODO: Complete Test post changes made to remove_diff");
+        /* let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
         assert_eq!(remove_diff.row_locations[0].pagenum, 3);
         assert_eq!(remove_diff.row_locations[0].rownum, 0);
 
-        // Clean up by removing file
+        // Clean up by removing file */
         clean_table(&path);
     }
 

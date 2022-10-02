@@ -253,10 +253,7 @@ impl BranchHEADs {
 
             // If the branch name matches, delete the row
             if row_branch_name == *branch_name {
-                self.branch_heads_table.remove_rows(vec![RowLocation {
-                    pagenum: row_info.pagenum,
-                    rownum: row_info.rownum,
-                }])?;
+                self.branch_heads_table.remove_rows(vec![row_info])?;
                 return Ok(());
             }
         }
