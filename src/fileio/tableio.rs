@@ -293,7 +293,7 @@ impl Table {
     }
 
     /// This function is helpful when doing Deletes
-    /// It removes the rows from the table specified by the tuples (pagenum, rownum)
+    /// It removes the rows from the table specified by the triples (rows, pagenum, rownum)
     /// It returns a diff of the rows that were removed.
     pub fn remove_rows(&self, rows: Vec<RowInfo>) -> Result<RemoveDiff, String> {
         // Keep track of how the rows have changed.
@@ -344,6 +344,7 @@ impl Table {
 mod tests {
 
     use rand::prelude::*;
+    use serial_test::serial;
     use std::iter::repeat;
 
     use super::*;
@@ -421,32 +422,100 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_removes() {
-        //TODO: Complete Test post changes made to remove_diff
-        assert!(
-            false,
-            "TODO: Complete Test post changes made to remove_diff"
-        );
-        /* let path = "test_removerator".to_string();
-        let table = create_table(&path);
+        let path = "test_removerator".to_string();
+        let filepath: String = path.clone() + &TABLE_FILE_EXTENSION.to_string();
+        create_file(&filepath).unwrap();
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let header = Header {
+            num_pages: 3,
+            schema: schema.clone(),
+        };
+        write_header(&filepath, &header).unwrap();
+        let mut page = [0u8; PAGE_SIZE];
+        write_page(1, &filepath, &page).unwrap();
+        let mut table = Table::new(&"".to_string(), &path.to_string(), None).unwrap();
+        //Adding in 1st entry
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("Bruce Wayne".to_string()),
+            Value::I32(45),
+        ];
+        //Adding in 2nd entry
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Clark Kent".to_string()),
+            Value::I32(45),
+        ];
+        //Adding in 3rd entry
+        let row3 = vec![
+            Value::I32(3),
+            Value::String("Diana Prince".to_string()),
+            Value::I32(40),
+        ];
+        //Adding in 4th entry
+        let row4 = vec![
+            Value::I32(4),
+            Value::String("Barry Allen".to_string()),
+            Value::I32(35),
+        ];
+        //Adding in 5th entry
+        let row5 = vec![
+            Value::I32(5),
+            Value::String("Jessica Cruz".to_string()),
+            Value::I32(37),
+        ];
+        //Adding in 6th entry
+        let row6 = vec![
+            Value::I32(6),
+            Value::String("Dinah Lance".to_string()),
+            Value::I32(35),
+        ];
+        //Adding in 7th entry
+        let row7 = vec![
+            Value::I32(7),
+            Value::String("Oliver Queen".to_string()),
+            Value::I32(34),
+        ];
+        let rows: Vec<Row> = vec![row1, row2, row3, row4, row5, row6, row7];
+        table.insert_rows(rows).unwrap();
+        //Table created
+        //Now we will remove the 7th entry
+        table.remove_rows(vec![ RowInfo{
+            row: vec![
+                Value::I32(7),
+                Value::String("Oliver Queen".to_string()),
+                Value::I32(35),
+            ],
+            pagenum: 1,
+            rownum: 6,
+        },
+        RowInfo{
+            row: vec![
+                Value::I32(4),
+                Value::String("Barry Allen".to_string()),
+                Value::I32(35),
+            ],
+            pagenum: 1,
+            rownum: 3,
+        }]).unwrap();
 
-        let rows: Vec<(u32, u16)> = (10..50)
-            .map(|i| (1, i as u16))
-            .chain((10..30).map(|i| (2, i as u16)))
-            .collect();
-        // Cast rows to a vector of Rowlocations
-        let rowlocations: Vec<RowLocation> = rows
-            .iter()
-            .map(|(pagenum, rownum)| RowLocation {
-                pagenum: *pagenum,
-                rownum: *rownum,
-            })
-            .collect();
-        table.remove_rows(rowlocations).unwrap();
-        // Assert that we have (69 * 2 - 60) rows remaining
-        assert_eq!(table.into_iter().count(), 78);
-        // Clean up by removing file
-        clean_table(&path); */
+        //Checking if the 7th entry is removed & the last entry's contents
+        let mut count = 0;
+        for (i, rowinfo) in table.enumerate() {
+            count += 1;
+            if (count == 5) {
+                // assert_eq!(rowinfo.row[0], Value::I32(6));
+                assert_eq!(rowinfo.row[1], Value::String("Dinah Lance".to_string()));
+                assert_eq!(rowinfo.row[2], Value::I32(35));
+            }
+        }
+        assert_eq!(count, 5);
     }
 
     #[test]
@@ -561,22 +630,16 @@ mod tests {
         assert_eq!(update_diff.rows[0].row[2], Value::I32(50));
 
         // Try RemoveDiff
-        let rows_to_remove: Vec<RowLocation> = vec![RowLocation {
-            pagenum: insert_diff.rows[0].clone().pagenum,
-            rownum: insert_diff.rows[0].clone().rownum,
-        }];
-        assert!(
-            false,
-            "TODO: Complete Test post changes made to remove_diff"
-        );
-        /* let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
+        let rows_to_remove: Vec<RowInfo> = vec![insert_diff.rows[0].clone()];
+        let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
-        assert_eq!(remove_diff.row_locations[0].pagenum, 3);
-        assert_eq!(remove_diff.row_locations[0].rownum, 0);
+        assert_eq!(remove_diff.rows_removed[0].row[0], Value::I32(3));
+        assert_eq!(remove_diff.rows_removed[0].pagenum, 3);
+        assert_eq!(remove_diff.rows_removed[0].rownum, 0);
 
-        // Clean up by removing file */
+        // Clean up by removing file 
         clean_table(&path);
     }
 
