@@ -3,6 +3,6 @@
 pub mod branch_heads;
 pub mod branches;
 pub mod commit;
+pub mod commitfile;
 pub mod diff;
 pub mod log;
-pub mod commitfile;

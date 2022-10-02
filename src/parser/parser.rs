@@ -1,7 +1,7 @@
+use crate::version_control::log;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use crate::version_control::log;
 
 /// A parse function, that starts with a string and returns an AST representation of the query.
 /// If an error happens, an Err(msg) is returned.
@@ -62,7 +62,7 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                return Err("Invalid Branch Name".to_string());        
+                return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
                 return Ok("Valid Branch Command".to_string());
@@ -78,7 +78,7 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                return Err("Invalid Branch Name".to_string());          
+                return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
                 return Ok("Valid Switch Branch Command".to_string());
@@ -92,7 +92,7 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
                 // Error message here
                 return Err("Invalid VC Command".to_string());
             }
-            
+
             log::log()?;
 
             return Ok("Valid Log Command".to_string());
