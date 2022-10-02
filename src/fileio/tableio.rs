@@ -486,24 +486,28 @@ mod tests {
         table.insert_rows(rows).unwrap();
         //Table created
         //Now we will remove the 7th entry
-        table.remove_rows(vec![ RowInfo{
-            row: vec![
-                Value::I32(7),
-                Value::String("Oliver Queen".to_string()),
-                Value::I32(35),
-            ],
-            pagenum: 1,
-            rownum: 6,
-        },
-        RowInfo{
-            row: vec![
-                Value::I32(4),
-                Value::String("Barry Allen".to_string()),
-                Value::I32(35),
-            ],
-            pagenum: 1,
-            rownum: 3,
-        }]).unwrap();
+        table
+            .remove_rows(vec![
+                RowInfo {
+                    row: vec![
+                        Value::I32(7),
+                        Value::String("Oliver Queen".to_string()),
+                        Value::I32(35),
+                    ],
+                    pagenum: 1,
+                    rownum: 6,
+                },
+                RowInfo {
+                    row: vec![
+                        Value::I32(4),
+                        Value::String("Barry Allen".to_string()),
+                        Value::I32(35),
+                    ],
+                    pagenum: 1,
+                    rownum: 3,
+                },
+            ])
+            .unwrap();
 
         //Checking if the 7th entry is removed & the last entry's contents
         let mut count = 0;
@@ -639,7 +643,7 @@ mod tests {
         assert_eq!(remove_diff.rows_removed[0].pagenum, 3);
         assert_eq!(remove_diff.rows_removed[0].rownum, 0);
 
-        // Clean up by removing file 
+        // Clean up by removing file
         clean_table(&path);
     }
 
