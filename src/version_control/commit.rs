@@ -420,7 +420,10 @@ mod tests {
             vec![Diff::Remove(RemoveDiff {
                 table_name: "test_table".to_string(),
                 rows_removed: vec![RowInfo {
-                    row: vec![Value::String("test".to_string()), Value::String("122".to_string())],
+                    row: vec![
+                        Value::String("test".to_string()),
+                        Value::String("122".to_string()),
+                    ],
                     pagenum: 0,
                     rownum: 0,
                 }],
