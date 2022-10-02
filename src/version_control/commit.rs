@@ -322,7 +322,7 @@ impl CommitFile {
                     }
                 }
                 Diff::Remove(remove) => {
-                    self.swrite_type(page, pagenum, offset, 1u32)?;
+                    self.swrite_type(page, pagenum, offset, 2u32)?;
                     self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
                     self.swrite_type(page, pagenum, offset, remove.rows_removed.len() as u32)?;
                     for row in &remove.rows_removed {
@@ -407,6 +407,7 @@ mod tests {
                 }),
                 Diff::TableRemove(TableRemoveDiff {
                     table_name: "test_table".to_string(),
+                    schema: schema.clone(),
                 }),
             ],
         );
@@ -418,20 +419,12 @@ mod tests {
             "test_command".to_string(),
             vec![Diff::Remove(RemoveDiff {
                 table_name: "test_table".to_string(),
-                row_locations: vec![
-                    RowLocation {
-                        pagenum: 0,
-                        rownum: 0,
-                    },
-                    RowLocation {
-                        pagenum: 23,
-                        rownum: 66,
-                    },
-                    RowLocation {
-                        pagenum: 23,
-                        rownum: 11,
-                    },
-                ],
+                rows_removed: vec![RowInfo {
+                    row: vec![Value::String("test".to_string()), Value::String("122".to_string())],
+                    pagenum: 0,
+                    rownum: 0,
+                }],
+                schema: schema.clone(),
             })],
         );
         delta.store_commit(&commit).unwrap();
