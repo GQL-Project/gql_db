@@ -130,9 +130,7 @@ pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
 mod tests {
     use crate::{
         executor::query::create_table,
-        fileio::{
-            databaseio::{create_db_instance, delete_db_instance, get_db_instance},
-        },
+        fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance},
         util::dbtype::Column,
         version_control::diff::Diff,
     };

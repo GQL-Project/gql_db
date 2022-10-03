@@ -62,10 +62,7 @@ pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<R
     Err("No query found".to_string())
 }
 
-pub fn execute_update(
-    ast: &Vec<Statement>,
-    user: &User
-) -> Result<String, String> {
+pub fn execute_update(ast: &Vec<Statement>, user: &User) -> Result<String, String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -138,7 +135,7 @@ pub fn create_table(
     table_name: &String,
     schema: &Schema,
     database: &Database,
-    user: &User
+    user: &User,
 ) -> Result<(Table, TableCreateDiff), String> {
     let table_dir: String = database.get_current_branch_path(&user);
     // Create a table file and return it
@@ -270,7 +267,7 @@ pub fn insert(
     values: Vec<Vec<String>>,
     table_name: String,
     database: &Database,
-    user: &User
+    user: &User,
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
     let table_dir: String = database.get_current_branch_path(user);
@@ -366,7 +363,7 @@ mod tests {
             .to_vec(),
             "test_table1".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -437,7 +434,7 @@ mod tests {
             .to_vec(),
             "test_table1".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -450,7 +447,7 @@ mod tests {
             .to_vec(),
             "test_table2".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -538,7 +535,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -608,7 +605,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -626,7 +623,7 @@ mod tests {
             ],
             "test_table2".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -703,7 +700,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 
@@ -754,7 +751,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user
+            &user,
         )
         .unwrap();
 

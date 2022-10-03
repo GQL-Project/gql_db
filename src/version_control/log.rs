@@ -81,8 +81,13 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
         // Create a new table
-        let result =
-            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap(), &user).unwrap();
+        let result = create_table(
+            &"table1".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &user,
+        )
+        .unwrap();
         let mut table = result.0;
         diffs.push(Diff::TableCreate(result.1));
 
@@ -140,8 +145,13 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
         // Create a new table
-        let result =
-            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap(), &user).unwrap();
+        let result = create_table(
+            &"table1".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &user,
+        )
+        .unwrap();
         let mut table = result.0;
         diffs.push(Diff::TableCreate(result.1));
 
@@ -171,7 +181,7 @@ mod tests {
                 &diffs,
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
-                &user
+                &user,
             )
             .unwrap();
         let commit: Commit = commit_result.1;
@@ -183,7 +193,7 @@ mod tests {
                 &diffs,
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
-                &user
+                &user,
             )
             .unwrap();
         let second_commit: Commit = commit_result.1;

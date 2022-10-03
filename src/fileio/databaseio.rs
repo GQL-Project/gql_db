@@ -1,12 +1,12 @@
 use super::tableio::*;
+use crate::user::userdata::*;
 use crate::version_control::branches::BranchNode;
 use crate::version_control::commit::Commit;
 use crate::version_control::{
     branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
 };
-use crate::user::userdata::*;
-use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use glob::glob;
+use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::env;
 use std::path::Path;
 
@@ -32,13 +32,13 @@ pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
 // #[derive(Clone)] I'm keeping this commented. We do NOT want the database to be cloneable.
 pub struct Database {
-    db_path: String,           // This is the full patch to the database directory: <path>/<db_name>
-    db_name: String,           // This is the name of the database (not the path)
+    db_path: String, // This is the full patch to the database directory: <path>/<db_name>
+    db_name: String, // This is the name of the database (not the path)
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
-    branches: Branches,        // The Branches file object for this database
-    commit_file: CommitFile,   // The CommitFile object for this database
+    branches: Branches, // The Branches file object for this database
+    commit_file: CommitFile, // The CommitFile object for this database
     mutex: ReentrantMutex<()>, // This is the mutex that is used to lock the database
-    // TODO: maybe add permissions here
+                     // TODO: maybe add permissions here
 }
 
 static mut DATABASE_INSTANCE: Option<Database> = None;
@@ -198,7 +198,7 @@ impl Database {
         diffs: &Vec<Diff>,
         commit_msg: &String,
         command: &String,
-        user: &User
+        user: &User,
     ) -> Result<(BranchNode, Commit), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -235,12 +235,14 @@ impl Database {
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         let branch_name: String = user.get_current_branch_name();
-        let path: String = format!("{}{}{}{}{}", 
-            self.db_path, 
-            std::path::MAIN_SEPARATOR, 
-            self.db_name, 
+        let path: String = format!(
+            "{}{}{}{}{}",
+            self.db_path,
+            std::path::MAIN_SEPARATOR,
+            self.db_name,
             DB_NAME_BRANCH_SEPARATOR,
-            branch_name);
+            branch_name
+        );
         path
     }
 
@@ -502,7 +504,6 @@ impl Database {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,7 +653,9 @@ mod tests {
 
         // Make sure the table path is correct
         assert_eq!(
-            new_db.get_table_path(&"test_table".to_string(), &user).unwrap(),
+            new_db
+                .get_table_path(&"test_table".to_string(), &user)
+                .unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"
@@ -710,7 +713,9 @@ mod tests {
 
         // Make sure the table path is correct
         assert_eq!(
-            loaded_db.get_table_path(&"test_table".to_string(), &user).unwrap(),
+            loaded_db
+                .get_table_path(&"test_table".to_string(), &user)
+                .unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"
@@ -754,7 +759,7 @@ mod tests {
             &"test_table".to_string(),
             &schema,
             get_db_instance().unwrap(),
-            &user
+            &user,
         )
         .unwrap();
         let mut table = table_result.0;
@@ -785,19 +790,21 @@ mod tests {
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
-        let results = get_db_instance().unwrap()
+        let results = get_db_instance()
+            .unwrap()
             .create_commit_and_node(
                 &diffs,
                 &"commit_msg".to_string(),
                 &"create table; insert rows".to_string(),
-                &user
+                &user,
             )
             .unwrap();
 
         let branch_node = results.0;
         let commit = results.1;
         // Make sure commit is correct
-        let fetched_commit = get_db_instance().unwrap()
+        let fetched_commit = get_db_instance()
+            .unwrap()
             .get_commit_file_mut()
             .fetch_commit(&commit.hash)
             .unwrap();
@@ -806,7 +813,8 @@ mod tests {
         assert_eq!(commit, fetched_commit);
 
         // Make sure branch node is correct
-        let fetched_branch_node = get_db_instance().unwrap()
+        let fetched_branch_node = get_db_instance()
+            .unwrap()
             .get_branch_heads_file_mut()
             .get_branch_head(&user.get_current_branch_name())
             .unwrap();
@@ -817,7 +825,8 @@ mod tests {
             user.get_current_branch_name()
         );
 
-        let target_node = get_db_instance().unwrap()
+        let target_node = get_db_instance()
+            .unwrap()
             .get_branch_heads_file_mut()
             .get_branch_node_from_head(
                 &fetched_branch_node.branch_name,
