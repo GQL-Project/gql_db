@@ -353,20 +353,10 @@ impl Database {
         Ok(())
     }
 
-    /// Deletes the directories of the database
-    fn delete_database_dir(&self) -> Result<(), String> {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        // Remove the directory and all files within it
-        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
-    pub fn create_branch(&mut self, branch_name: &String, user: &User) -> Result<(), String> {
+    pub fn create_branch(&mut self, branch_name: &String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -386,7 +376,7 @@ impl Database {
     /// Switches the database to the given branch.
     /// The branch MUST exist already.
     /// It returns true on success, and false on failure.
-    pub fn switch_branch(&mut self, _branch_name: String, user: &User) -> Result<(), String> {
+    pub fn switch_branch(&mut self, _branch_name: String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -417,6 +407,16 @@ impl Database {
             }
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    /// Deletes the directories of the database
+    fn delete_database_dir(&self) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Remove the directory and all files within it
+        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Returns the database's path: <path>/<db_name>
@@ -647,9 +647,9 @@ mod tests {
         ];
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db, &mut user).unwrap();
 
         // Make sure the table path is correct
         assert_eq!(
@@ -689,7 +689,7 @@ mod tests {
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         // Create a new table in the database
         let schema: Schema = vec![
@@ -697,7 +697,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table(&"test_table".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db, &mut user).unwrap();
 
         // Load the database
         let loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
@@ -746,7 +746,7 @@ mod tests {
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         // Create a new table in the database
         let schema: Schema = vec![
@@ -759,7 +759,7 @@ mod tests {
             &"test_table".to_string(),
             &schema,
             get_db_instance().unwrap(),
-            &user,
+            &mut user
         )
         .unwrap();
         let mut table = table_result.0;

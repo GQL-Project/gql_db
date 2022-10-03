@@ -2,7 +2,7 @@ use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::user::userdata::*;
 use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
-use crate::version_control::diff::{InsertDiff, TableCreateDiff};
+use crate::version_control::diff::*;
 use itertools::Itertools;
 use sqlparser::ast::{ColumnDef, DataType, Expr, Function, Query, SetExpr, Statement};
 
@@ -25,7 +25,10 @@ pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
-pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<Row>), String> {
+pub fn execute_query(
+    ast: &Vec<Statement>, 
+    user: &User
+) -> Result<(Schema, Vec<Row>), String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -62,7 +65,10 @@ pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<R
     Err("No query found".to_string())
 }
 
-pub fn execute_update(ast: &Vec<Statement>, user: &User) -> Result<String, String> {
+pub fn execute_update(
+    ast: &Vec<Statement>,
+    user: &mut User
+) -> Result<String, String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -77,7 +83,7 @@ pub fn execute_update(ast: &Vec<Statement>, user: &User) -> Result<String, Strin
                 for c in columns.iter() {
                     schema.push((c.name.clone().value, parse_col_def(c.clone())?));
                 }
-                let _result = create_table(&table_name, &schema, get_db_instance()?, user);
+                let _result = create_table(&table_name, &schema, get_db_instance()?, user)?;
                 results.push(format!("Table created: {}", table_name));
             }
             Statement::Insert {
@@ -131,15 +137,31 @@ pub fn execute_update(ast: &Vec<Statement>, user: &User) -> Result<String, Strin
 
 /// Creates a new table within the given database named <table_name><TABLE_FILE_EXTENSION>
 /// with the given schema.
+/// It appends the diff to the user passed in
 pub fn create_table(
     table_name: &String,
     schema: &Schema,
     database: &Database,
-    user: &User,
+    user: &mut User
 ) -> Result<(Table, TableCreateDiff), String> {
     let table_dir: String = database.get_current_branch_path(&user);
+
     // Create a table file and return it
-    create_table_in_dir(table_name, schema, &table_dir)
+    let results = create_table_in_dir(table_name, schema, &table_dir)?;
+    user.append_diff(&Diff::TableCreate(results.1.clone()));
+    Ok(results)
+}
+
+/// Drops a table from the given database.
+/// It appends the diff to the user passed in
+pub fn drop_table(table_name: &String, database: &Database, user: &mut User) -> Result<TableRemoveDiff, String> {
+    let table_dir: String = database.get_current_branch_path(user);
+
+    // Delete the table file and return it
+    let results = delete_table_in_dir(table_name, &table_dir)?;
+    user.append_diff(&Diff::TableRemove(results.clone()));
+
+    Ok(results)
 }
 
 /// This method implements the SQL Select statement. It takes in the column and table names where table_names
@@ -263,11 +285,12 @@ pub fn select(
 /// If the table does not exist, it returns an error.
 /// If the number of values to be inserted does not match the number of columns in the table, it returns an error.
 /// If the values to be inserted are not of the correct type, it returns an error.
+/// It appends the diff to the user passed in
 pub fn insert(
     values: Vec<Vec<String>>,
     table_name: String,
     database: &Database,
-    user: &User,
+    user: &mut User
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
     let table_dir: String = database.get_current_branch_path(user);
@@ -284,7 +307,7 @@ pub fn insert(
                 Ok(x
                     .iter()
                     .zip(table.schema.iter())
-                    .map(|(str, (x, col))| {
+                    .map(|(str, (_, col))| {
                         let res = match col {
                             Column::I32 => Value::I32(str.parse().map_err(|_x| "Could not parse value")?),
                             Column::Float => Value::Float(str.parse().map_err(|_x| "Could not parse value")?),
@@ -322,9 +345,9 @@ pub fn insert(
         Ok(())
     })?;
     // Actually insert the values into the table
-    let len = values.len();
-    let diff = table.insert_rows(values)?;
-    // TODO: Use this diff in a commit
+    let len: usize = values.len();
+    let diff: InsertDiff = table.insert_rows(values)?;
+    user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
 }
 
@@ -351,9 +374,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
 
         insert(
             [
@@ -363,7 +386,7 @@ mod tests {
             .to_vec(),
             "test_table1".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -415,10 +438,10 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema1, &new_db, &user).unwrap();
-        create_table(&"test_table2".to_string(), &schema2, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+        create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
 
         // Write rows to first table
         insert(
@@ -434,7 +457,7 @@ mod tests {
             .to_vec(),
             "test_table1".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -447,7 +470,7 @@ mod tests {
             .to_vec(),
             "test_table2".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -520,9 +543,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         insert(
             vec![
                 vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
@@ -535,7 +558,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -590,9 +613,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema1, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
             vec![
@@ -605,7 +628,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -614,7 +637,7 @@ mod tests {
             ("country".to_string(), Column::String(50)),
         ];
 
-        create_table(&"test_table2".to_string(), &schema2, &new_db, &user).unwrap();
+        create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
 
         insert(
             vec![
@@ -623,7 +646,7 @@ mod tests {
             ],
             "test_table2".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -685,9 +708,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema1, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
             vec![
@@ -700,7 +723,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -736,9 +759,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema1, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
             vec![
@@ -751,7 +774,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &user,
+            &mut user
         )
         .unwrap();
 
@@ -781,9 +804,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
                 Value::I32(1),
@@ -826,7 +849,7 @@ mod tests {
             ],
             vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
         ];
-        let (_, diff) = insert(newrows, "test_table1".to_string(), &new_db, &user).unwrap();
+        let (_, diff) = insert(newrows, "test_table1".to_string(), &new_db, &mut user).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 5);
@@ -888,9 +911,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
                 Value::I32(1),
@@ -921,7 +944,7 @@ mod tests {
             ],
         ];
 
-        assert!(insert(newrows, "test_table1".to_string(), &new_db, &user).is_err());
+        assert!(insert(newrows, "test_table1".to_string(), &new_db, &mut user).is_err());
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -935,7 +958,7 @@ mod tests {
         let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
         let schema: Schema = vec![
@@ -944,7 +967,7 @@ mod tests {
             ("age".to_string(), Column::Double),
         ];
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
                 Value::I32(100), // Can only insert I32
@@ -990,7 +1013,7 @@ mod tests {
             ],
         ];
 
-        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &user).unwrap();
+        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 4);
@@ -1047,9 +1070,9 @@ mod tests {
         ];
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
                 "100".to_string(), // Can only insert I32
@@ -1073,7 +1096,7 @@ mod tests {
             ],
         ];
 
-        assert!(insert(rows, "test_table1".to_string(), &new_db, &user).is_err());
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
 
         // Delete the test database
         new_db.delete_database().unwrap();

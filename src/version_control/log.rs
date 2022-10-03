@@ -72,7 +72,7 @@ mod tests {
         create_db_instance(&"log_test_db".to_string()).unwrap();
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         // Create the schema
         let schema: Schema = vec![
@@ -85,7 +85,7 @@ mod tests {
             &"table1".to_string(),
             &schema,
             get_db_instance().unwrap(),
-            &user,
+            &mut user,
         )
         .unwrap();
         let mut table = result.0;
@@ -136,7 +136,7 @@ mod tests {
         create_db_instance(&"log_test_db1".to_string()).unwrap();
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         // Create the schema
         let schema: Schema = vec![
@@ -149,7 +149,7 @@ mod tests {
             &"table1".to_string(),
             &schema,
             get_db_instance().unwrap(),
-            &user,
+            &mut user,
         )
         .unwrap();
         let mut table = result.0;
