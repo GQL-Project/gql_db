@@ -544,13 +544,13 @@ mod tests {
         let dir_to_create_in: String = "test_revert_diffs_on_table".to_string();
         let dir_to_build_in: String = "test_revert_diffs_on_table_diff".to_string();
         let dir_to_compare_to: String = "test_revert_compare".to_string();
-        
+
         // If the directory to the dir_to_build_in does not exist, create it
         let dir = dir_to_build_in.clone() + &"/test".to_string();
         let path_obj = std::path::Path::new(&dir);
         let path_to_build_in_dir = path_obj.parent().unwrap();
         std::fs::create_dir_all(path_to_build_in_dir).unwrap();
-        
+
         // If the directory to the dir_to_compare_to does not exist, create it
         let dir = dir_to_compare_to.clone() + &"/test".to_string();
         let path_obj = std::path::Path::new(&dir);
