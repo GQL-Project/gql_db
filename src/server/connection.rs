@@ -29,7 +29,7 @@ impl Connection {
             .iter()
             .position(|client| client.get_user_id() == *id)
             .ok_or("Client not found")?;
-        
+
         // Get a mutable reference to the client
         let client: &mut User = unsafe { &mut *ptr.add(index) };
 
@@ -68,9 +68,14 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
-    use crate::{version_control::diff::InsertDiff, fileio::header::Schema, util::dbtype::Column, util::{row::*, dbtype::Value}};
     use super::*;
+    use crate::{
+        fileio::header::Schema,
+        util::dbtype::Column,
+        util::{dbtype::Value, row::*},
+        version_control::diff::InsertDiff,
+    };
+    use serial_test::serial;
 
     #[test]
     #[serial]
@@ -120,7 +125,7 @@ mod tests {
     #[serial]
     fn test_mutability_of_get_client() {
         let connection: Connection = Connection::new();
-        
+
         // Create a scope for appending the diff
         {
             // Create then retrieve the client
@@ -136,7 +141,11 @@ mod tests {
                 table_name: "test".to_string(),
                 schema: schema,
                 rows: vec![RowInfo {
-                    row: vec![Value::I32(1), Value::String("test".to_string()), Value::I32(1)],
+                    row: vec![
+                        Value::I32(1),
+                        Value::String("test".to_string()),
+                        Value::I32(1),
+                    ],
                     rownum: 0,
                     pagenum: 0,
                 }],
@@ -147,13 +156,13 @@ mod tests {
         let id: String = connection.get_clients_readonly()[0].get_user_id();
         let client: &User = connection.get_client(&id).unwrap();
         assert_eq!(client.get_diffs().len(), 1);
-        
+
         match client.get_diffs()[0] {
             Diff::Insert(ref diff) => {
                 assert_eq!(diff.table_name, "test");
                 assert_eq!(diff.schema.len(), 3);
                 assert_eq!(diff.rows.len(), 1);
-            },
+            }
             _ => assert!(false), // The diff should be an insert
         }
     }

@@ -759,7 +759,7 @@ mod tests {
             &"test_table".to_string(),
             &schema,
             get_db_instance().unwrap(),
-            &mut user
+            &mut user,
         )
         .unwrap();
         let mut table = table_result.0;

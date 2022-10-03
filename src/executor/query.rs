@@ -25,10 +25,7 @@ pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
-pub fn execute_query(
-    ast: &Vec<Statement>, 
-    user: &User
-) -> Result<(Schema, Vec<Row>), String> {
+pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<Row>), String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -65,10 +62,7 @@ pub fn execute_query(
     Err("No query found".to_string())
 }
 
-pub fn execute_update(
-    ast: &Vec<Statement>,
-    user: &mut User
-) -> Result<String, String> {
+pub fn execute_update(ast: &Vec<Statement>, user: &mut User) -> Result<String, String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -142,7 +136,7 @@ pub fn create_table(
     table_name: &String,
     schema: &Schema,
     database: &Database,
-    user: &mut User
+    user: &mut User,
 ) -> Result<(Table, TableCreateDiff), String> {
     let table_dir: String = database.get_current_branch_path(&user);
 
@@ -154,7 +148,11 @@ pub fn create_table(
 
 /// Drops a table from the given database.
 /// It appends the diff to the user passed in
-pub fn drop_table(table_name: &String, database: &Database, user: &mut User) -> Result<TableRemoveDiff, String> {
+pub fn drop_table(
+    table_name: &String,
+    database: &Database,
+    user: &mut User,
+) -> Result<TableRemoveDiff, String> {
     let table_dir: String = database.get_current_branch_path(user);
 
     // Delete the table file and return it
@@ -290,7 +288,7 @@ pub fn insert(
     values: Vec<Vec<String>>,
     table_name: String,
     database: &Database,
-    user: &mut User
+    user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
     let table_dir: String = database.get_current_branch_path(user);
@@ -386,7 +384,7 @@ mod tests {
             .to_vec(),
             "test_table1".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -457,7 +455,7 @@ mod tests {
             .to_vec(),
             "test_table1".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -470,7 +468,7 @@ mod tests {
             .to_vec(),
             "test_table2".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -558,7 +556,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -628,7 +626,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -646,7 +644,7 @@ mod tests {
             ],
             "test_table2".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -723,7 +721,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
@@ -774,7 +772,7 @@ mod tests {
             ],
             "test_table1".to_string(),
             &new_db,
-            &mut user
+            &mut user,
         )
         .unwrap();
 
