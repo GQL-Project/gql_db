@@ -101,7 +101,11 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
             }
             Diff::Remove(remove_diff) => {
                 let table = Table::new(table_dir, &remove_diff.table_name, None)?;
-                table.remove_rows(remove_diff.rows_removed.clone())?;
+                let mut row_locations_removed: Vec<RowLocation> = Vec::new();
+                for row in remove_diff.rows_removed.clone() {
+                    row_locations_removed.push(row.get_row_location());
+                }
+                table.remove_rows(row_locations_removed)?;
             }
             Diff::TableCreate(table_create_diff) => {
                 create_table_in_dir(
@@ -122,7 +126,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
 /// There are a couple assumptions:
 /// 1. The table_dir exists and is where the table files are/will be stored.
 /// 2. The diffs are in the order that the changes were made.
-pub fn revert_branch(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String> {
+pub fn revert_table_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String> {
     //Reversing the list of diffs since we are undoing the changes made to the table
     let reversed_diffs = diffs.iter().rev();
     for diff in reversed_diffs {
@@ -134,7 +138,11 @@ pub fn revert_branch(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String
             // We remove rows instead of inserting as we're reverting the change
             Diff::Insert(insert_diff) => {
                 let table = Table::new(table_dir, &insert_diff.table_name, None)?;
-                table.remove_rows(insert_diff.rows.clone())?;
+                let mut row_locations_removed: Vec<RowLocation> = Vec::new();
+                for row in insert_diff.rows.clone() {
+                    row_locations_removed.push(row.get_row_location());
+                }
+                table.remove_rows(row_locations_removed);
             }
             // Insert instead of remove as we're reverting the change
             Diff::Remove(remove_diff) => {
@@ -486,7 +494,12 @@ mod tests {
         diffs.push(Diff::Insert(insert_diff2.clone()));
 
         // Delete a row from table3
-        let rows_to_delete: Vec<RowInfo> = vec![insert_diff2.rows[1].clone()];
+        let rows_to_delete: Vec<RowLocation> = vec![
+            RowLocation {
+                rownum: insert_diff2.rows[1].rownum,
+                pagenum: insert_diff2.rows[0].pagenum,
+            },
+        ];
         let delete_diff2: RemoveDiff = table3.remove_rows(rows_to_delete).unwrap();
         diffs.push(Diff::Remove(delete_diff2.clone()));
 
@@ -521,6 +534,66 @@ mod tests {
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
         std::fs::remove_dir_all(&dir_to_build_in).unwrap();
+    }
+
+    #[test]
+    fn test_revert_diffs_table() {
+        //Setting up test table and directory
+        let dir_to_create_in: String = "test_revert_diffs_on_table".to_string();
+        let dir_to_build_in: String = "test_revert_diffs_on_table_diff".to_string();
+        let dir_to_compare_to: String = "test_revert_compare".to_string();
+        let table_name: String = "test_table".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let mut diffs: Vec<Diff> = Vec::new();
+
+        let result: (Table, TableCreateDiff) =
+            create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
+        let mut table1: Table = result.0;
+        let rows = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Dick".to_string()),
+                Value::I32(28),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jason".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Tim".to_string()),
+                Value::I32(21),
+            ],
+        ];
+        let insert_diff = table1.insert_rows(rows).unwrap();
+        let rows2 = vec![
+            vec![
+                Value::I32(4),
+                Value::String("Damian".to_string()),
+                Value::I32(16),
+            ]
+        ];
+        let insert_diff2 = table1.insert_rows(rows2).unwrap();
+        std::fs::copy(table1.path.clone(), format!("{}{}{}.db", dir_to_build_in, std::path::MAIN_SEPARATOR, &table1.name)).unwrap();
+        let remove_diff = table1.remove_rows(vec![RowLocation {
+            pagenum: insert_diff.clone().rows[1].pagenum,
+            rownum: insert_diff.clone().rows[1].rownum,
+        }]).unwrap();
+        revert_table_from_diffs(&dir_to_build_in, &vec![Diff::Remove(remove_diff)]).unwrap();
+        // Assert that the table is the same as it was before the remove diff
+        let table2 = Table::new(&dir_to_build_in, &table_name, None).unwrap();
+        diffs.push(Diff::Insert(insert_diff));
+        diffs.push(Diff::Insert(insert_diff2));
+        construct_tables_from_diffs(&dir_to_compare_to, &diffs).unwrap();
+        let table3 = Table::new(&dir_to_compare_to, &table_name, None).unwrap();
+        assert!(compare_tables(&table2, &table3, &dir_to_build_in, &dir_to_compare_to));
+        
     }
 
     /// Compares two tables to make sure that they are identical, but in separate directories

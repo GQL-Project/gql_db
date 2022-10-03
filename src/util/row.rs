@@ -15,6 +15,15 @@ pub struct RowInfo {
     pub rownum: u16,
 }
 
+impl RowInfo {
+    pub fn get_row_location(&self) -> RowLocation {
+        RowLocation {
+            pagenum: self.pagenum,
+            rownum: self.rownum,
+        }
+    }
+}
+
 impl Ord for RowInfo {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.pagenum

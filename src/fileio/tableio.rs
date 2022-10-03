@@ -295,7 +295,7 @@ impl Table {
     /// This function is helpful when doing Deletes
     /// It removes the rows from the table specified by the triples (rows, pagenum, rownum)
     /// It returns a diff of the rows that were removed.
-    pub fn remove_rows(&self, rows: Vec<RowInfo>) -> Result<RemoveDiff, String> {
+    pub fn remove_rows(&self, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
         // Keep track of how the rows have changed.
         let schema = self.schema.clone();
         let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), schema, Vec::new());
@@ -316,10 +316,20 @@ impl Table {
                 curr_page = pagenum;
                 load_page(pagenum, &self.path, page.as_mut())?;
             }
-            clear_row(&self.schema, page.as_mut(), rownum)?;
+            let row_read_result = read_row(&self.schema, &page, rownum);
+            match row_read_result {
+                Some(row_read) => {
+                    //Runs code if successfully deleted a row
+                    clear_row(&self.schema, page.as_mut(), rownum)?;
 
-            // Add changes to the diff
-            diff.rows_removed.push(row_location);
+                    // Add changes to the diff
+                    diff.rows_removed.push(RowInfo{
+                        row: row_read,
+                        pagenum: row_location.pagenum,
+                        rownum: row_location.rownum,
+                    });},
+                None => {return Err(format!("The provided Row doesn't exist!"));}
+            }
         }
         // Write the last page
         write_page(curr_page, &self.path, page.as_ref())?;
@@ -488,21 +498,11 @@ mod tests {
         //Now we will remove the 7th entry
         table
             .remove_rows(vec![
-                RowInfo {
-                    row: vec![
-                        Value::I32(7),
-                        Value::String("Oliver Queen".to_string()),
-                        Value::I32(35),
-                    ],
+                RowLocation {
                     pagenum: 1,
                     rownum: 6,
                 },
-                RowInfo {
-                    row: vec![
-                        Value::I32(4),
-                        Value::String("Barry Allen".to_string()),
-                        Value::I32(35),
-                    ],
+                RowLocation {
                     pagenum: 1,
                     rownum: 3,
                 },
@@ -634,7 +634,13 @@ mod tests {
         assert_eq!(update_diff.rows[0].row[2], Value::I32(50));
 
         // Try RemoveDiff
-        let rows_to_remove: Vec<RowInfo> = vec![insert_diff.rows[0].clone()];
+        let rows_to_remove: Vec<RowLocation> = vec![
+            RowLocation {
+                pagenum: insert_diff.rows[0].pagenum,
+                rownum: insert_diff.rows[0].rownum,
+            },
+        ];
+
         let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
