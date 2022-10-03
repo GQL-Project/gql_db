@@ -3,7 +3,7 @@ use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 use crate::version_control::diff::{InsertDiff, TableCreateDiff};
 use itertools::Itertools;
-use sqlparser::ast::{ColumnDef, DataType, Expr, Query, SetExpr, Statement};
+use sqlparser::ast::{ColumnDef, DataType, Expr, Function, Query, SetExpr, Statement};
 
 pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
     let data_col = match data_type.data_type {
@@ -46,8 +46,7 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                             table_names.push((table_name[0].to_string(), "".to_string()));
                         }
                     }
-                    let database: Database = Database::new("test_db".to_string()).unwrap();
-                    let result = select(column_names, table_names, database);
+                    let result = select(column_names, table_names, get_db_instance()?);
                     println!("{:?}", result);
                 }
                 _ => {
@@ -97,7 +96,7 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                         print!("Not a values\n");
                     }
                 }
-                // let result = insert(table_name, column_names, all_data); //
+                insert(all_data, table_name, get_db_instance()?); //
             }
             _ => {
                 println!("Not a query");
@@ -125,7 +124,7 @@ pub fn create_table(
 pub fn select(
     column_names: Vec<String>,
     table_names: Vec<(String, String)>,
-    database: Database,
+    database: &Database,
 ) -> Result<(Schema, Vec<Vec<Value>>), String> {
     if table_names.len() == 0 || column_names.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
@@ -240,7 +239,7 @@ pub fn select(
 /// If the number of values to be inserted does not match the number of columns in the table, it returns an error.
 /// If the values to be inserted are not of the correct type, it returns an error.
 pub fn insert(
-    values: Vec<Row>,
+    values: Vec<Vec<String>>,
     table_name: String,
     database: &Database,
 ) -> Result<(String, InsertDiff), String> {
@@ -248,6 +247,33 @@ pub fn insert(
     let table_dir: String = database.get_current_branch_path();
     let mut table = Table::new(&table_dir, &table_name, None)?;
     // Ensure that the number of values to be inserted matches the number of columns in the table
+    let values = values
+        .iter()
+        .map(|x| {
+            if x.len() != table.schema.len() {
+                Err(format!(
+                    "Number of values to be inserted does not match the number of columns in the table"
+                ))
+            } else {
+                Ok(x
+                    .iter()
+                    .zip(table.schema.iter())
+                    .map(|(str, (x, col))| {
+                        let res = match col {
+                            Column::I32 => Value::I32(str.parse().map_err(|_x| "Could not parse value")?),
+                            Column::Float => Value::Float(str.parse().map_err(|_x| "Could not parse value")?),
+                            Column::String(_) => Value::String(str.clone()),
+                            Column::Bool => Value::Bool(str.parse().map_err(|_x| "Could not parse value")?),
+                            Column::Timestamp => Value::Timestamp(str.parse().map_err(|_x| "Could not parse value")?),
+                            Column::I64 => Value::I64(str.parse().map_err(|_x| "Could not parse value")?),
+                            Column::Double => Value::Double(str.parse().map_err(|_x| "Could not parse value")?),
+                        };
+                        Ok(res)
+                    })
+                    .collect::<Result<Vec<Value>, String>>()?)
+            }
+        })
+        .collect::<Result<Vec<Vec<Value>>, _>>().map_err(|x| x.to_string())?;
     values.iter().try_for_each(|vec| {
         if vec.len() != table.schema.len() {
             return Err(format!(
@@ -302,16 +328,8 @@ mod tests {
 
         insert(
             [
-                vec![
-                    Value::I32(1),
-                    Value::String("Iron Man".to_string()),
-                    Value::I32(40),
-                ],
-                vec![
-                    Value::I32(2),
-                    Value::String("Spiderman".to_string()),
-                    Value::I32(20),
-                ],
+                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             ]
             .to_vec(),
             "test_table1".to_string(),
@@ -319,7 +337,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
+        let result = select(columns.to_owned(), tables, &new_db).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -371,16 +389,13 @@ mod tests {
         // Write rows to first table
         insert(
             [
+                // Rewritten with all as strings
                 vec![
-                    Value::I32(1),
-                    Value::String("Robert Downey Jr.".to_string()),
-                    Value::I32(40),
+                    "1".to_string(),
+                    "Robert Downey Jr.".to_string(),
+                    "40".to_string(),
                 ],
-                vec![
-                    Value::I32(2),
-                    Value::String("Tom Holland".to_string()),
-                    Value::I32(20),
-                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
             ]
             .to_vec(),
             "test_table1".to_string(),
@@ -391,8 +406,8 @@ mod tests {
         // Write rows to second table
         insert(
             [
-                vec![Value::I32(1), Value::String("United States".to_string())],
-                vec![Value::I32(2), Value::String("Britain".to_string())],
+                vec!["1".to_string(), "United States".to_string()],
+                vec!["2".to_string(), "Britain".to_string()],
             ]
             .to_vec(),
             "test_table2".to_string(),
@@ -401,7 +416,7 @@ mod tests {
         .unwrap();
 
         // Run the SELECT query
-        let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
+        let result = select(columns.to_owned(), tables, &new_db).unwrap();
 
         // Check that the schema is correct
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -470,20 +485,12 @@ mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
         insert(
             vec![
+                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
                 vec![
-                    Value::I32(1),
-                    Value::String("Iron Man".to_string()),
-                    Value::I32(40),
-                ],
-                vec![
-                    Value::I32(2),
-                    Value::String("Spiderman".to_string()),
-                    Value::I32(20),
-                ],
-                vec![
-                    Value::I32(3),
-                    Value::String("Doctor Strange".to_string()),
-                    Value::I32(35),
+                    "3".to_string(),
+                    "Doctor Strange".to_string(),
+                    "35".to_string(),
                 ],
             ],
             "test_table1".to_string(),
@@ -492,7 +499,7 @@ mod tests {
         .unwrap();
 
         // Run the SELECT query
-        let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
+        let result = select(columns.to_owned(), tables, &new_db).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -545,15 +552,11 @@ mod tests {
         insert(
             vec![
                 vec![
-                    Value::I32(1),
-                    Value::String("Robert Downey Jr.".to_string()),
-                    Value::I32(40),
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
                 ],
-                vec![
-                    Value::I32(2),
-                    Value::String("Tom Holland".to_string()),
-                    Value::I32(20),
-                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
             ],
             "test_table1".to_string(),
             &new_db,
@@ -569,8 +572,8 @@ mod tests {
 
         insert(
             vec![
-                vec![Value::I32(5), Value::String("United States".to_string())],
-                vec![Value::I32(6), Value::String("Britain".to_string())],
+                vec!["5".to_string(), "United States".to_string()],
+                vec!["6".to_string(), "Britain".to_string()],
             ],
             "test_table2".to_string(),
             &new_db,
@@ -578,7 +581,7 @@ mod tests {
         .unwrap();
 
         // Run the SELECT query
-        let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
+        let result = select(columns.to_owned(), tables, &new_db).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("country".to_string(), Column::String(50)));
@@ -638,15 +641,11 @@ mod tests {
         insert(
             vec![
                 vec![
-                    Value::I32(1),
-                    Value::String("Robert Downey Jr.".to_string()),
-                    Value::I32(40),
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
                 ],
-                vec![
-                    Value::I32(2),
-                    Value::String("Tom Holland".to_string()),
-                    Value::I32(20),
-                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
             ],
             "test_table1".to_string(),
             &new_db,
@@ -654,7 +653,7 @@ mod tests {
         .unwrap();
 
         // Run the SELECT query
-        let result = select(columns.to_owned(), tables, new_db.clone());
+        let result = select(columns.to_owned(), tables, &new_db);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -688,15 +687,11 @@ mod tests {
         insert(
             vec![
                 vec![
-                    Value::I32(1),
-                    Value::String("Robert Downey Jr.".to_string()),
-                    Value::I32(40),
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
                 ],
-                vec![
-                    Value::I32(2),
-                    Value::String("Tom Holland".to_string()),
-                    Value::I32(20),
-                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
             ],
             "test_table1".to_string(),
             &new_db,
@@ -704,7 +699,7 @@ mod tests {
         .unwrap();
 
         // Run the SELECT query
-        let result = select(columns.to_owned(), tables, new_db.clone());
+        let result = select(columns.to_owned(), tables, &new_db);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -755,7 +750,22 @@ mod tests {
                 Value::I32(1000),
             ],
         ];
-        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db).unwrap();
+        let newrows = vec![
+            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "35".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
+            ],
+            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+        ];
+        let (_, diff) = insert(newrows, "test_table1".to_string(), &new_db).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 5);
@@ -768,7 +778,7 @@ mod tests {
         assert_eq!(diff.rows[4].row, rows[4]);
 
         // Run the SELECT query and ensure that the result is correct
-        let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
+        let result = select(columns.to_owned(), tables, &new_db).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -835,7 +845,14 @@ mod tests {
             ],
         ];
 
-        assert!(insert(rows, "test_table1".to_string(), &new_db).is_err());
+        let newrows = vec![
+            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            vec!["3".to_string(), "35".to_string()],
+            vec!["4".to_string(), "Captain America".to_string(), "100".to_string()],
+        ];
+
+        assert!(insert(newrows, "test_table1".to_string(), &new_db).is_err());
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -858,9 +875,9 @@ mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
         let rows = vec![
             vec![
-                Value::I64(100), // Can only insert I32
+                Value::I32(100), // Can only insert I32
                 Value::String("Iron Man".to_string()),
-                Value::Float(3.456),
+                Value::Double(3.456),
             ],
             vec![
                 Value::I32(2),
@@ -878,8 +895,30 @@ mod tests {
                 Value::Double(12.456),
             ],
         ];
+        let new_rows = vec![
+            vec![
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "3.456".to_string(),
+            ],
+            vec![
+                "2".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "322.456".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "12.456".to_string(),
+            ],
+        ];
 
-        let (_, diff) = insert(rows.clone(), "test_table1".to_string(), &new_db).unwrap();
+        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 4);
@@ -891,7 +930,7 @@ mod tests {
         assert_eq!(diff.rows[3].row, rows[3]);
 
         // Run the SELECT query and ensure that the result is correct
-        let result = select(columns.to_owned(), tables, new_db.clone()).unwrap();
+        let result = select(columns.to_owned(), tables, &new_db).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -937,24 +976,24 @@ mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
         let rows = vec![
             vec![
-                Value::I64(100), // Can only insert I32
-                Value::String("Iron Man".to_string()),
-                Value::String("Robert Downey".to_string()),
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "Robert Downey".to_string(),
             ],
             vec![
-                Value::I32(2),
-                Value::String("Spiderman".to_string()),
-                Value::Double(3.43456),
+                "2".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
             ],
             vec![
-                Value::I32(3),
-                Value::String("Doctor Strange".to_string()),
-                Value::Double(322.456),
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "322.456".to_string(),
             ],
             vec![
-                Value::I32(4),
-                Value::String("Captain America".to_string()),
-                Value::Double(12.456),
+                "4".to_string(),
+                "Captain America".to_string(),
+                "12.456".to_string(),
             ],
         ];
 
