@@ -1,4 +1,5 @@
 use crate::fileio::{databaseio::*, header::*, tableio::*};
+use crate::user::userdata::*;
 use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 use crate::version_control::diff::{InsertDiff, TableCreateDiff};
@@ -24,7 +25,7 @@ pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
-pub fn execute_query(ast: &Vec<Statement>) -> Result<(Schema, Vec<Row>), String> {
+pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<Row>), String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }

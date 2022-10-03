@@ -4,6 +4,8 @@ use crate::version_control::commit::Commit;
 use crate::version_control::{
     branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
 };
+use crate::user::userdata::*;
+use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use glob::glob;
 use std::env;
 use std::path::Path;
@@ -28,17 +30,17 @@ pub const BRANCHES_FILE_EXTENSION: &str = ".gql";
 pub const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
 pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
-#[derive(Clone)]
+// #[derive(Clone)] I'm keeping this commented. We do NOT want the database to be cloneable.
 pub struct Database {
-    db_path: String, // This is the full patch to the database directory: <path>/<db_name>
-    db_name: String, // This is the name of the database (not the path)
-    branch_path: String, // This is the full path to the database branch directory: <path>/<db_name>/<branch_name>
-    branch_name: String, // The name of the branch that this database is currently on
+    db_path: String,           // This is the full patch to the database directory: <path>/<db_name>
+    db_name: String,           // This is the name of the database (not the path)
+    branch_path: String,       // This is the full path to the database branch directory: <path>/<db_name>/<branch_name>
+    branch_name: String,       // The name of the branch that this database is currently on
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
-    connected_clients: Vec<String>, // The list of clients that are currently connected to this database at this branch
-    branches: Branches,             // The Branches file object for this database
-    commit_file: CommitFile,        // The CommitFile object for this database
-                                    // TODO: maybe add permissions here
+    branches: Branches,        // The Branches file object for this database
+    commit_file: CommitFile,   // The CommitFile object for this database
+    mutex: ReentrantMutex<()>, // This is the mutex that is used to lock the database
+    // TODO: maybe add permissions here
 }
 
 static mut DATABASE_INSTANCE: Option<Database> = None;
@@ -155,9 +157,9 @@ impl Database {
             branch_path: main_branch_path,
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
             branch_heads: branch_heads,
-            connected_clients: Vec::new(),
             branches: branches,
             commit_file: commit_file,
+            mutex: ReentrantMutex::new(()),
         })
     }
 
@@ -198,9 +200,9 @@ impl Database {
             branch_path: main_branch_path,
             branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
             branch_heads: branch_heads,
-            connected_clients: Vec::new(),
             branches: branches,
             commit_file: commit_file,
+            mutex: ReentrantMutex::new(()),
         })
     }
 
@@ -211,6 +213,9 @@ impl Database {
         commit_msg: &String,
         command: &String,
     ) -> Result<(BranchNode, Commit), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let commit = self.commit_file.create_commit(
             commit_msg.to_string(),
             command.to_string(),
@@ -237,51 +242,65 @@ impl Database {
         Ok((node, commit))
     }
 
-    /// Returns the database's name
-    pub fn get_database_name(&self) -> String {
-        self.db_name.clone()
-    }
-
     /// Returns the database's current branch name
     pub fn get_current_branch_name(&self) -> String {
-        self.branch_name.clone()
-    }
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-    /// Returns the database's path: <path>/<db_name>
-    pub fn get_database_path(&self) -> String {
-        self.db_path.clone()
+        self.branch_name.clone()
     }
 
     /// Returns the database's current branch path: <path>/<db_name>/<branch_name>
     pub fn get_current_branch_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         self.branch_path.clone()
     }
 
     /// Returns the database's current branch HEAD
     pub fn get_branch_heads_file(&self) -> &BranchHEADs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         &self.branch_heads
     }
 
     pub fn get_branch_heads_file_mut(&mut self) -> &mut BranchHEADs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         &mut self.branch_heads
     }
 
     /// Returns the database's branch
     pub fn get_branch_file(&self) -> &Branches {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         &self.branches
     }
 
     pub fn get_branch_file_mut(&mut self) -> &mut Branches {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         &mut self.branches
     }
 
     /// returns the database's commit file
     pub fn get_commit_file_mut(&mut self) -> &mut CommitFile {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         &mut self.commit_file
     }
 
     /// Returns the path to the database's deltas file: <path>/<db_name>/deltas.gql
     pub fn get_deltas_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let db_dir_path = self.get_database_path();
         // Return the deltas file path appended to the database path
         Database::append_deltas_file_path(db_dir_path.clone())
@@ -289,6 +308,9 @@ impl Database {
 
     /// Returns the path to the database's branches file: <path>/<db_name>/branches.gql
     pub fn get_commit_headers_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_commit_headers_file_path(db_dir_path.clone())
@@ -296,6 +318,9 @@ impl Database {
 
     /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
     pub fn get_branches_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_branches_file_path(db_dir_path.clone())
@@ -303,18 +328,19 @@ impl Database {
 
     /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
     pub fn get_branch_heads_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_branch_heads_file_path(db_dir_path.clone())
     }
 
-    /// Returns the clients that are connected to the database at this branch
-    pub fn get_connected_clients(&self) -> Vec<String> {
-        self.connected_clients.clone()
-    }
-
     /// Returns the file path to the table if it exists on the current branch
     pub fn get_table_path(&self, table_name: &String) -> Result<String, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let mut table_path = self.get_current_branch_path();
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str(table_name.as_str());
@@ -328,6 +354,9 @@ impl Database {
 
     /// Returns a list of file paths to all the tables on the current branch
     pub fn get_all_table_paths(&self) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         let mut table_paths: Vec<String> = Vec::new();
         let branch_path: String = self.get_current_branch_path();
         let mut table_path: String = branch_path.clone();
@@ -354,15 +383,25 @@ impl Database {
     /// Deletes the database at the given path.
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {
-        // Remove the directory and all files within it
-        self.delete_database_dir()?;
+        // Create an empty clause to allow obtaining the mutex
+        {
+            // Make sure to lock the database before doing anything
+            let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+            // Remove the directory and all files within it
+            self.delete_database_dir()?;
+        }
+        // Now drop the object that the lock has been released
         // Destroy self
         drop(self);
         Ok(())
     }
 
     /// Deletes the directories of the database
-    pub fn delete_database_dir(&self) -> Result<(), String> {
+    fn delete_database_dir(&self) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         // Remove the directory and all files within it
         std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
         Ok(())
@@ -372,6 +411,9 @@ impl Database {
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
     pub fn create_branch(&mut self, branch_name: &String) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         // Check if the branch name already exists. We want to verify that it doesn't exist already.
         match self.branch_heads.get_branch_head(branch_name) {
             Ok(_) => {
@@ -385,10 +427,29 @@ impl Database {
         Ok(())
     }
 
+    /// Returns the database's name
+    pub fn get_database_name(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        self.db_name.clone()
+    }
+
+    /// Returns the database's path: <path>/<db_name>
+    pub fn get_database_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        self.db_path.clone()
+    }
+
     /// Switches the database to the given branch.
     /// The branch MUST exist already.
     /// It returns true on success, and false on failure.
     pub fn switch_branch(&mut self, _branch_name: String) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
         // TODO: implementation
         Ok(())
     }
@@ -454,6 +515,7 @@ impl Database {
         branch_heads_file_path
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -688,10 +750,11 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
+
         let table_result = create_table(
             &"test_table".to_string(),
             &schema,
-            &get_db_instance().unwrap(),
+            get_db_instance().unwrap(),
         )
         .unwrap();
         let mut table = table_result.0;
@@ -722,8 +785,7 @@ mod tests {
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
-        let results = get_db_instance()
-            .unwrap()
+        let results = get_db_instance().unwrap()
             .create_commit_and_node(
                 &diffs,
                 &"commit_msg".to_string(),
@@ -734,8 +796,7 @@ mod tests {
         let branch_node = results.0;
         let commit = results.1;
         // Make sure commit is correct
-        let fetched_commit = get_db_instance()
-            .unwrap()
+        let fetched_commit = get_db_instance().unwrap()
             .get_commit_file_mut()
             .fetch_commit(&commit.hash)
             .unwrap();
@@ -744,8 +805,7 @@ mod tests {
         assert_eq!(commit, fetched_commit);
 
         // Make sure branch node is correct
-        let fetched_branch_node = get_db_instance()
-            .unwrap()
+        let fetched_branch_node = get_db_instance().unwrap()
             .get_branch_heads_file_mut()
             .get_branch_head(&get_db_instance().unwrap().get_current_branch_name())
             .unwrap();
@@ -756,8 +816,7 @@ mod tests {
             get_db_instance().unwrap().get_current_branch_name()
         );
 
-        let target_node = get_db_instance()
-            .unwrap()
+        let target_node = get_db_instance().unwrap()
             .get_branch_heads_file_mut()
             .get_branch_node_from_head(
                 &fetched_branch_node.branch_name,

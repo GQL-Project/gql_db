@@ -6,6 +6,7 @@ use crate::executor::query;
 use crate::parser::parser;
 use crate::server::connection::Connection;
 use crate::util::convert::*;
+use crate::user::userdata::*;
 
 pub mod db_connection {
     tonic::include_proto!("db_connection");
@@ -39,7 +40,8 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Execute the query represented by the AST.
-                let data = query::execute_query(&tree).map_err(|e| Status::internal(e))?;
+                let user: User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+                let data = query::execute_query(&tree, &user).map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_query_result(data.0, data.1)))
             }
             Err(err) => Err(Status::cancelled(&err)),
