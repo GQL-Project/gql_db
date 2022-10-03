@@ -5,8 +5,8 @@ use tonic::{Request, Response, Status};
 use crate::executor::query;
 use crate::parser::parser;
 use crate::server::connection::Connection;
-use crate::util::convert::*;
 use crate::user::userdata::*;
+use crate::util::convert::*;
 
 pub mod db_connection {
     tonic::include_proto!("db_connection");
@@ -40,7 +40,9 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Get the user that is running the query
-                let user: &mut User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+                let user: &mut User = self
+                    .get_client(&request.id)
+                    .map_err(|e| Status::internal(e))?;
 
                 // Execute the query represented by the AST.
                 let data = query::execute_query(&tree, user).map_err(|e| Status::internal(e))?;
@@ -61,7 +63,9 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Get the user that is running the query
-                let mut user: &mut User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+                let mut user: &mut User = self
+                    .get_client(&request.id)
+                    .map_err(|e| Status::internal(e))?;
 
                 let resp = query::execute_update(&tree, user).map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_update_result(resp)))
@@ -79,7 +83,9 @@ impl DatabaseConnection for Connection {
         let request = request.into_inner();
 
         // Get the user that is running the query
-        let mut user: &mut User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+        let mut user: &mut User = self
+            .get_client(&request.id)
+            .map_err(|e| Status::internal(e))?;
 
         /* VC Command Pipeline Begins Here */
         let result = parser::parse_vc_cmd(&request.query, &user);

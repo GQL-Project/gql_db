@@ -359,7 +359,8 @@ impl CommitFile {
 mod tests {
     use crate::{
         executor::query::{create_table, insert},
-        fileio::databaseio::Database, user::userdata::User,
+        fileio::databaseio::Database,
+        user::userdata::User,
     };
 
     use super::*;

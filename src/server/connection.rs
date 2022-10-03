@@ -49,7 +49,10 @@ impl Connection {
     }
 
     pub fn remove_client(&self, id: String) -> Result<(), String> {
-        self.clients.lock().unwrap().retain(|x| &x.get_user_id() != &id);
+        self.clients
+            .lock()
+            .unwrap()
+            .retain(|x| &x.get_user_id() != &id);
         if self.clients.lock().unwrap().len() != 0 {
             Ok(())
         } else {
