@@ -234,8 +234,8 @@ impl CommitFile {
             let difftype: u32 = self.sread_type(page, pagenum, offset)?;
             let table_name = self.sdread_string(page, pagenum, offset)?;
             let diff: Diff = match difftype {
-                0 | 1 => {
-                    // Update or Insert
+                0 | 1 | 2 => {
+                    // Update or Insert or Remove
                     let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
                     let schema: Schema = self.sread_schema(page, pagenum, offset)?;
                     let mut rows: Vec<RowInfo> = Vec::new();
@@ -254,31 +254,21 @@ impl CommitFile {
                             schema,
                             rows,
                         })
-                    } else {
+                    } else if difftype == 1 {
                         Diff::Insert(InsertDiff {
                             table_name,
                             schema,
                             rows,
                         })
+                    } else {
+                        Diff::Remove(RemoveDiff {
+                            table_name,
+                            schema,
+                            rows_removed: rows,
+                        })
                     }
                 }
-                2 => {
-                    // Delete
-                    let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
-                    let mut rows: Vec<RowLocation> = Vec::new();
-                    for _ in 0..num_rows {
-                        let page_num: u32 = self.sread_type(page, pagenum, offset)?;
-                        let row_num: u16 = self.sread_type(page, pagenum, offset)?;
-                        rows.push(RowLocation {
-                            pagenum: page_num,
-                            rownum: row_num,
-                        });
-                    }
-                    Diff::Remove(RemoveDiff {
-                        table_name,
-                        row_locations: rows,
-                    })
-                }
+
                 3 => {
                     // Create Table
                     let schema = self.sread_schema(page, pagenum, offset)?;
@@ -286,7 +276,23 @@ impl CommitFile {
                 }
                 4 => {
                     // Remove Table
-                    Diff::TableRemove(TableRemoveDiff { table_name })
+                    let schema = self.sread_schema(page, pagenum, offset)?;
+                    let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
+                    let mut rows: Vec<RowInfo> = Vec::new();
+                    for _ in 0..num_rows {
+                        let row = self.sread_row(page, pagenum, offset, &schema)?;
+                        let row_info = RowInfo {
+                            row,
+                            pagenum: self.sread_type(page, pagenum, offset)?,
+                            rownum: self.sread_type(page, pagenum, offset)?,
+                        };
+                        rows.push(row_info);
+                    }
+                    Diff::TableRemove(TableRemoveDiff {
+                        table_name,
+                        schema,
+                        rows_removed: rows,
+                    })
                 }
                 _ => return Err("Invalid diff type".to_string()),
             };
@@ -333,8 +339,10 @@ impl CommitFile {
                 Diff::Remove(remove) => {
                     self.swrite_type(page, pagenum, offset, 2u32)?;
                     self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
-                    self.swrite_type(page, pagenum, offset, remove.row_locations.len() as u32)?;
-                    for row in &remove.row_locations {
+                    self.swrite_type(page, pagenum, offset, remove.rows_removed.len() as u32)?;
+                    for row in &remove.rows_removed {
+                        self.swrite_schema(page, pagenum, offset, &remove.schema)?;
+                        self.swrite_row(page, pagenum, offset, &row.row, &remove.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
                     }
@@ -347,6 +355,7 @@ impl CommitFile {
                 Diff::TableRemove(remove) => {
                     self.swrite_type(page, pagenum, offset, 4u32)?;
                     self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
+                    self.swrite_schema(page, pagenum, offset, &remove.schema)?;
                 }
             }
         }
@@ -413,6 +422,8 @@ mod tests {
                 }),
                 Diff::TableRemove(TableRemoveDiff {
                     table_name: "test_table".to_string(),
+                    schema: schema.clone(),
+                    rows_removed: vec![],
                 }),
             ],
         );
@@ -424,20 +435,15 @@ mod tests {
             "test_command".to_string(),
             vec![Diff::Remove(RemoveDiff {
                 table_name: "test_table".to_string(),
-                row_locations: vec![
-                    RowLocation {
-                        pagenum: 0,
-                        rownum: 0,
-                    },
-                    RowLocation {
-                        pagenum: 23,
-                        rownum: 66,
-                    },
-                    RowLocation {
-                        pagenum: 23,
-                        rownum: 11,
-                    },
-                ],
+                rows_removed: vec![RowInfo {
+                    row: vec![
+                        Value::String("test".to_string()),
+                        Value::String("122".to_string()),
+                    ],
+                    pagenum: 0,
+                    rownum: 0,
+                }],
+                schema: schema.clone(),
             })],
         );
         delta.store_commit(&commit).unwrap();
