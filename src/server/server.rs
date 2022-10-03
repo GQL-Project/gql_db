@@ -39,9 +39,8 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Execute the query represented by the AST.
-                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
-
-                Ok(Response::new(to_query_result(vec![], vec![])))
+                let data = query::execute_query(&tree).map_err(|e| Status::internal(e))?;
+                Ok(Response::new(to_query_result(data.0, data.1)))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
@@ -57,8 +56,8 @@ impl DatabaseConnection for Connection {
         /* Creating Result */
         match result {
             Ok(tree) => {
-                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
-                Ok(Response::new(to_update_result("1".to_string())))
+                let resp = query::execute_update(&tree).map_err(|e| Status::internal(e))?;
+                Ok(Response::new(to_update_result(resp)))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }

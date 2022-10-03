@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
@@ -22,11 +24,10 @@ pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
-pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
+pub fn execute_query(ast: &Vec<Statement>) -> Result<(Schema, Vec<Row>), String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
-    // Commands: create, insert, select
     for a in ast.iter() {
         match a {
             Statement::Query(q) => match *q.body.clone() {
@@ -46,25 +47,40 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                             table_names.push((table_name[0].to_string(), "".to_string()));
                         }
                     }
-                    let result = select(column_names, table_names, get_db_instance()?);
-                    println!("{:?}", result);
+                    return select(column_names, table_names, get_db_instance()?);
                 }
                 _ => {
                     print!("Not a select\n");
                 }
             },
+            _ => {
+                print!("Not a query\n");
+            }
+        };
+    }
+    Err("No query found".to_string())
+}
+
+pub fn execute_update(ast: &Vec<Statement>) -> Result<String, String> {
+    if ast.len() == 0 {
+        return Err("Empty AST".to_string());
+    }
+    // Commands: create, insert, select
+    for a in ast.iter() {
+        match a {
             Statement::CreateTable { name, columns, .. } => {
                 let table_name = name.0[0].value.to_string();
                 let mut schema = Schema::new();
 
                 for c in columns.iter() {
-                    schema.push((c.name.clone().value, parse_col_def(c.clone()).unwrap()));
+                    schema.push((c.name.clone().value, parse_col_def(c.clone())?));
                 }
-                // let result = create_table(&table_name, &schema, &database);
+                let result = create_table(&table_name, &schema, get_db_instance()?);
+                return Ok(format!("Table created: {}", table_name));
             }
             Statement::Insert {
                 table_name,
-                columns,
+                columns: _,
                 source,
                 ..
             } => {
@@ -93,17 +109,17 @@ pub fn execute(ast: &Vec<Statement>, _update: bool) -> Result<String, String> {
                         }
                     }
                     _ => {
-                        print!("Not a values\n");
+                        return Err("Not a values statement".to_string());
                     }
                 }
-                insert(all_data, table_name, get_db_instance()?); //
+                return Ok(insert(all_data, table_name, get_db_instance()?)?.0); //
             }
             _ => {
-                println!("Not a query");
+                return Err("Not a create or insert".to_string());
             }
         }
     }
-    Ok("0".to_string())
+    Err("No command found".to_string())
 }
 
 /// Creates a new table within the given database named <table_name><TABLE_FILE_EXTENSION>
@@ -125,7 +141,7 @@ pub fn select(
     column_names: Vec<String>,
     table_names: Vec<(String, String)>,
     database: &Database,
-) -> Result<(Schema, Vec<Vec<Value>>), String> {
+) -> Result<(Schema, Vec<Row>), String> {
     if table_names.len() == 0 || column_names.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
     }
@@ -134,7 +150,7 @@ pub fn select(
     let is_star_cols: bool = column_names.get(0).unwrap().eq(&"*".to_string());
 
     // The rows and schema that are to be returned from the select statement
-    let mut selected_rows: Vec<Vec<Value>> = Vec::new();
+    let mut selected_rows: Vec<Row> = Vec::new();
     let mut selected_schema: Schema = Vec::new();
 
     // Read in the tables into a vector of tuples where they are represented as (table, alias)
@@ -176,7 +192,7 @@ pub fn select(
         // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
         for table_rows in table_iterator {
             // Accumulate all the cells across the vector of rows into a single vector
-            let mut selected_cells: Vec<Value> = Vec::new();
+            let mut selected_cells: Row = Vec::new();
             table_rows
                 .iter()
                 .for_each(|x| selected_cells.extend(x.row.clone()));
@@ -212,13 +228,13 @@ pub fn select(
         // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
         for table_rows in table_iterator {
             // Flatten the entire output row, but it includes all columns from all tables
-            let mut output_row: Vec<Value> = Vec::new();
+            let mut output_row: Row = Vec::new();
             for row_info in table_rows {
                 output_row.extend(row_info.row.clone());
             }
 
             // Iterate through the output row and only select the columns we want
-            let mut selected_cells: Vec<Value> = Vec::new();
+            let mut selected_cells: Row = Vec::new();
             for (i, row_cell) in output_row.iter().enumerate() {
                 if table_column_indices.contains(&i) {
                     selected_cells.push(row_cell.clone());
@@ -270,10 +286,10 @@ pub fn insert(
                         };
                         Ok(res)
                     })
-                    .collect::<Result<Vec<Value>, String>>()?)
+                    .collect::<Result<Row, String>>()?)
             }
         })
-        .collect::<Result<Vec<Vec<Value>>, _>>().map_err(|x| x.to_string())?;
+        .collect::<Result<Vec<Row>, _>>().map_err(|x| x.to_string())?;
     values.iter().try_for_each(|vec| {
         if vec.len() != table.schema.len() {
             return Err(format!(
@@ -849,7 +865,11 @@ mod tests {
             vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
             vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec!["3".to_string(), "35".to_string()],
-            vec!["4".to_string(), "Captain America".to_string(), "100".to_string()],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
+            ],
         ];
 
         assert!(insert(newrows, "test_table1".to_string(), &new_db).is_err());
