@@ -16,7 +16,7 @@ pub mod db_connection {
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
         let id = self.new_client();
-        println!("New client connected with id: {}", id);
+        println!("Connected Client: {}", id);
         Ok(Response::new(to_connect_result(id)))
     }
 
@@ -86,6 +86,8 @@ impl DatabaseConnection for Connection {
 // Integration tests go here.
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     // This import's needed, probably a bug in the language server.
     use super::*;
     // Tests to test async functions
@@ -108,6 +110,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn run_query() {
         let conn = Connection::new();
         let result = conn.connect_db(Request::new(())).await;
@@ -116,10 +119,10 @@ mod tests {
         let result = conn
             .run_query(Request::new(super::QueryRequest {
                 id: id.clone(),
-                query: "SELECT * FROM test_table;".to_string(),
+                query: "ABCD INCORRECT QUERY;".to_string(),
             }))
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_err());
         let request = ConnectResult { id };
         let result = conn.disconnect_db(Request::new(request)).await;
         assert!(result.is_ok());
