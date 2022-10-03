@@ -91,6 +91,7 @@ mod tests {
     use super::*;
     // Tests to test async functions
     #[tokio::test]
+    #[serial]
     async fn connect_db() {
         let conn = Connection::new();
         let result = conn.connect_db(Request::new(())).await;
@@ -98,14 +99,15 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn disconnect_db() {
         let conn = Connection::new();
         let result = conn.connect_db(Request::new(())).await;
-        assert!(result.is_ok());
+        result.as_ref().unwrap();
         let result = conn
             .disconnect_db(Request::new(result.unwrap().into_inner()))
             .await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
