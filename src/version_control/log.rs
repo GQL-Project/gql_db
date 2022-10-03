@@ -1,10 +1,10 @@
-use crate::fileio::databaseio::get_db_instance;
+use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
 
 use super::branches::{BranchNode, Branches};
 
 /// This function implements the GQL log command
-pub fn log() -> Result<(String, Vec<Vec<String>>), String> {
-    let branch_name: String = get_db_instance()?.get_current_branch_name();
+pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
+    let branch_name: String = user.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
     // seperate to make debug easier
@@ -71,6 +71,9 @@ mod tests {
         // Create the database
         create_db_instance(&"log_test_db".to_string()).unwrap();
 
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
         // Create the schema
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -79,7 +82,7 @@ mod tests {
         ];
         // Create a new table
         let result =
-            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap()).unwrap();
+            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap(), &user).unwrap();
         let mut table = result.0;
         diffs.push(Diff::TableCreate(result.1));
 
@@ -100,12 +103,13 @@ mod tests {
                 &diffs,
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
+                &user,
             )
             .unwrap();
         let commit: Commit = commit_result.1;
 
         // Log the commits
-        let result: Vec<Vec<String>> = log().unwrap().1;
+        let result: Vec<Vec<String>> = log(&user).unwrap().1;
 
         // Assert that the result is correct
         assert_eq!(result.len(), 1);
@@ -126,6 +130,9 @@ mod tests {
         // Create the database
         create_db_instance(&"log_test_db1".to_string()).unwrap();
 
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
         // Create the schema
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -134,7 +141,7 @@ mod tests {
         ];
         // Create a new table
         let result =
-            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap()).unwrap();
+            create_table(&"table1".to_string(), &schema, get_db_instance().unwrap(), &user).unwrap();
         let mut table = result.0;
         diffs.push(Diff::TableCreate(result.1));
 
@@ -164,6 +171,7 @@ mod tests {
                 &diffs,
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
+                &user
             )
             .unwrap();
         let commit: Commit = commit_result.1;
@@ -175,13 +183,14 @@ mod tests {
                 &diffs,
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
+                &user
             )
             .unwrap();
         let second_commit: Commit = commit_result.1;
         //println!("Commit.message: {:?}", second_commit.message);
 
         // Log the commits
-        let result: Vec<Vec<String>> = log().unwrap().1;
+        let result: Vec<Vec<String>> = log(&user).unwrap().1;
         //println!("{}", (result[0][2]).to_string());
         //println!("{}", (result[1][2]).to_string());
 

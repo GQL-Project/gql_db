@@ -358,12 +358,11 @@ impl CommitFile {
 #[cfg(test)]
 mod tests {
     use crate::{
-        executor::query::{create_table, insert, select},
-        fileio::databaseio::Database,
+        executor::query::{create_table, insert},
+        fileio::databaseio::Database, user::userdata::User,
     };
 
     use super::*;
-    use rand::seq::SliceRandom;
     use serial_test::serial;
 
     #[test]
@@ -462,7 +461,10 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &user).unwrap();
         let mut rows = vec![
             vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
             vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
@@ -482,8 +484,8 @@ mod tests {
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
         let (x, y) = rows.split_at(21); // 40 rows
-        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db).unwrap();
-        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db).unwrap();
+        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &user).unwrap();
+        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &user).unwrap();
         let commit1 = Commit::new(
             "hash1".to_string(),
             "timestamp1".to_string(),

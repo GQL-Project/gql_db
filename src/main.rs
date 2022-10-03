@@ -10,6 +10,7 @@ mod parser;
 mod server;
 mod util;
 mod version_control;
+mod user;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = "None")]

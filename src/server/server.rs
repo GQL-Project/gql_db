@@ -6,6 +6,7 @@ use crate::executor::query;
 use crate::parser::parser;
 use crate::server::connection::Connection;
 use crate::util::convert::*;
+use crate::user::userdata::*;
 
 pub mod db_connection {
     tonic::include_proto!("db_connection");
@@ -38,8 +39,11 @@ impl DatabaseConnection for Connection {
         /* Creating Result */
         match result {
             Ok(tree) => {
+                // Get the user that is running the query
+                let user: User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+
                 // Execute the query represented by the AST.
-                let data = query::execute_query(&tree).map_err(|e| Status::internal(e))?;
+                let data = query::execute_query(&tree, &user).map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_query_result(data.0, data.1)))
             }
             Err(err) => Err(Status::cancelled(&err)),
@@ -56,7 +60,10 @@ impl DatabaseConnection for Connection {
         /* Creating Result */
         match result {
             Ok(tree) => {
-                let resp = query::execute_update(&tree).map_err(|e| Status::internal(e))?;
+                // Get the user that is running the query
+                let user: User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+
+                let resp = query::execute_update(&tree, &user).map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_update_result(resp)))
             }
             Err(err) => Err(Status::cancelled(&err)),
@@ -70,8 +77,12 @@ impl DatabaseConnection for Connection {
         request: Request<QueryRequest>,
     ) -> Result<Response<VersionControlResult>, Status> {
         let request = request.into_inner();
+
+        // Get the user that is running the query
+        let user: User = self.get_client(&request.id).map_err(|e| Status::internal(e))?;
+
         /* VC Command Pipeline Begins Here */
-        let result = parser::parse_vc_cmd(&request.query);
+        let result = parser::parse_vc_cmd(&request.query, &user);
 
         /* Creating Result */
         match result {
