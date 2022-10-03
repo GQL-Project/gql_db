@@ -41,9 +41,12 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
 
     #[test]
+    #[serial]
     fn test_new_client() {
         let connection = Connection::new();
         let id = connection.new_client().unwrap();
@@ -52,6 +55,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_new_clients() {
         let connection = Connection::new();
         let id1 = connection.new_client().unwrap();
@@ -62,23 +66,25 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_remove_client() {
         let connection = Connection::new();
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients().len(), 1);
         assert_eq!(connection.get_clients()[0], id);
-        connection.remove_client(id.clone());
+        connection.remove_client(id.clone()).unwrap();
         assert_eq!(connection.get_clients().len(), 0);
         assert_eq!(connection.get_clients().contains(&id), false);
     }
 
     #[test]
+    #[serial]
     fn test_remove_non_client() {
         let connection = Connection::new();
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients().len(), 1);
         assert_eq!(connection.get_clients()[0], id);
-        connection.remove_client("12345".to_string());
+        connection.remove_client("12345".to_string()).unwrap();
         assert_eq!(connection.get_clients().len(), 1);
         assert_eq!(connection.get_clients().contains(&id), true);
     }
