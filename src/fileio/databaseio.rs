@@ -59,6 +59,17 @@ pub fn create_db_instance(database_name: &String) -> Result<(), String> {
     Ok(())
 }
 
+pub fn load_db_instance(database_name: &String) -> Result<(), String> {
+    match Database::load_db(database_name.clone()) {
+        Ok(db) => unsafe {
+            DATABASE_INSTANCE = Some(db);
+        },
+        // Try to create a new database if one doesn't exist
+        Err(_) => create_db_instance(database_name)?,
+    }
+    Ok(())
+}
+
 pub fn delete_db_instance() -> Result<(), String> {
     unsafe {
         match DATABASE_INSTANCE {

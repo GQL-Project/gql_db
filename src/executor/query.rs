@@ -1,4 +1,4 @@
-use std::fmt::format;
+
 
 use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
@@ -15,8 +15,10 @@ pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
         DataType::Double => Column::Double,
         DataType::Boolean => Column::Bool,
         DataType::Timestamp => Column::Timestamp,
-        DataType::Char(_) => Column::String(1),
+        DataType::Char(Some(size)) => Column::String(size as u16),
         DataType::Varchar(Some(size)) => Column::String(size as u16),
+        DataType::Char(None) => Column::String(1),
+        DataType::Varchar(None) => Column::String(1),
         _ => Err("Unsupported data type")?,
     };
     Ok(data_col)
@@ -65,6 +67,7 @@ pub fn execute_update(ast: &Vec<Statement>) -> Result<String, String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
+    let mut results: Vec<String> = Vec::new();
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
@@ -75,8 +78,8 @@ pub fn execute_update(ast: &Vec<Statement>) -> Result<String, String> {
                 for c in columns.iter() {
                     schema.push((c.name.clone().value, parse_col_def(c.clone())?));
                 }
-                let result = create_table(&table_name, &schema, get_db_instance()?);
-                return Ok(format!("Table created: {}", table_name));
+                let _result = create_table(&table_name, &schema, get_db_instance()?);
+                results.push(format!("Table created: {}", table_name));
             }
             Statement::Insert {
                 table_name,
@@ -112,14 +115,18 @@ pub fn execute_update(ast: &Vec<Statement>) -> Result<String, String> {
                         return Err("Not a values statement".to_string());
                     }
                 }
-                return Ok(insert(all_data, table_name, get_db_instance()?)?.0); //
+                results.push(insert(all_data, table_name, get_db_instance()?)?.0); //
             }
             _ => {
                 return Err("Not a create or insert".to_string());
             }
         }
     }
-    Err("No command found".to_string())
+    if results.len() == 0 {
+        Err("No command found".to_string())
+    } else {
+        Ok(results.join("\n"))
+    }
 }
 
 /// Creates a new table within the given database named <table_name><TABLE_FILE_EXTENSION>

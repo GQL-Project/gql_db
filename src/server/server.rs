@@ -15,13 +15,13 @@ pub mod db_connection {
 #[tonic::async_trait]
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
-        let id = self.new_client();
-        println!("Connected Client: {}", id);
+        let id = self.new_client().map_err(|e| Status::internal(e))?;
         Ok(Response::new(to_connect_result(id)))
     }
 
     async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<()>, Status> {
-        self.remove_client(request.into_inner().id);
+        self.remove_client(request.into_inner().id)
+            .map_err(|e| Status::internal(e))?;
         Ok(Response::new(()))
     }
 
