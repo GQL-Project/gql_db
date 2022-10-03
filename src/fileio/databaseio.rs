@@ -34,8 +34,6 @@ pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 pub struct Database {
     db_path: String,           // This is the full patch to the database directory: <path>/<db_name>
     db_name: String,           // This is the name of the database (not the path)
-    branch_path: String,       // This is the full path to the database branch directory: <path>/<db_name>/<branch_name>
-    branch_name: String,       // The name of the branch that this database is currently on
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
     branches: Branches,        // The Branches file object for this database
     commit_file: CommitFile,   // The CommitFile object for this database
@@ -154,8 +152,6 @@ impl Database {
         Ok(Database {
             db_path: db_path,
             db_name: database_name,
-            branch_path: main_branch_path,
-            branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
             branch_heads: branch_heads,
             branches: branches,
             commit_file: commit_file,
@@ -177,14 +173,6 @@ impl Database {
             return Err("Database::load_db() Error: Database does not exist".to_owned());
         }
 
-        // Now get the directory for the main branch
-        // './databases/<database_name>/<database_name>-<branch_name>/'
-        let mut main_branch_path = db_path.clone();
-        main_branch_path.push(std::path::MAIN_SEPARATOR);
-        main_branch_path.push_str(database_name.as_str());
-        main_branch_path.push(DB_NAME_BRANCH_SEPARATOR);
-        main_branch_path.push_str(MAIN_BRANCH_NAME);
-
         // Load the branch_heads.gql file, which holds all the branch HEADs for the database
         let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), false)?;
 
@@ -197,8 +185,6 @@ impl Database {
         Ok(Database {
             db_path: db_path,
             db_name: database_name,
-            branch_path: main_branch_path,
-            branch_name: MAIN_BRANCH_NAME.to_string(), // Set branch_id to the main branch name
             branch_heads: branch_heads,
             branches: branches,
             commit_file: commit_file,
@@ -212,6 +198,7 @@ impl Database {
         diffs: &Vec<Diff>,
         commit_msg: &String,
         command: &String,
+        user: &User
     ) -> Result<(BranchNode, Commit), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -225,37 +212,36 @@ impl Database {
             let node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 None,
-                &self.branch_name,
+                &user.get_current_branch_name(),
                 &commit.hash,
             )?;
             return Ok((node, commit));
         }
         let prev_node = self
             .branch_heads
-            .get_branch_node_from_head(&self.branch_name, &self.branches)?;
+            .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;
         let node = self.branches.create_branch_node(
             &mut self.branch_heads,
             Some(&prev_node),
-            &self.branch_name,
+            &user.get_current_branch_name(),
             &commit.hash,
         )?;
         Ok((node, commit))
     }
 
-    /// Returns the database's current branch name
-    pub fn get_current_branch_name(&self) -> String {
+    /// Returns the database's current branch path for a user: <path>/<db_name>/<branch_name>
+    pub fn get_current_branch_path(&self, user: &User) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        self.branch_name.clone()
-    }
-
-    /// Returns the database's current branch path: <path>/<db_name>/<branch_name>
-    pub fn get_current_branch_path(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        self.branch_path.clone()
+        let branch_name: String = user.get_current_branch_name();
+        let path: String = format!("{}{}{}{}{}", 
+            self.db_path, 
+            std::path::MAIN_SEPARATOR, 
+            self.db_name, 
+            DB_NAME_BRANCH_SEPARATOR,
+            branch_name);
+        path
     }
 
     /// Returns the database's current branch HEAD
@@ -337,11 +323,11 @@ impl Database {
     }
 
     /// Returns the file path to the table if it exists on the current branch
-    pub fn get_table_path(&self, table_name: &String) -> Result<String, String> {
+    pub fn get_table_path(&self, table_name: &String, user: &User) -> Result<String, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        let mut table_path = self.get_current_branch_path();
+        let mut table_path: String = self.get_current_branch_path(user);
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str(table_name.as_str());
         table_path.push_str(TABLE_FILE_EXTENSION);
@@ -353,12 +339,12 @@ impl Database {
     }
 
     /// Returns a list of file paths to all the tables on the current branch
-    pub fn get_all_table_paths(&self) -> Result<Vec<String>, String> {
+    pub fn get_all_table_paths(&self, user: &User) -> Result<Vec<String>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         let mut table_paths: Vec<String> = Vec::new();
-        let branch_path: String = self.get_current_branch_path();
+        let branch_path: String = self.get_current_branch_path(user);
         let mut table_path: String = branch_path.clone();
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str("*");
@@ -590,9 +576,12 @@ mod tests {
         // Make sure the database path is correct
         assert_eq!(new_db.get_database_path(), db_base_path.clone());
 
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
         // Make sure the current branch path is correct
         assert_eq!(
-            new_db.get_current_branch_path(),
+            new_db.get_current_branch_path(&user),
             full_path_to_branch.clone()
         );
 
@@ -655,11 +644,15 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
+
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table".to_string(), &schema, &new_db, &user).unwrap();
 
         // Make sure the table path is correct
         assert_eq!(
-            new_db.get_table_path(&"test_table".to_string()).unwrap(),
+            new_db.get_table_path(&"test_table".to_string(), &user).unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"
@@ -692,13 +685,16 @@ mod tests {
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
         // Create a new table in the database
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table(&"test_table".to_string(), &schema, &new_db).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db, &user).unwrap();
 
         // Load the database
         let loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
@@ -708,13 +704,13 @@ mod tests {
 
         // Make sure the current branch path is correct
         assert_eq!(
-            loaded_db.get_current_branch_path(),
+            loaded_db.get_current_branch_path(&user),
             full_path_to_branch.clone()
         );
 
         // Make sure the table path is correct
         assert_eq!(
-            loaded_db.get_table_path(&"test_table".to_string()).unwrap(),
+            loaded_db.get_table_path(&"test_table".to_string(), &user).unwrap(),
             full_path_to_branch.clone()
                 + std::path::MAIN_SEPARATOR.to_string().as_str()
                 + "test_table"
@@ -744,6 +740,9 @@ mod tests {
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
+        // Create a user on the main branch
+        let user: User = User::new("test_user".to_string());
+
         // Create a new table in the database
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -755,6 +754,7 @@ mod tests {
             &"test_table".to_string(),
             &schema,
             get_db_instance().unwrap(),
+            &user
         )
         .unwrap();
         let mut table = table_result.0;
@@ -790,6 +790,7 @@ mod tests {
                 &diffs,
                 &"commit_msg".to_string(),
                 &"create table; insert rows".to_string(),
+                &user
             )
             .unwrap();
 
@@ -807,13 +808,13 @@ mod tests {
         // Make sure branch node is correct
         let fetched_branch_node = get_db_instance().unwrap()
             .get_branch_heads_file_mut()
-            .get_branch_head(&get_db_instance().unwrap().get_current_branch_name())
+            .get_branch_head(&user.get_current_branch_name())
             .unwrap();
 
         //compare branch node and fetched branch node
         assert_eq!(
             fetched_branch_node.branch_name,
-            get_db_instance().unwrap().get_current_branch_name()
+            user.get_current_branch_name()
         );
 
         let target_node = get_db_instance().unwrap()

@@ -19,4 +19,9 @@ impl User {
     pub fn get_user_id(&self) -> String {
         self.user_id.clone()
     }
+
+    /// Get the name of the branch that the user is currently on
+    pub fn get_current_branch_name(&self) -> String {
+        self.branch_name.clone()
+    }
 }
