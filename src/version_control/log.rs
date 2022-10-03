@@ -101,11 +101,12 @@ mod tests {
             .unwrap();
         diffs.push(Diff::Insert(insert_diff));
 
+        user.set_diffs(&diffs);
+
         // Commit the changes
         let commit_result = get_db_instance()
             .unwrap()
             .create_commit_and_node(
-                &diffs,
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &user,
@@ -174,11 +175,12 @@ mod tests {
             .unwrap();
         diffs.push(Diff::Insert(insert_diff));
 
+        user.set_diffs(&diffs);
+
         // Commit the changes
         let mut commit_result = get_db_instance()
             .unwrap()
             .create_commit_and_node(
-                &diffs,
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &user,
@@ -190,7 +192,6 @@ mod tests {
         commit_result = get_db_instance()
             .unwrap()
             .create_commit_and_node(
-                &diffs,
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
                 &user,

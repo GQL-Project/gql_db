@@ -36,4 +36,9 @@ impl User {
     pub fn append_diff(&mut self, diff: &Diff) {
         self.diffs.push(diff.clone());
     }
+
+    /// Replaces the user's diffs with the given list of diffs
+    pub fn set_diffs(&mut self, diffs: &Vec<Diff>) {
+        self.diffs = diffs.clone();
+    }
 }

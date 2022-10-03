@@ -193,9 +193,9 @@ impl Database {
     }
 
     /// Creates a commit and a branch node in the appropriate files.
+    /// It uses the diffs from the user to create the commit.
     pub fn create_commit_and_node(
         &mut self,
-        diffs: &Vec<Diff>,
         commit_msg: &String,
         command: &String,
         user: &User,
@@ -206,7 +206,7 @@ impl Database {
         let commit = self.commit_file.create_commit(
             commit_msg.to_string(),
             command.to_string(),
-            diffs.clone(),
+            user.get_diffs(),
         )?;
         if self.branch_heads.get_all_branch_heads()?.len() == 0 {
             let node = self.branches.create_branch_node(
@@ -790,10 +790,11 @@ mod tests {
 
         diffs.push(version_control::diff::Diff::Insert(insert_diff));
 
+        user.set_diffs(&diffs);
+
         let results = get_db_instance()
             .unwrap()
             .create_commit_and_node(
-                &diffs,
                 &"commit_msg".to_string(),
                 &"create table; insert rows".to_string(),
                 &user,
