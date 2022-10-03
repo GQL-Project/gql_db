@@ -351,16 +351,6 @@ impl Database {
         Ok(())
     }
 
-    /// Deletes the directories of the database
-    fn delete_database_dir(&self) -> Result<(), String> {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        // Remove the directory and all files within it
-        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
@@ -415,6 +405,16 @@ impl Database {
             }
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    /// Deletes the directories of the database
+    fn delete_database_dir(&self) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Remove the directory and all files within it
+        std::fs::remove_dir_all(self.get_database_path()).map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Returns the database's path: <path>/<db_name>
