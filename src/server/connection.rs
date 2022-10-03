@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use crate::fileio::databaseio::{create_db_instance, get_db_instance, delete_db_instance, load_db_instance};
+use crate::fileio::databaseio::{
+    create_db_instance, delete_db_instance, get_db_instance, load_db_instance,
+};
 
 #[derive(Debug, Default)]
 pub struct Connection {
@@ -27,13 +29,13 @@ impl Connection {
         Ok(id)
     }
 
-    pub fn remove_client(&self, id: String) -> Result<(), String>{
+    pub fn remove_client(&self, id: String) -> Result<(), String> {
         self.clients.lock().unwrap().retain(|x| x != &id);
         if self.clients.lock().unwrap().len() != 0 {
             Ok(())
         } else {
             delete_db_instance()
-        }        
+        }
     }
 }
 

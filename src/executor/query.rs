@@ -1,5 +1,3 @@
-
-
 use crate::fileio::{databaseio::*, header::*, tableio::*};
 use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
@@ -115,7 +113,8 @@ pub fn execute_update(ast: &Vec<Statement>) -> Result<String, String> {
                         return Err("Not a values statement".to_string());
                     }
                 }
-                results.push(insert(all_data, table_name, get_db_instance()?)?.0); //
+                results.push(insert(all_data, table_name, get_db_instance()?)?.0);
+                //
             }
             _ => {
                 return Err("Not a create or insert".to_string());
