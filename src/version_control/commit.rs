@@ -277,7 +277,18 @@ impl CommitFile {
                 4 => {
                     // Remove Table
                     let schema = self.sread_schema(page, pagenum, offset)?;
-                    Diff::TableRemove(TableRemoveDiff { table_name, schema })
+                    let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
+                    let mut rows: Vec<RowInfo> = Vec::new();
+                    for _ in 0..num_rows {
+                        let row = self.sread_row(page, pagenum, offset, &schema)?;
+                        let row_info = RowInfo {
+                            row,
+                            pagenum: self.sread_type(page, pagenum, offset)?,
+                            rownum: self.sread_type(page, pagenum, offset)?,
+                        };
+                        rows.push(row_info);
+                    }
+                    Diff::TableRemove(TableRemoveDiff { table_name, schema, rows_removed: rows })
                 }
                 _ => return Err("Invalid diff type".to_string()),
             };
@@ -408,6 +419,7 @@ mod tests {
                 Diff::TableRemove(TableRemoveDiff {
                     table_name: "test_table".to_string(),
                     schema: schema.clone(),
+                    rows_removed: vec![],
                 }),
             ],
         );

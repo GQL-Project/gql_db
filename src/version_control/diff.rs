@@ -32,8 +32,8 @@ pub struct InsertDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RemoveDiff {
-    pub table_name: String, // The name of the table that the rows were removed from
-    pub schema: Schema,     // The schema of the table
+    pub table_name: String,         // The name of the table that the rows were removed from
+    pub schema: Schema,             // The schema of the table
     pub rows_removed: Vec<RowInfo>, // The rows that were removed
 }
 
@@ -45,8 +45,9 @@ pub struct TableCreateDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableRemoveDiff {
-    pub table_name: String, // The name of the table that was removed.
+    pub table_name: String,         // The name of the table that was removed.
     pub schema: Schema,
+    pub rows_removed: Vec<RowInfo>, // The rows that were removed from the table.
 }
 
 /***************************************************************************************************/
@@ -126,7 +127,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
 /// There are a couple assumptions:
 /// 1. The table_dir exists and is where the table files are/will be stored.
 /// 2. The diffs are in the order that the changes were made.
-pub fn revert_table_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String> {
+pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<(), String> {
     //Reversing the list of diffs since we are undoing the changes made to the table
     let reversed_diffs = diffs.iter().rev();
     for diff in reversed_diffs {
@@ -158,6 +159,9 @@ pub fn revert_table_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<
                     &table_remove_diff.schema,
                     table_dir,
                 )?;
+                // We need to insert the rows back into the table
+                let mut table = Table::new(table_dir, &table_remove_diff.table_name, None)?;
+                table.write_rows(table_remove_diff.rows_removed.clone())?;
             }
         }
     }
@@ -604,7 +608,7 @@ mod tests {
                 rownum: insert_diff.clone().rows[1].rownum,
             }])
             .unwrap();
-        revert_table_from_diffs(&dir_to_build_in, &vec![Diff::Remove(remove_diff)]).unwrap();
+        revert_tables_from_diffs(&dir_to_build_in, &vec![Diff::Remove(remove_diff)]).unwrap();
         // Assert that the table is the same as it was before the remove diff
         let table2 = Table::new(&dir_to_build_in, &table_name, None).unwrap();
         let mut diffs: Vec<Diff> = Vec::new();
@@ -619,6 +623,348 @@ mod tests {
             &dir_to_build_in,
             &dir_to_compare_to
         ));
+
+        // Clean up directories
+        std::fs::remove_dir_all(&dir_to_create_in).unwrap();
+        std::fs::remove_dir_all(&dir_to_build_in).unwrap();
+        std::fs::remove_dir_all(&dir_to_compare_to).unwrap();
+    }
+
+    #[test]
+    fn test_reverting_all_diffs() {
+        //Setting up test table and directory
+        let dir_to_create_in: String = "test_dir_create_tables".to_string();
+        let dir_revert_delete: String = "test_dir_revert_delete".to_string();
+        let dir_revert_insert: String = "test_dir_revert_insert".to_string();
+        
+        // If the directory to the dir_to_build_in does not exist, create it
+        let dir = dir_revert_delete.clone() + &"/test".to_string();
+        let path_obj = std::path::Path::new(&dir);
+        let path_to_build_in_dir = path_obj.parent().unwrap();
+        std::fs::create_dir_all(path_to_build_in_dir).unwrap();
+        
+        // If the directory to the dir_to_compare_to does not exist, create it
+        let dir = dir_revert_insert.clone() + &"/test".to_string();
+        let path_obj = std::path::Path::new(&dir);
+        let path_to_compare_to_dir = path_obj.parent().unwrap();
+        std::fs::create_dir_all(path_to_compare_to_dir).unwrap();
+
+        // Define schema and names for two tables
+        let table1_name: String = "test_table1".to_string();
+        let table2_name: String = "test_table2".to_string();
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("weapon".to_string(), Column::String(50)),
+        ];
+
+        // Create the two tables
+        let table1_create_results: (Table, TableCreateDiff) =
+            create_table_in_dir(&table1_name, &schema1, &dir_to_create_in).unwrap();
+        let table1_create_diff: TableCreateDiff = table1_create_results.1;
+        let mut table1: Table = table1_create_results.0;
+        let table2_create_results: (Table, TableCreateDiff) =
+            create_table_in_dir(&table2_name, &schema2, &dir_to_create_in).unwrap();
+        let table2_create_diff: TableCreateDiff = table2_create_results.1;
+        let mut table2: Table = table2_create_results.0;
+
+        // Insert rows into table1
+        let rows1 = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Geralt".to_string()),
+                Value::I32(50),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Ciri".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Yennefer".to_string()),
+                Value::I32(40),
+            ],
+        ];
+        let insert_diff_table1: InsertDiff = table1.insert_rows(rows1).unwrap();
+
+        // Copy the tables into dir_revert_insert
+        std::fs::copy(
+            table1.path.clone(),
+            format!(
+                "{}{}{}.db",
+                dir_revert_insert,
+                std::path::MAIN_SEPARATOR,
+                &table1.name
+            ),
+        )
+        .unwrap();
+        std::fs::copy(
+            table2.path.clone(),
+            format!(
+                "{}{}{}.db",
+                dir_revert_insert,
+                std::path::MAIN_SEPARATOR,
+                &table2.name
+            ),
+        )
+        .unwrap();
+
+        // Insert rows into table2
+        let rows2 = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Geralt".to_string()),
+                Value::String("Sword".to_string()),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Ciri".to_string()),
+                Value::String("Sword".to_string()),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Yennefer".to_string()),
+                Value::String("Magic".to_string()),
+            ],
+        ];
+        let insert_diff_table2: InsertDiff = table2.insert_rows(rows2).unwrap();
+
+        // Update a row in table2
+        let update_diff_table2: UpdateDiff = table2
+            .rewrite_rows(vec![RowInfo {
+                row: vec![
+                    Value::I32(2),
+                    Value::String("Ciri".to_string()),
+                    Value::String("Sword/Magic".to_string()),
+                ],
+                pagenum: insert_diff_table2.clone().rows[1].pagenum,
+                rownum: insert_diff_table2.clone().rows[1].rownum,
+            }])
+            .unwrap();
+        
+        // Delete a row in table1
+        let delete_diff_table1: RemoveDiff = table1
+            .remove_rows(vec![RowLocation {
+                pagenum: insert_diff_table1.clone().rows[2].pagenum,
+                rownum: insert_diff_table1.clone().rows[2].rownum,
+            }])
+            .unwrap();
+
+        // Copy the tables into dir_revert_delete
+        std::fs::copy(
+            table1.path.clone(),
+            format!(
+                "{}{}{}.db",
+                dir_revert_delete,
+                std::path::MAIN_SEPARATOR,
+                &table1.name
+            ),
+        )
+        .unwrap();
+        std::fs::copy(
+            table2.path.clone(),
+            format!(
+                "{}{}{}.db",
+                dir_revert_delete,
+                std::path::MAIN_SEPARATOR,
+                &table2.name
+            ),
+        )
+        .unwrap();
+        
+        // Remove both tables now
+        let remove_table1_diff: TableRemoveDiff = delete_table_in_dir(&table1_name, &dir_to_create_in).unwrap();
+        let remove_table2_diff: TableRemoveDiff = delete_table_in_dir(&table2_name, &dir_to_create_in).unwrap();
+
+        let remove_table_diffs: Vec<Diff> = vec![
+            Diff::TableRemove(remove_table1_diff),
+            Diff::TableRemove(remove_table2_diff),
+        ];
+
+        // Revert the remove tables in the dir_to_create_in directory
+        revert_tables_from_diffs(&dir_to_create_in, &remove_table_diffs).unwrap();
+
+        // Make sure the reverted tables are the same as the original tables
+        let table1: Table = Table::new(&dir_to_create_in, &table1_name, None).unwrap();
+        let table1_reverted: Table = Table::new(&dir_revert_delete, &table1_name, None).unwrap();
+        assert!(compare_tables(
+            &table1,
+            &table1_reverted,
+            &dir_to_create_in,
+            &dir_revert_delete
+        ));
+        let table2: Table = Table::new(&dir_to_create_in, &table2_name, None).unwrap();
+        let table2_reverted: Table = Table::new(&dir_revert_delete, &table2_name, None).unwrap();
+        assert!(compare_tables(
+            &table2,
+            &table2_reverted,
+            &dir_to_create_in,
+            &dir_revert_delete
+        ));
+
+        // Revert the insert rows in the dir_to_create_in directory
+        let insert_diffs: Vec<Diff> = vec![
+            Diff::Insert(insert_diff_table2),
+            Diff::Update(update_diff_table2),
+            Diff::Remove(delete_diff_table1),
+        ];
+        revert_tables_from_diffs(&dir_to_create_in, &insert_diffs).unwrap();
+        
+        // Make sure the reverted tables are the same as the original tables
+        let table1: Table = Table::new(&dir_to_create_in, &table1_name, None).unwrap();
+        let table1_reverted: Table = Table::new(&dir_revert_insert, &table1_name, None).unwrap();
+        assert!(compare_tables(
+            &table1,
+            &table1_reverted,
+            &dir_to_create_in,
+            &dir_revert_insert
+        ));
+        let table2: Table = Table::new(&dir_to_create_in, &table2_name, None).unwrap();
+        let table2_reverted: Table = Table::new(&dir_revert_insert, &table2_name, None).unwrap();
+        assert!(compare_tables(
+            &table2,
+            &table2_reverted,
+            &dir_to_create_in,
+            &dir_revert_insert
+        ));
+
+        // Revert the create tables in the dir_to_create_in directory
+        let create_table_diffs: Vec<Diff> = vec![
+            Diff::TableCreate(table1_create_diff),
+            Diff::TableCreate(table2_create_diff),
+            Diff::Insert(insert_diff_table1),
+        ];
+        revert_tables_from_diffs(&dir_to_create_in, &create_table_diffs).unwrap();
+
+        // Make sure that the dir_to_create_in directory is empty
+        assert!(std::fs::read_dir(&dir_to_create_in).unwrap().next().is_none());
+
+        // Clean up directories
+        std::fs::remove_dir_all(&dir_to_create_in).unwrap();
+        std::fs::remove_dir_all(&dir_revert_delete).unwrap();
+        std::fs::remove_dir_all(&dir_revert_insert).unwrap();
+    }
+
+    #[test]
+    fn test_reverting_every_diffs() {
+        //Setting up test table and directory
+        let dir_to_create_in: String = "test_dir_reverting_every_diffs".to_string();
+
+        // Define schema and names for two tables
+        let table1_name: String = "test_table1".to_string();
+        let table2_name: String = "test_table2".to_string();
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("weapon".to_string(), Column::String(50)),
+        ];
+
+        // Create the two tables
+        let table1_create_results: (Table, TableCreateDiff) =
+            create_table_in_dir(&table1_name, &schema1, &dir_to_create_in).unwrap();
+        let table1_create_diff: TableCreateDiff = table1_create_results.1;
+        let mut table1: Table = table1_create_results.0;
+        let table2_create_results: (Table, TableCreateDiff) =
+            create_table_in_dir(&table2_name, &schema2, &dir_to_create_in).unwrap();
+        let table2_create_diff: TableCreateDiff = table2_create_results.1;
+        let mut table2: Table = table2_create_results.0;
+
+        // Insert rows into table1
+        let rows1 = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Geralt".to_string()),
+                Value::I32(50),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Ciri".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Yennefer".to_string()),
+                Value::I32(40),
+            ],
+        ];
+        let insert_diff_table1: InsertDiff = table1.insert_rows(rows1).unwrap();
+
+        // Insert rows into table2
+        let rows2 = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Geralt".to_string()),
+                Value::String("Sword".to_string()),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Ciri".to_string()),
+                Value::String("Sword".to_string()),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Yennefer".to_string()),
+                Value::String("Magic".to_string()),
+            ],
+        ];
+        let insert_diff_table2: InsertDiff = table2.insert_rows(rows2).unwrap();
+
+        // Update a row in table2
+        let update_diff_table2: UpdateDiff = table2
+            .rewrite_rows(vec![RowInfo {
+                row: vec![
+                    Value::I32(2),
+                    Value::String("Ciri".to_string()),
+                    Value::String("Sword/Magic".to_string()),
+                ],
+                pagenum: insert_diff_table2.clone().rows[1].pagenum,
+                rownum: insert_diff_table2.clone().rows[1].rownum,
+            }])
+            .unwrap();
+        
+        // Delete a row in table1
+        let delete_diff_table1: RemoveDiff = table1
+            .remove_rows(vec![RowLocation {
+                pagenum: insert_diff_table1.clone().rows[2].pagenum,
+                rownum: insert_diff_table1.clone().rows[2].rownum,
+            }])
+            .unwrap();
+        
+        // Remove both tables now
+        let remove_table1_diff: TableRemoveDiff = delete_table_in_dir(&table1_name, &dir_to_create_in).unwrap();
+        let remove_table2_diff: TableRemoveDiff = delete_table_in_dir(&table2_name, &dir_to_create_in).unwrap();
+
+        // Create a vector of all the diffs
+        let diffs: Vec<Diff> = vec![
+            Diff::TableCreate(table1_create_diff),
+            Diff::TableCreate(table2_create_diff),
+            Diff::Insert(insert_diff_table1),
+            Diff::Insert(insert_diff_table2),
+            Diff::Update(update_diff_table2),
+            Diff::Remove(delete_diff_table1),
+            Diff::TableRemove(remove_table1_diff),
+            Diff::TableRemove(remove_table2_diff),
+        ];
+
+        // Revert all the diffs
+        revert_tables_from_diffs(&dir_to_create_in, &diffs).unwrap();
+
+        // Make sure that the dir_to_create_in directory is empty
+        assert!(std::fs::read_dir(&dir_to_create_in).unwrap().next().is_none());
+
+        // Clean up directories
+        std::fs::remove_dir_all(&dir_to_create_in).unwrap();
     }
 
     /// Compares two tables to make sure that they are identical, but in separate directories

@@ -161,6 +161,13 @@ pub fn delete_table_in_dir(
         table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
     }
 
+    // Collect all the rows that are currently in the table, which are needed when commit is reverted
+    let mut rows: Vec<RowInfo> = Vec::new();
+    let mut table = Table::new(&table_dir.clone(), &table_name.clone(), None)?;
+    for row in table {
+        rows.push(row);
+    }
+
     // Delete the table file
     std::fs::remove_file(&table_path).map_err(|e| e.to_string())?;
 
@@ -168,6 +175,7 @@ pub fn delete_table_in_dir(
     Ok(TableRemoveDiff {
         table_name: table_name.clone(),
         schema: schema.clone(),
+        rows_removed: rows,
     })
 }
 
