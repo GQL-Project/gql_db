@@ -282,46 +282,6 @@ impl Database {
         &mut self.commit_file
     }
 
-    /// Returns the path to the database's deltas file: <path>/<db_name>/deltas.gql
-    pub fn get_deltas_file_path(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        let db_dir_path = self.get_database_path();
-        // Return the deltas file path appended to the database path
-        Database::append_deltas_file_path(db_dir_path.clone())
-    }
-
-    /// Returns the path to the database's branches file: <path>/<db_name>/branches.gql
-    pub fn get_commit_headers_file_path(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        let db_dir_path = self.get_database_path();
-        // Return the branches file path appended to the database path
-        Database::append_commit_headers_file_path(db_dir_path.clone())
-    }
-
-    /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
-    pub fn get_branches_file_path(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        let db_dir_path = self.get_database_path();
-        // Return the branches file path appended to the database path
-        Database::append_branches_file_path(db_dir_path.clone())
-    }
-
-    /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
-    pub fn get_branch_heads_file_path(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        let db_dir_path = self.get_database_path();
-        // Return the branches file path appended to the database path
-        Database::append_branch_heads_file_path(db_dir_path.clone())
-    }
-
     /// Returns the file path to the table if it exists on the current branch
     pub fn get_table_path(&self, table_name: &String, user: &User) -> Result<String, String> {
         // Make sure to lock the database before doing anything
@@ -366,6 +326,14 @@ impl Database {
         Ok(table_paths)
     }
 
+    /// Returns the database's name
+    pub fn get_database_name(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        self.db_name.clone()
+    }
+
     /// Deletes the database at the given path.
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {
@@ -396,7 +364,7 @@ impl Database {
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
-    pub fn create_branch(&mut self, branch_name: &String) -> Result<(), String> {
+    pub fn create_branch(&mut self, branch_name: &String, user: &User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -413,26 +381,10 @@ impl Database {
         Ok(())
     }
 
-    /// Returns the database's name
-    pub fn get_database_name(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        self.db_name.clone()
-    }
-
-    /// Returns the database's path: <path>/<db_name>
-    pub fn get_database_path(&self) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        self.db_path.clone()
-    }
-
     /// Switches the database to the given branch.
     /// The branch MUST exist already.
     /// It returns true on success, and false on failure.
-    pub fn switch_branch(&mut self, _branch_name: String) -> Result<(), String> {
+    pub fn switch_branch(&mut self, _branch_name: String, user: &User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -463,6 +415,54 @@ impl Database {
             }
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    /// Returns the database's path: <path>/<db_name>
+    fn get_database_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        self.db_path.clone()
+    }
+
+    /// Returns the path to the database's deltas file: <path>/<db_name>/deltas.gql
+    fn get_deltas_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the deltas file path appended to the database path
+        Database::append_deltas_file_path(db_dir_path.clone())
+    }
+
+    /// Returns the path to the database's branches file: <path>/<db_name>/branches.gql
+    fn get_commit_headers_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the branches file path appended to the database path
+        Database::append_commit_headers_file_path(db_dir_path.clone())
+    }
+
+    /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
+    fn get_branches_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the branches file path appended to the database path
+        Database::append_branches_file_path(db_dir_path.clone())
+    }
+
+    /// Returns the path to the database's branch HEADs file: <path>/<db_name>/branch_heads.gql
+    fn get_branch_heads_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the branches file path appended to the database path
+        Database::append_branch_heads_file_path(db_dir_path.clone())
     }
 
     /// Private static method that appends the deltas file path to the database_path
