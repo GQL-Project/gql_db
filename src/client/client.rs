@@ -30,15 +30,13 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // store user input
             command.push_str(&last_input);
 
-            // stop reading if there's a semi colon
-            if last_input.contains(";") {
+            // makes sure these are in the first line (VC commands and exit)
+            if command.starts_with("exit") || command.starts_with("GQL ") {
                 break;
             }
 
-            // makes sure these are in the first line (VC commands and exit)
-            if (last_input.contains("exit") || last_input.starts_with("GQL "))
-                && command == last_input
-            {
+            // stop reading if there's a semi colon or if command doesn't start with SELECT
+            if last_input.contains(";") || !command.starts_with("SELECT") {
                 break;
             }
 
@@ -65,11 +63,26 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // GQL
         if command.starts_with("GQL ") {
-            client
+            let result = client
                 .run_version_control_command(Request::new(request.clone()))
-                .await?;
+                .await;
+            if result.is_ok() {
+                let get_response = result.unwrap().into_inner();
+                println!("{}", get_response.message);
+            } else {
+                println!("Error: {}", result.unwrap_err().message());
+            }
+        } else if command.starts_with("SELECT ") {
+            let result = client.run_query(Request::new(request.clone())).await;
+            if result.is_ok() {
+                // Parsing here
+                // let get_response = result.unwrap().into_inner();
+                // println!("{}", get_response.tree);
+            } else {
+                println!("Error: {}", result.unwrap_err().message());
+            }
         } else {
-            client.run_query(Request::new(request.clone())).await?;
+            println!("Invalid command");
         }
 
         let result = QueryResult {

@@ -26,11 +26,11 @@ pub struct CommitHeader {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Commit {
-    hash: String,
-    timestamp: String, // TODO: Change to a DateTime object
-    message: String,
-    command: String, // Command that was run to create this commit
-    diffs: Vec<Diff>,
+    pub hash: String,
+    pub timestamp: String, // TODO: Change to a DateTime object
+    pub message: String,
+    pub command: String, // Command that was run to create this commit
+    pub diffs: Vec<Diff>,
 }
 
 impl Commit {
@@ -147,8 +147,8 @@ impl CommitFile {
     /// Search for a commit header by its commit hash.
     /// Returns the page number and row number of the commit header.
 
-    pub fn fetch_commit(&self, commit_hash: String) -> Result<Commit, String> {
-        let header = self.find_header(commit_hash)?;
+    pub fn fetch_commit(&self, commit_hash: &String) -> Result<Commit, String> {
+        let header = self.find_header(commit_hash.clone())?;
         if let Some(header) = header {
             self.read_commit(header.pagenum)
         } else {
@@ -367,12 +367,12 @@ impl CommitFile {
 #[cfg(test)]
 mod tests {
     use crate::{
-        executor::query::{create_table, insert, select},
+        executor::query::{create_table, insert},
         fileio::databaseio::Database,
+        user::userdata::User,
     };
 
     use super::*;
-    use rand::seq::SliceRandom;
     use serial_test::serial;
 
     #[test]
@@ -448,9 +448,9 @@ mod tests {
         );
         delta.store_commit(&commit).unwrap();
         delta.store_commit(&commit2).unwrap();
-        let commit4 = delta.fetch_commit("hasher2".to_string()).unwrap();
+        let commit4 = delta.fetch_commit(&"hasher2".to_string()).unwrap();
         assert_eq!(commit2, commit4);
-        let commit3 = delta.fetch_commit("test_hash".to_string()).unwrap();
+        let commit3 = delta.fetch_commit(&"test_hash".to_string()).unwrap();
         assert_eq!(commit, commit3);
 
         // Delete the test files
@@ -468,40 +468,31 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        create_table(&"test_table1".to_string(), &schema, &new_db).unwrap();
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
+            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                Value::I32(1),
-                Value::String("Iron Man".to_string()),
-                Value::I32(40),
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "35".to_string(),
             ],
             vec![
-                Value::I32(2),
-                Value::String("Spiderman".to_string()),
-                Value::I32(20),
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
             ],
-            vec![
-                Value::I32(3),
-                Value::String("Doctor Strange".to_string()),
-                Value::I32(35),
-            ],
-            vec![
-                Value::I32(4),
-                Value::String("Captain America".to_string()),
-                Value::I32(100),
-            ],
-            vec![
-                Value::I32(5),
-                Value::String("Thor".to_string()),
-                Value::I32(1000),
-            ],
+            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
         let (x, y) = rows.split_at(21); // 40 rows
-        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db).unwrap();
-        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db).unwrap();
+        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
             "hash1".to_string(),
             "timestamp1".to_string(),
@@ -533,11 +524,11 @@ mod tests {
         delta.store_commit(&commit1).unwrap();
         delta.store_commit(&commit2).unwrap();
         delta.store_commit(&commit3).unwrap();
-        let commit13 = delta.fetch_commit("hash3".to_string()).unwrap();
+        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
         assert_eq!(commit3, commit13);
-        let commit11 = delta.fetch_commit("hash1".to_string()).unwrap();
+        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
         assert_eq!(commit1, commit11);
-        let commit12 = delta.fetch_commit("hash2".to_string()).unwrap();
+        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
         assert_eq!(commit2, commit12);
 
         // Delete the test database

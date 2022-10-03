@@ -1,3 +1,5 @@
+use crate::user::userdata::User;
+use crate::version_control::log;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -13,13 +15,13 @@ pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
 
     let ast = Parser::parse_sql(&dialect, query);
 
-    println!("AST: {:?}", ast);
+    // println!("AST: {:?}", ast);
     ast.map_err(|e| e.to_string())
 }
 
 /// This method parses a version control command's query string into the individual components.
 /// Format "GQL <command> <flags> <args>"
-pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
+pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
     if query.len() == 0 || query == "GQL" {
         return Err("Empty VC Command query".to_string());
     }
@@ -40,16 +42,15 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             if vec.len() > 2 {
                 if vec[2] != "-m" {
                     // error message here
-                    println!("{:?}", "Invalid VC Command");
                     return Err("Invalid Flag for Commit VC Command".to_string());
                 } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
-                    println!("{:?}", "Commit with message");
+                    return Ok("Commit with message".to_string());
                 }
-            } else if vec.len() == 2 {
+            } else {
                 // commit with no message
-                println!("{:?}", "Commit with no message");
+                return Ok("Commit with no message".to_string());
             }
         }
         "branch" => {
@@ -58,16 +59,14 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "branch command");
             if vec.len() < 3 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                println!("{:?}", "Invalid Branch Name");
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
-                println!("{:?}", "Valid Branch Command");
+                return Ok("Valid Branch Command".to_string());
             }
         }
         "switch_branch" => {
@@ -76,16 +75,14 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "switch branch command");
             if vec.len() < 3 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                println!("{:?}", "Invalid Branch Name");
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
-                println!("{:?}", "Valid Switch Branch Command");
+                return Ok("Valid Switch Branch Command".to_string());
             }
         }
         "log" => {
@@ -94,19 +91,23 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
 
             if vec.len() != 2 {
                 // Error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             }
+
+            let log_results = log::log(user)?;
+            let log_string: String = log_results.0;
+
+            return Ok(log_string);
         }
         "revert" => {
             // revert (Needs an argument)
             println!("{:?}", "revert command");
             if vec.len() != 3 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             } else {
                 // vec[2] should be a commit hash
+                return Ok("Valid Revert Command".to_string());
             }
         }
         "status" => {
@@ -114,111 +115,147 @@ pub fn parse_vc_cmd(query: &str) -> Result<String, String> {
             println!("{:?}", "status command");
             if vec.len() != 2 {
                 // error message here
-                println!("{:?}", "Invalid VC Command");
                 return Err("Invalid VC Command".to_string());
             }
+            return Ok("Valid Status Command".to_string());
         }
         _ => {
             // error message here
-            println!("{:?}", "Invalid VC Command");
             return Err("Invalid VC Command".to_string());
         }
     }
-    Ok("1".to_string()) // temporary, need to fix it somehow
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        executor::query::create_table,
+        fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance},
+        util::dbtype::Column,
+        version_control::diff::Diff,
+    };
+
     use super::*;
 
     #[test]
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_vc_cmd2() {
         let query = "GQL commit";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_vc_cmd3() {
         let query = "GQL branch";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_vc_cmd5() {
         let query = "GQL branch branch name";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_vc_cmd6() {
         let query = "GQL switch_branch branch_name";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
-        let result = parse_vc_cmd(query);
+        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
+
+        delete_db_instance().unwrap();
     }
 
     #[test]
     fn test_parse_vc_cmd9() {
         let query = "GQL log -m";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_vc_cmd10() {
         let query = "GQL revert commit_hash";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_vc_cmd11() {
         let query = "GQL revert";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_vc_cmd12() {
         let query = "GQL status";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_vc_cmd13() {
         let query = "GQL status -m";
-        let result = parse_vc_cmd(query);
+        // Create a new user on the main branch
+        let user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &user);
         assert!(result.is_err());
     }
 }

@@ -8,6 +8,7 @@ mod executor;
 mod fileio;
 mod parser;
 mod server;
+mod user;
 mod util;
 mod version_control;
 

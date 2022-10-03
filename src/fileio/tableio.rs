@@ -1,5 +1,5 @@
 use super::{databaseio::*, header::*, pageio::*, rowio::*};
-use crate::{util::row::*, version_control::diff::*};
+use crate::{user::userdata::User, util::row::*, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -138,13 +138,6 @@ pub fn create_table_in_dir(
             schema: schema.clone(),
         },
     ))
-}
-
-/// Delete a table from the given database.
-pub fn delete_table(table_name: &String, database: &Database) -> Result<TableRemoveDiff, String> {
-    let table_dir: String = database.get_current_branch_path();
-    // Delete the table file and return it
-    delete_table_in_dir(table_name, &table_dir)
 }
 
 /// Delete a table from the given directory.
