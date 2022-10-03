@@ -323,12 +323,15 @@ impl Table {
                     clear_row(&self.schema, page.as_mut(), rownum)?;
 
                     // Add changes to the diff
-                    diff.rows_removed.push(RowInfo{
+                    diff.rows_removed.push(RowInfo {
                         row: row_read,
                         pagenum: row_location.pagenum,
                         rownum: row_location.rownum,
-                    });},
-                None => {return Err(format!("The provided Row doesn't exist!"));}
+                    });
+                }
+                None => {
+                    return Err(format!("The provided Row doesn't exist!"));
+                }
             }
         }
         // Write the last page
@@ -634,12 +637,10 @@ mod tests {
         assert_eq!(update_diff.rows[0].row[2], Value::I32(50));
 
         // Try RemoveDiff
-        let rows_to_remove: Vec<RowLocation> = vec![
-            RowLocation {
-                pagenum: insert_diff.rows[0].pagenum,
-                rownum: insert_diff.rows[0].rownum,
-            },
-        ];
+        let rows_to_remove: Vec<RowLocation> = vec![RowLocation {
+            pagenum: insert_diff.rows[0].pagenum,
+            rownum: insert_diff.rows[0].rownum,
+        }];
 
         let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
         // Verify that the remove_diff is correct

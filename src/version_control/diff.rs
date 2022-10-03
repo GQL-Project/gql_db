@@ -494,12 +494,10 @@ mod tests {
         diffs.push(Diff::Insert(insert_diff2.clone()));
 
         // Delete a row from table3
-        let rows_to_delete: Vec<RowLocation> = vec![
-            RowLocation {
-                rownum: insert_diff2.rows[1].rownum,
-                pagenum: insert_diff2.rows[0].pagenum,
-            },
-        ];
+        let rows_to_delete: Vec<RowLocation> = vec![RowLocation {
+            rownum: insert_diff2.rows[1].rownum,
+            pagenum: insert_diff2.rows[0].pagenum,
+        }];
         let delete_diff2: RemoveDiff = table3.remove_rows(rows_to_delete).unwrap();
         diffs.push(Diff::Remove(delete_diff2.clone()));
 
@@ -572,19 +570,28 @@ mod tests {
             ],
         ];
         let insert_diff = table1.insert_rows(rows).unwrap();
-        let rows2 = vec![
-            vec![
-                Value::I32(4),
-                Value::String("Damian".to_string()),
-                Value::I32(16),
-            ]
-        ];
+        let rows2 = vec![vec![
+            Value::I32(4),
+            Value::String("Damian".to_string()),
+            Value::I32(16),
+        ]];
         let insert_diff2 = table1.insert_rows(rows2).unwrap();
-        std::fs::copy(table1.path.clone(), format!("{}{}{}.db", dir_to_build_in, std::path::MAIN_SEPARATOR, &table1.name)).unwrap();
-        let remove_diff = table1.remove_rows(vec![RowLocation {
-            pagenum: insert_diff.clone().rows[1].pagenum,
-            rownum: insert_diff.clone().rows[1].rownum,
-        }]).unwrap();
+        std::fs::copy(
+            table1.path.clone(),
+            format!(
+                "{}{}{}.db",
+                dir_to_build_in,
+                std::path::MAIN_SEPARATOR,
+                &table1.name
+            ),
+        )
+        .unwrap();
+        let remove_diff = table1
+            .remove_rows(vec![RowLocation {
+                pagenum: insert_diff.clone().rows[1].pagenum,
+                rownum: insert_diff.clone().rows[1].rownum,
+            }])
+            .unwrap();
         revert_table_from_diffs(&dir_to_build_in, &vec![Diff::Remove(remove_diff)]).unwrap();
         // Assert that the table is the same as it was before the remove diff
         let table2 = Table::new(&dir_to_build_in, &table_name, None).unwrap();
@@ -592,8 +599,12 @@ mod tests {
         diffs.push(Diff::Insert(insert_diff2));
         construct_tables_from_diffs(&dir_to_compare_to, &diffs).unwrap();
         let table3 = Table::new(&dir_to_compare_to, &table_name, None).unwrap();
-        assert!(compare_tables(&table2, &table3, &dir_to_build_in, &dir_to_compare_to));
-        
+        assert!(compare_tables(
+            &table2,
+            &table3,
+            &dir_to_build_in,
+            &dir_to_compare_to
+        ));
     }
 
     /// Compares two tables to make sure that they are identical, but in separate directories
