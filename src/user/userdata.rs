@@ -28,7 +28,7 @@ impl User {
     }
     
     /// Get the list of diffs that the user has made
-    pub fn get_changes(&self) -> Vec<Diff> {
+    pub fn get_diffs(&self) -> Vec<Diff> {
         self.diffs.clone()
     }
 

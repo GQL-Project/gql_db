@@ -646,9 +646,9 @@ mod tests {
         ];
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        create_table(&"test_table".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db, &mut user).unwrap();
 
         // Make sure the table path is correct
         assert_eq!(
@@ -686,7 +686,7 @@ mod tests {
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         // Create a new table in the database
         let schema: Schema = vec![
@@ -694,7 +694,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table(&"test_table".to_string(), &schema, &new_db, &user).unwrap();
+        create_table(&"test_table".to_string(), &schema, &new_db, &mut user).unwrap();
 
         // Load the database
         let loaded_db: Database = Database::load_db(db_name.clone()).unwrap();
@@ -741,7 +741,7 @@ mod tests {
         assert_eq!(Path::new(&db_base_path).exists(), true);
 
         // Create a user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
         // Create a new table in the database
         let schema: Schema = vec![
@@ -754,7 +754,7 @@ mod tests {
             &"test_table".to_string(),
             &schema,
             get_db_instance().unwrap(),
-            &user
+            &mut user
         )
         .unwrap();
         let mut table = table_result.0;
