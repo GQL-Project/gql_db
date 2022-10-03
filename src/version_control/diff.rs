@@ -142,7 +142,7 @@ pub fn revert_table_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<
                 for row in insert_diff.rows.clone() {
                     row_locations_removed.push(row.get_row_location());
                 }
-                table.remove_rows(row_locations_removed);
+                table.remove_rows(row_locations_removed)?;
             }
             // Insert instead of remove as we're reverting the change
             Diff::Remove(remove_diff) => {
@@ -540,6 +540,19 @@ mod tests {
         let dir_to_create_in: String = "test_revert_diffs_on_table".to_string();
         let dir_to_build_in: String = "test_revert_diffs_on_table_diff".to_string();
         let dir_to_compare_to: String = "test_revert_compare".to_string();
+        
+        // If the directory to the dir_to_build_in does not exist, create it
+        let dir = dir_to_build_in.clone() + &"/test".to_string();
+        let path_obj = std::path::Path::new(&dir);
+        let path_to_build_in_dir = path_obj.parent().unwrap();
+        std::fs::create_dir_all(path_to_build_in_dir).unwrap();
+        
+        // If the directory to the dir_to_compare_to does not exist, create it
+        let dir = dir_to_compare_to.clone() + &"/test".to_string();
+        let path_obj = std::path::Path::new(&dir);
+        let path_to_compare_to_dir = path_obj.parent().unwrap();
+        std::fs::create_dir_all(path_to_compare_to_dir).unwrap();
+
         let table_name: String = "test_table".to_string();
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -547,10 +560,9 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        let mut diffs: Vec<Diff> = Vec::new();
-
         let result: (Table, TableCreateDiff) =
             create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
+        let table_create_diff: TableCreateDiff = result.1;
         let mut table1: Table = result.0;
         let rows = vec![
             vec![
@@ -595,6 +607,8 @@ mod tests {
         revert_table_from_diffs(&dir_to_build_in, &vec![Diff::Remove(remove_diff)]).unwrap();
         // Assert that the table is the same as it was before the remove diff
         let table2 = Table::new(&dir_to_build_in, &table_name, None).unwrap();
+        let mut diffs: Vec<Diff> = Vec::new();
+        diffs.push(Diff::TableCreate(table_create_diff));
         diffs.push(Diff::Insert(insert_diff));
         diffs.push(Diff::Insert(insert_diff2));
         construct_tables_from_diffs(&dir_to_compare_to, &diffs).unwrap();
