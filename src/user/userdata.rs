@@ -4,7 +4,7 @@ use crate::{fileio::databaseio::*, version_control::diff::Diff};
 pub struct User {
     user_id: String,     // The id of the user
     branch_name: String, // The name of the branch that the user is currently on
-    diffs: Vec<Diff>,    // The changes that the user has made
+    diffs: Vec<Diff>,    // The changes that the user has made that are in an uncommitted state
 }
 
 impl User {

@@ -354,7 +354,7 @@ impl Database {
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
-    pub fn create_branch(&mut self, branch_name: &String, user: &User) -> Result<(), String> {
+    pub fn create_branch(&mut self, branch_name: &String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -374,7 +374,7 @@ impl Database {
     /// Switches the database to the given branch.
     /// The branch MUST exist already.
     /// It returns true on success, and false on failure.
-    pub fn switch_branch(&mut self, _branch_name: String, user: &User) -> Result<(), String> {
+    pub fn switch_branch(&mut self, _branch_name: String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
