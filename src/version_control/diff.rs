@@ -32,8 +32,8 @@ pub struct InsertDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RemoveDiff {
-    pub table_name: String,         // The name of the table that the rows were removed from
-    pub schema: Schema,             // The schema of the table
+    pub table_name: String, // The name of the table that the rows were removed from
+    pub schema: Schema,     // The schema of the table
     pub rows_removed: Vec<RowInfo>, // The rows that were removed
 }
 
@@ -45,7 +45,7 @@ pub struct TableCreateDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableRemoveDiff {
-    pub table_name: String,         // The name of the table that was removed.
+    pub table_name: String, // The name of the table that was removed.
     pub schema: Schema,
     pub rows_removed: Vec<RowInfo>, // The rows that were removed from the table.
 }
@@ -636,13 +636,13 @@ mod tests {
         let dir_to_create_in: String = "test_dir_create_tables".to_string();
         let dir_revert_delete: String = "test_dir_revert_delete".to_string();
         let dir_revert_insert: String = "test_dir_revert_insert".to_string();
-        
+
         // If the directory to the dir_to_build_in does not exist, create it
         let dir = dir_revert_delete.clone() + &"/test".to_string();
         let path_obj = std::path::Path::new(&dir);
         let path_to_build_in_dir = path_obj.parent().unwrap();
         std::fs::create_dir_all(path_to_build_in_dir).unwrap();
-        
+
         // If the directory to the dir_to_compare_to does not exist, create it
         let dir = dir_revert_insert.clone() + &"/test".to_string();
         let path_obj = std::path::Path::new(&dir);
@@ -747,7 +747,7 @@ mod tests {
                 rownum: insert_diff_table2.clone().rows[1].rownum,
             }])
             .unwrap();
-        
+
         // Delete a row in table1
         let delete_diff_table1: RemoveDiff = table1
             .remove_rows(vec![RowLocation {
@@ -777,10 +777,12 @@ mod tests {
             ),
         )
         .unwrap();
-        
+
         // Remove both tables now
-        let remove_table1_diff: TableRemoveDiff = delete_table_in_dir(&table1_name, &dir_to_create_in).unwrap();
-        let remove_table2_diff: TableRemoveDiff = delete_table_in_dir(&table2_name, &dir_to_create_in).unwrap();
+        let remove_table1_diff: TableRemoveDiff =
+            delete_table_in_dir(&table1_name, &dir_to_create_in).unwrap();
+        let remove_table2_diff: TableRemoveDiff =
+            delete_table_in_dir(&table2_name, &dir_to_create_in).unwrap();
 
         let remove_table_diffs: Vec<Diff> = vec![
             Diff::TableRemove(remove_table1_diff),
@@ -815,7 +817,7 @@ mod tests {
             Diff::Remove(delete_diff_table1),
         ];
         revert_tables_from_diffs(&dir_to_create_in, &insert_diffs).unwrap();
-        
+
         // Make sure the reverted tables are the same as the original tables
         let table1: Table = Table::new(&dir_to_create_in, &table1_name, None).unwrap();
         let table1_reverted: Table = Table::new(&dir_revert_insert, &table1_name, None).unwrap();
@@ -843,7 +845,10 @@ mod tests {
         revert_tables_from_diffs(&dir_to_create_in, &create_table_diffs).unwrap();
 
         // Make sure that the dir_to_create_in directory is empty
-        assert!(std::fs::read_dir(&dir_to_create_in).unwrap().next().is_none());
+        assert!(std::fs::read_dir(&dir_to_create_in)
+            .unwrap()
+            .next()
+            .is_none());
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
@@ -932,7 +937,7 @@ mod tests {
                 rownum: insert_diff_table2.clone().rows[1].rownum,
             }])
             .unwrap();
-        
+
         // Delete a row in table1
         let delete_diff_table1: RemoveDiff = table1
             .remove_rows(vec![RowLocation {
@@ -940,10 +945,12 @@ mod tests {
                 rownum: insert_diff_table1.clone().rows[2].rownum,
             }])
             .unwrap();
-        
+
         // Remove both tables now
-        let remove_table1_diff: TableRemoveDiff = delete_table_in_dir(&table1_name, &dir_to_create_in).unwrap();
-        let remove_table2_diff: TableRemoveDiff = delete_table_in_dir(&table2_name, &dir_to_create_in).unwrap();
+        let remove_table1_diff: TableRemoveDiff =
+            delete_table_in_dir(&table1_name, &dir_to_create_in).unwrap();
+        let remove_table2_diff: TableRemoveDiff =
+            delete_table_in_dir(&table2_name, &dir_to_create_in).unwrap();
 
         // Create a vector of all the diffs
         let diffs: Vec<Diff> = vec![
@@ -961,7 +968,10 @@ mod tests {
         revert_tables_from_diffs(&dir_to_create_in, &diffs).unwrap();
 
         // Make sure that the dir_to_create_in directory is empty
-        assert!(std::fs::read_dir(&dir_to_create_in).unwrap().next().is_none());
+        assert!(std::fs::read_dir(&dir_to_create_in)
+            .unwrap()
+            .next()
+            .is_none());
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();

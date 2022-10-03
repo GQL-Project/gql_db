@@ -288,7 +288,11 @@ impl CommitFile {
                         };
                         rows.push(row_info);
                     }
-                    Diff::TableRemove(TableRemoveDiff { table_name, schema, rows_removed: rows })
+                    Diff::TableRemove(TableRemoveDiff {
+                        table_name,
+                        schema,
+                        rows_removed: rows,
+                    })
                 }
                 _ => return Err("Invalid diff type".to_string()),
             };
