@@ -1,6 +1,9 @@
 use tabled::{builder::Builder, Style};
 
-use crate::{util::{convert::from_row_value, dbtype::Value}, server::server::db_connection::QueryResult};
+use crate::{
+    server::server::db_connection::QueryResult,
+    util::{convert::from_row_value, dbtype::Value},
+};
 
 pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
     // setting the table column
@@ -28,8 +31,7 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
     }
 
     let mut builder = Builder::default();
-    builder
-        .set_columns(table_column);
+    builder.set_columns(table_column);
 
     for row in table_rows {
         builder.add_record(row);
@@ -44,7 +46,7 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg (test)]
+#[cfg(test)]
 mod tests {
     use crate::util::{convert::to_row_value, dbtype::Value};
 
@@ -143,12 +145,8 @@ mod tests {
     #[test]
     fn test_parse_one() {
         let result = QueryResult {
-            column_names: vec![
-                "Name".to_string(),
-            ],
-            row_values: vec![to_row_value(vec![
-                Value::String("John Adams".to_string()),
-            ])],
+            column_names: vec!["Name".to_string()],
+            row_values: vec![to_row_value(vec![Value::String("John Adams".to_string())])],
         };
 
         result_parse(result).unwrap();
@@ -157,9 +155,7 @@ mod tests {
     #[test]
     fn test_parse_none() {
         let result = QueryResult {
-            column_names: vec![
-                "Name".to_string(),
-            ],
+            column_names: vec!["Name".to_string()],
             row_values: vec![],
         };
 
