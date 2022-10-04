@@ -302,12 +302,13 @@ impl Database {
         &mut self.commit_file
     }
 
-    /// Returns the file path to the table if it exists on the current branch
+    /// Returns the file path to the table if it exists on the current working branch
+    /// This means it will look on the temporary branch if the user has uncommitted changes.
     pub fn get_table_path(&self, table_name: &String, user: &User) -> Result<String, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        let mut table_path: String = self.get_current_branch_path(user);
+        let mut table_path: String = self.get_current_working_branch_path(user);
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str(table_name.as_str());
         table_path.push_str(TABLE_FILE_EXTENSION);

@@ -216,6 +216,9 @@ mod tests {
         let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
+        let result2 = conn.connect_db(Request::new(())).await;
+        assert!(result2.is_ok());
+        let id2 = result2.unwrap().into_inner().id;
         let result = conn
             .run_update(Request::new(super::QueryRequest {
                 id: id.clone(),
@@ -238,6 +241,20 @@ mod tests {
             .await;
         assert!(result.is_ok());
         let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+
+        // Make sure that the temporary branch directory did not affect the main branch
+        let result = conn
+            .run_query(Request::new(super::QueryRequest {
+                id: id2.clone(),
+                query: "SELECT * FROM test;".to_string(),
+            }))
+            .await;
+        assert!(result.is_err());
+
+        // Disconnect the second client
+        let request = ConnectResult { id: id2 };
         let result = conn.disconnect_db(Request::new(request)).await;
         assert!(result.is_ok());
     }
