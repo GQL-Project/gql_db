@@ -1,5 +1,5 @@
 use super::{databaseio::*, header::*, pageio::*, rowio::*};
-use crate::{util::row::*, version_control::diff::*};
+use crate::{user::userdata::User, util::row::*, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -140,13 +140,6 @@ pub fn create_table_in_dir(
     ))
 }
 
-/// Delete a table from the given database.
-pub fn delete_table(table_name: &String, database: &Database) -> Result<TableRemoveDiff, String> {
-    let table_dir: String = database.get_current_branch_path();
-    // Delete the table file and return it
-    delete_table_in_dir(table_name, &table_dir)
-}
-
 /// Delete a table from the given directory.
 pub fn delete_table_in_dir(
     table_name: &String,
@@ -155,8 +148,17 @@ pub fn delete_table_in_dir(
     // Create the path to the table file.
     let filename: String = table_name.clone() + &TABLE_FILE_EXTENSION.to_string();
     let mut table_path = filename.clone();
+    //Extracting Schema to use when commits are being reverted
+    let schema = Table::new(&table_dir.clone(), &table_name.clone(), None)?.schema;
     if table_dir.len() > 0 {
         table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
+    }
+
+    // Collect all the rows that are currently in the table, which are needed when commit is reverted
+    let mut rows: Vec<RowInfo> = Vec::new();
+    let mut table = Table::new(&table_dir.clone(), &table_name.clone(), None)?;
+    for row in table {
+        rows.push(row);
     }
 
     // Delete the table file
@@ -165,6 +167,8 @@ pub fn delete_table_in_dir(
     // Return the diff
     Ok(TableRemoveDiff {
         table_name: table_name.clone(),
+        schema: schema.clone(),
+        rows_removed: rows,
     })
 }
 
@@ -173,6 +177,7 @@ impl Table {
     /// It allows us to rewrite a specific row from the table.
     /// It returns a diff of the rows that were updated.
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
+        //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
         let mut diff: UpdateDiff =
             UpdateDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
@@ -289,17 +294,19 @@ impl Table {
     }
 
     /// This function is helpful when doing Deletes
-    /// It removes the rows from the table specified by the tuples (pagenum, rownum)
+    /// It removes the rows from the table specified by the triples (rows, pagenum, rownum)
     /// It returns a diff of the rows that were removed.
     pub fn remove_rows(&self, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
         // Keep track of how the rows have changed.
-        let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), Vec::new());
+        let schema = self.schema.clone();
+        let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), schema, Vec::new());
 
         // Return right away if we aren't removing any rows
         if rows.len() == 0 {
             return Ok(diff);
         }
 
+        // Keep track of the row number we are removing
         let mut curr_page = 1;
         let mut page = read_page(curr_page, &self.path)?;
         for row_location in rows {
@@ -310,10 +317,23 @@ impl Table {
                 curr_page = pagenum;
                 load_page(pagenum, &self.path, page.as_mut())?;
             }
-            clear_row(&self.schema, page.as_mut(), rownum)?;
+            let row_read_result = read_row(&self.schema, &page, rownum);
+            match row_read_result {
+                Some(row_read) => {
+                    //Runs code if successfully deleted a row
+                    clear_row(&self.schema, page.as_mut(), rownum)?;
 
-            // Add changes to the diff
-            diff.row_locations.push(RowLocation { pagenum, rownum });
+                    // Add changes to the diff
+                    diff.rows_removed.push(RowInfo {
+                        row: row_read,
+                        pagenum: row_location.pagenum,
+                        rownum: row_location.rownum,
+                    });
+                }
+                None => {
+                    return Err(format!("The provided Row doesn't exist!"));
+                }
+            }
         }
         // Write the last page
         write_page(curr_page, &self.path, page.as_ref())?;
@@ -338,6 +358,7 @@ impl Table {
 mod tests {
 
     use rand::prelude::*;
+    use serial_test::serial;
     use std::iter::repeat;
 
     use super::*;
@@ -415,27 +436,94 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_removes() {
         let path = "test_removerator".to_string();
-        let table = create_table(&path);
+        let filepath: String = path.clone() + &TABLE_FILE_EXTENSION.to_string();
+        create_file(&filepath).unwrap();
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let header = Header {
+            num_pages: 3,
+            schema: schema.clone(),
+        };
+        write_header(&filepath, &header).unwrap();
+        let mut page = [0u8; PAGE_SIZE];
+        write_page(1, &filepath, &page).unwrap();
+        let mut table = Table::new(&"".to_string(), &path.to_string(), None).unwrap();
+        //Adding in 1st entry
+        let row1 = vec![
+            Value::I32(1),
+            Value::String("Bruce Wayne".to_string()),
+            Value::I32(45),
+        ];
+        //Adding in 2nd entry
+        let row2 = vec![
+            Value::I32(2),
+            Value::String("Clark Kent".to_string()),
+            Value::I32(45),
+        ];
+        //Adding in 3rd entry
+        let row3 = vec![
+            Value::I32(3),
+            Value::String("Diana Prince".to_string()),
+            Value::I32(40),
+        ];
+        //Adding in 4th entry
+        let row4 = vec![
+            Value::I32(4),
+            Value::String("Barry Allen".to_string()),
+            Value::I32(35),
+        ];
+        //Adding in 5th entry
+        let row5 = vec![
+            Value::I32(5),
+            Value::String("Jessica Cruz".to_string()),
+            Value::I32(37),
+        ];
+        //Adding in 6th entry
+        let row6 = vec![
+            Value::I32(6),
+            Value::String("Dinah Lance".to_string()),
+            Value::I32(35),
+        ];
+        //Adding in 7th entry
+        let row7 = vec![
+            Value::I32(7),
+            Value::String("Oliver Queen".to_string()),
+            Value::I32(34),
+        ];
+        let rows: Vec<Row> = vec![row1, row2, row3, row4, row5, row6, row7];
+        table.insert_rows(rows).unwrap();
+        //Table created
+        //Now we will remove the 7th entry
+        table
+            .remove_rows(vec![
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 6,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 3,
+                },
+            ])
+            .unwrap();
 
-        let rows: Vec<(u32, u16)> = (10..50)
-            .map(|i| (1, i as u16))
-            .chain((10..30).map(|i| (2, i as u16)))
-            .collect();
-        // Cast rows to a vector of Rowlocations
-        let rowlocations: Vec<RowLocation> = rows
-            .iter()
-            .map(|(pagenum, rownum)| RowLocation {
-                pagenum: *pagenum,
-                rownum: *rownum,
-            })
-            .collect();
-        table.remove_rows(rowlocations).unwrap();
-        // Assert that we have (69 * 2 - 60) rows remaining
-        assert_eq!(table.into_iter().count(), 78);
-        // Clean up by removing file
-        clean_table(&path);
+        //Checking if the 7th entry is removed & the last entry's contents
+        let mut count = 0;
+        for (i, rowinfo) in table.enumerate() {
+            count += 1;
+            if (count == 5) {
+                // assert_eq!(rowinfo.row[0], Value::I32(6));
+                assert_eq!(rowinfo.row[1], Value::String("Dinah Lance".to_string()));
+                assert_eq!(rowinfo.row[2], Value::I32(35));
+            }
+        }
+        assert_eq!(count, 5);
     }
 
     #[test]
@@ -551,15 +639,17 @@ mod tests {
 
         // Try RemoveDiff
         let rows_to_remove: Vec<RowLocation> = vec![RowLocation {
-            pagenum: insert_diff.rows[0].clone().pagenum,
-            rownum: insert_diff.rows[0].clone().rownum,
+            pagenum: insert_diff.rows[0].pagenum,
+            rownum: insert_diff.rows[0].rownum,
         }];
+
         let remove_diff: RemoveDiff = table.remove_rows(rows_to_remove).unwrap();
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
-        assert_eq!(remove_diff.row_locations[0].pagenum, 3);
-        assert_eq!(remove_diff.row_locations[0].rownum, 0);
+        assert_eq!(remove_diff.rows_removed[0].row[0], Value::I32(3));
+        assert_eq!(remove_diff.rows_removed[0].pagenum, 3);
+        assert_eq!(remove_diff.rows_removed[0].rownum, 0);
 
         // Clean up by removing file
         clean_table(&path);

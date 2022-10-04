@@ -5,6 +5,7 @@ use tonic::{Request, Response, Status};
 use crate::executor::query;
 use crate::parser::parser;
 use crate::server::connection::Connection;
+use crate::user::userdata::*;
 use crate::util::convert::*;
 
 pub mod db_connection {
@@ -15,13 +16,13 @@ pub mod db_connection {
 #[tonic::async_trait]
 impl DatabaseConnection for Connection {
     async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
-        let id = self.new_client();
-        println!("New client connected with id: {}", id);
+        let id = self.new_client().map_err(|e| Status::internal(e))?;
         Ok(Response::new(to_connect_result(id)))
     }
 
     async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<()>, Status> {
-        self.remove_client(request.into_inner().id);
+        self.remove_client(request.into_inner().id)
+            .map_err(|e| Status::internal(e))?;
         Ok(Response::new(()))
     }
 
@@ -38,10 +39,14 @@ impl DatabaseConnection for Connection {
         /* Creating Result */
         match result {
             Ok(tree) => {
-                // Execute the query represented by the AST.
-                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
+                // Get the user that is running the query
+                let user: &mut User = self
+                    .get_client(&request.id)
+                    .map_err(|e| Status::internal(e))?;
 
-                Ok(Response::new(to_query_result(vec![], vec![])))
+                // Execute the query represented by the AST.
+                let data = query::execute_query(&tree, user).map_err(|e| Status::internal(e))?;
+                Ok(Response::new(to_query_result(data.0, data.1)))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
@@ -57,8 +62,13 @@ impl DatabaseConnection for Connection {
         /* Creating Result */
         match result {
             Ok(tree) => {
-                query::execute(&tree, false).map_err(|e| Status::internal(e))?;
-                Ok(Response::new(to_update_result("1".to_string())))
+                // Get the user that is running the query
+                let mut user: &mut User = self
+                    .get_client(&request.id)
+                    .map_err(|e| Status::internal(e))?;
+
+                let resp = query::execute_update(&tree, user).map_err(|e| Status::internal(e))?;
+                Ok(Response::new(to_update_result(resp)))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
@@ -71,8 +81,14 @@ impl DatabaseConnection for Connection {
         request: Request<QueryRequest>,
     ) -> Result<Response<VersionControlResult>, Status> {
         let request = request.into_inner();
+
+        // Get the user that is running the query
+        let mut user: &mut User = self
+            .get_client(&request.id)
+            .map_err(|e| Status::internal(e))?;
+
         /* VC Command Pipeline Begins Here */
-        let result = parser::parse_vc_cmd(&request.query);
+        let result = parser::parse_vc_cmd(&request.query, &user);
 
         /* Creating Result */
         match result {
@@ -85,10 +101,13 @@ impl DatabaseConnection for Connection {
 // Integration tests go here.
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     // This import's needed, probably a bug in the language server.
     use super::*;
     // Tests to test async functions
     #[tokio::test]
+    #[serial]
     async fn connect_db() {
         let conn = Connection::new();
         let result = conn.connect_db(Request::new(())).await;
@@ -96,17 +115,19 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn disconnect_db() {
         let conn = Connection::new();
         let result = conn.connect_db(Request::new(())).await;
-        assert!(result.is_ok());
+        result.as_ref().unwrap();
         let result = conn
             .disconnect_db(Request::new(result.unwrap().into_inner()))
             .await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
+    #[serial]
     async fn run_query() {
         let conn = Connection::new();
         let result = conn.connect_db(Request::new(())).await;
@@ -115,10 +136,10 @@ mod tests {
         let result = conn
             .run_query(Request::new(super::QueryRequest {
                 id: id.clone(),
-                query: "SELECT * FROM test_table;".to_string(),
+                query: "ABCD INCORRECT QUERY;".to_string(),
             }))
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_err());
         let request = ConnectResult { id };
         let result = conn.disconnect_db(Request::new(request)).await;
         assert!(result.is_ok());
