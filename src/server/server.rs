@@ -31,11 +31,13 @@ impl DatabaseConnection for Connection {
                 .get_client(&connect_res.id)
                 .map_err(|e| Status::internal(e))?;
 
-            // If the user is not on a temp branch, then we need to create a new one.
-            get_db_instance()
-                .map_err(|e| Status::internal(e))?
-                .delete_temp_branch_directory(user)
-                .map_err(|e| Status::internal(e))?;
+            // If the user is on a temp branch, then we need to delete it.
+            if user.is_on_temp_commit() {
+                get_db_instance()
+                    .map_err(|e| Status::internal(e))?
+                    .delete_temp_branch_directory(user)
+                    .map_err(|e| Status::internal(e))?;
+            }
         }
         self.remove_client(connect_res.id)
             .map_err(|e| Status::internal(e))?;
@@ -84,10 +86,12 @@ impl DatabaseConnection for Connection {
                     .map_err(|e| Status::internal(e))?;
 
                 // If the user is not on a temp branch, then we need to create a new one.
-                get_db_instance()
-                    .map_err(|e| Status::internal(e))?
-                    .create_temp_branch_directory(user)
-                    .map_err(|e| Status::internal(e))?;
+                if user.is_on_temp_commit() == false {
+                    get_db_instance()
+                        .map_err(|e| Status::internal(e))?
+                        .create_temp_branch_directory(user)
+                        .map_err(|e| Status::internal(e))?;
+                }
 
                 let resp = query::execute_update(&tree, user).map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_update_result(resp)))
