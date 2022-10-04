@@ -413,10 +413,20 @@ impl Database {
 
         // Get the temp branch path
         let temp_branch_path: String = self.get_temp_db_dir_path(user);
+
+        // Create the temp branch directory
+        // It only creates the parent directories, so we have to make the temp branch path a parent directory
+        std::fs::create_dir_all(
+            &format!("{}", 
+                    &temp_branch_path
+                )
+            )
+            .map_err(|e| "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
         
         // Copy the current branch directory <db_name>-<branch_name>
         // to the temp branch directory <db_name>-<branch_name>-<user_id>
-        let options = fs_extra::dir::CopyOptions::new();
+        let mut options = fs_extra::dir::CopyOptions::new();
+        options.content_only = true; // Only copy the files not the directory
         fs_extra::dir::copy(curr_branch_path, temp_branch_path, &options)
             .map_err(|e| "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
 
@@ -582,7 +592,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::{
-        executor::query::create_table,
+        executor::query::{create_table, select},
         fileio::header::Schema,
         util::{
             dbtype::{Column, Value},
@@ -911,6 +921,305 @@ mod tests {
 
         // Assert that the target node and the branch node are the same
         assert_eq!(target_node, branch_node);
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_temp_branch_dir() {
+        // Tests creating a temporary branch directory and makes sure that
+        // changes on main don't affect the temporary branch
+        let db_name = "test_create_temp_branch_dir".to_string();
+        let db_branch_name: String =
+            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
+        let db_base_path: String = Database::get_database_base_path().unwrap()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + db_name.clone().as_str();
+        let full_path_to_branch: String = db_base_path.clone()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + &db_branch_name.clone();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Make a user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        let mut table: Table = table_result.0;
+
+        // Insert some rows
+        let rows: Vec<Row> = vec![
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(20),
+            ],
+        ];
+        table.insert_rows(rows).unwrap();
+
+        // Create a temp branch
+         get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user).unwrap();
+
+        // Make sure that the user is on a temp branch
+        assert_eq!(user.is_on_temp_commit(), true);
+
+        // Now update the table on the main branch to make sure the temp branch is not affected
+        let rows2: Vec<Row> = vec![
+            vec![
+                Value::I32(4),
+                Value::String("Bob".to_string()),
+                Value::I32(50),
+            ],
+        ];
+        table.insert_rows(rows2).unwrap();
+
+
+        // Get the temp branch directory
+        let tmp_branch_dir: String = format!(
+                "{}{}{}", 
+                &full_path_to_branch.clone(),
+                &DB_NAME_BRANCH_SEPARATOR.to_string(),
+                &user.get_user_id()
+            );
+
+        // Make sure the temp branch directory exists
+        assert_eq!(
+            std::path::Path::new(&tmp_branch_dir).exists(),
+            true
+        );
+
+        // Select from the temp branch directory
+        let select_result: (Schema, Vec<Row>) = select(
+                vec!["T.id".to_string(), "T.name".to_string(), "T.age".to_string()], 
+                vec![("test_table".to_string(), "T".to_string())],
+                &get_db_instance().unwrap(), 
+                &user
+            ).unwrap();
+
+        // Make sure the select result is correct
+        assert_eq!(select_result.0, schema);
+        assert_eq!(select_result.1.len(), 3);
+
+        // Make sure each row of the select result is correct
+        assert_eq!(select_result.1[0].len(), 3);
+        assert_eq!(select_result.1[0][0], Value::I32(1));
+        assert_eq!(select_result.1[0][1], Value::String("John".to_string()));
+        assert_eq!(select_result.1[0][2], Value::I32(30));
+
+        assert_eq!(select_result.1[1].len(), 3);
+        assert_eq!(select_result.1[1][0], Value::I32(2));
+        assert_eq!(select_result.1[1][1], Value::String("Jane".to_string()));
+        assert_eq!(select_result.1[1][2], Value::I32(25));
+
+        assert_eq!(select_result.1[2].len(), 3);
+        assert_eq!(select_result.1[2][0], Value::I32(3));
+        assert_eq!(select_result.1[2][1], Value::String("Joe".to_string()));
+        assert_eq!(select_result.1[2][2], Value::I32(20));
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_temp_branch_dir2() {
+        // Tests creating a temporary branch directory and makes sure that
+        // changes on the temp branch don't affect the main branch
+        let db_name = "test_create_temp_branch_dir2".to_string();
+        let db_branch_name: String =
+            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
+        let db_base_path: String = Database::get_database_base_path().unwrap()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + db_name.clone().as_str();
+        let full_path_to_branch: String = db_base_path.clone()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + &db_branch_name.clone();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Make a user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        let mut table: Table = table_result.0;
+
+        // Insert some rows
+        let rows: Vec<Row> = vec![
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(20),
+            ],
+        ];
+        table.insert_rows(rows).unwrap();
+
+        // Create a temp branch
+         get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user).unwrap();
+
+        // Get the temp branch directory
+        let tmp_branch_dir: String = format!(
+                "{}{}{}", 
+                &full_path_to_branch.clone(),
+                &DB_NAME_BRANCH_SEPARATOR.to_string(),
+                &user.get_user_id()
+            );
+
+        // Make sure the temp branch directory exists
+        assert_eq!(
+            std::path::Path::new(&tmp_branch_dir).exists(),
+            true
+        );
+
+        // Make sure that the user is on a temp branch
+        assert_eq!(user.is_on_temp_commit(), true);
+
+        // Read in the table from the temporary branch
+        let mut table: Table = Table::new(
+            &get_db_instance().unwrap().get_current_working_branch_path(&user),
+            &"test_table".to_string(),
+            None
+        ).unwrap();
+
+        // Now update the table on the temp branch to make sure the main branch is not affected
+        let rows2: Vec<Row> = vec![
+            vec![
+                Value::I32(4),
+                Value::String("Bob".to_string()),
+                Value::I32(50),
+            ],
+        ];
+        table.insert_rows(rows2).unwrap();
+
+        // Select from the temp branch table
+        let select_result: (Schema, Vec<Row>) = select(
+                vec!["T.id".to_string(), "T.name".to_string(), "T.age".to_string()], 
+                vec![("test_table".to_string(), "T".to_string())],
+                &get_db_instance().unwrap(), 
+                &user
+            ).unwrap();
+
+        // Make sure the select result is correct
+        assert_eq!(select_result.0, schema);
+        assert_eq!(select_result.1.len(), 4);
+
+        // Make sure each row of the select result is correct
+        assert_eq!(select_result.1[0].len(), 3);
+        assert_eq!(select_result.1[0][0], Value::I32(1));
+        assert_eq!(select_result.1[0][1], Value::String("John".to_string()));
+        assert_eq!(select_result.1[0][2], Value::I32(30));
+
+        assert_eq!(select_result.1[1].len(), 3);
+        assert_eq!(select_result.1[1][0], Value::I32(2));
+        assert_eq!(select_result.1[1][1], Value::String("Jane".to_string()));
+        assert_eq!(select_result.1[1][2], Value::I32(25));
+
+        assert_eq!(select_result.1[2].len(), 3);
+        assert_eq!(select_result.1[2][0], Value::I32(3));
+        assert_eq!(select_result.1[2][1], Value::String("Joe".to_string()));
+        assert_eq!(select_result.1[2][2], Value::I32(20));
+
+        assert_eq!(select_result.1[3].len(), 3);
+        assert_eq!(select_result.1[3][0], Value::I32(4));
+        assert_eq!(select_result.1[3][1], Value::String("Bob".to_string()));
+        assert_eq!(select_result.1[3][2], Value::I32(50));
+
+        // Delete the temp branch directory
+        get_db_instance()
+            .unwrap()
+            .delete_temp_branch_directory(&mut user).unwrap();
+
+        // Make sure the temp branch directory no longer exists
+        assert_eq!(
+            std::path::Path::new(&tmp_branch_dir).exists(),
+            false
+        );
+
+        // Make sure that the user is no longer on a temp branch
+        assert_eq!(user.is_on_temp_commit(), false);
+
+        // Select from the main branch table
+        let select_result: (Schema, Vec<Row>) = select(
+            vec!["T.id".to_string(), "T.name".to_string(), "T.age".to_string()], 
+            vec![("test_table".to_string(), "T".to_string())],
+            &get_db_instance().unwrap(), 
+            &user
+        ).unwrap();
+
+        // Make sure the select result is correct
+        assert_eq!(select_result.0, schema);
+        assert_eq!(select_result.1.len(), 3);
+
+        // Make sure each row of the select result is correct
+        assert_eq!(select_result.1[0].len(), 3);
+        assert_eq!(select_result.1[0][0], Value::I32(1));
+        assert_eq!(select_result.1[0][1], Value::String("John".to_string()));
+        assert_eq!(select_result.1[0][2], Value::I32(30));
+
+        assert_eq!(select_result.1[1].len(), 3);
+        assert_eq!(select_result.1[1][0], Value::I32(2));
+        assert_eq!(select_result.1[1][1], Value::String("Jane".to_string()));
+        assert_eq!(select_result.1[1][2], Value::I32(25));
+
+        assert_eq!(select_result.1[2].len(), 3);
+        assert_eq!(select_result.1[2][0], Value::I32(3));
+        assert_eq!(select_result.1[2][1], Value::String("Joe".to_string()));
+        assert_eq!(select_result.1[2][2], Value::I32(20));
 
         // Delete the database
         delete_db_instance().unwrap();
