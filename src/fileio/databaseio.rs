@@ -239,13 +239,11 @@ impl Database {
         let branch_path: String;
         if user.is_on_temp_commit() {
             branch_path = self.get_temp_db_dir_path(user);
-        }
-        else {
+        } else {
             branch_path = self.get_current_branch_path(user);
         }
         branch_path
     }
-
 
     /// Returns the database's current branch path for a user: <path>/<db_name>/<db_name>-<branch_name>
     pub fn get_current_branch_path(&self, user: &User) -> String {
@@ -417,19 +415,17 @@ impl Database {
 
         // Create the temp branch directory
         // It only creates the parent directories, so we have to make the temp branch path a parent directory
-        std::fs::create_dir_all(
-            &format!("{}", 
-                    &temp_branch_path
-                )
-            )
-            .map_err(|e| "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
-        
+        std::fs::create_dir_all(&format!("{}", &temp_branch_path)).map_err(|e| {
+            "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string()
+        })?;
+
         // Copy the current branch directory <db_name>-<branch_name>
         // to the temp branch directory <db_name>-<branch_name>-<user_id>
         let mut options = fs_extra::dir::CopyOptions::new();
         options.content_only = true; // Only copy the files not the directory
-        fs_extra::dir::copy(curr_branch_path, temp_branch_path, &options)
-            .map_err(|e| "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
+        fs_extra::dir::copy(curr_branch_path, temp_branch_path, &options).map_err(|e| {
+            "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string()
+        })?;
 
         // Update the user to indicate that they are on the temp branch
         user.set_is_on_temp_commit(true);
@@ -445,10 +441,11 @@ impl Database {
 
         // Get the temp branch path
         let temp_branch_path: String = self.get_temp_db_dir_path(user);
-        
+
         // Remove the temp branch directory <db_name>-<branch_name>-<user_id>
-        std::fs::remove_dir_all(temp_branch_path)
-            .map_err(|e| "Database::delete_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
+        std::fs::remove_dir_all(temp_branch_path).map_err(|e| {
+            "Database::delete_temp_branch_directory() Error: ".to_owned() + &e.to_string()
+        })?;
 
         // Update the user to indicate that they are on the temp branch
         user.set_is_on_temp_commit(false);
@@ -503,7 +500,7 @@ impl Database {
     fn get_temp_db_dir_path(&self, user: &User) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-        
+
         // Get the current branch path
         let curr_branch_path: String = self.get_current_branch_path(user);
 
@@ -986,45 +983,45 @@ mod tests {
         table.insert_rows(rows).unwrap();
 
         // Create a temp branch
-         get_db_instance()
+        get_db_instance()
             .unwrap()
-            .create_temp_branch_directory(&mut user).unwrap();
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
 
         // Make sure that the user is on a temp branch
         assert_eq!(user.is_on_temp_commit(), true);
 
         // Now update the table on the main branch to make sure the temp branch is not affected
-        let rows2: Vec<Row> = vec![
-            vec![
-                Value::I32(4),
-                Value::String("Bob".to_string()),
-                Value::I32(50),
-            ],
-        ];
+        let rows2: Vec<Row> = vec![vec![
+            Value::I32(4),
+            Value::String("Bob".to_string()),
+            Value::I32(50),
+        ]];
         table.insert_rows(rows2).unwrap();
-
 
         // Get the temp branch directory
         let tmp_branch_dir: String = format!(
-                "{}{}{}", 
-                &full_path_to_branch.clone(),
-                &DB_NAME_BRANCH_SEPARATOR.to_string(),
-                &user.get_user_id()
-            );
+            "{}{}{}",
+            &full_path_to_branch.clone(),
+            &DB_NAME_BRANCH_SEPARATOR.to_string(),
+            &user.get_user_id()
+        );
 
         // Make sure the temp branch directory exists
-        assert_eq!(
-            std::path::Path::new(&tmp_branch_dir).exists(),
-            true
-        );
+        assert_eq!(std::path::Path::new(&tmp_branch_dir).exists(), true);
 
         // Select from the temp branch directory
         let select_result: (Schema, Vec<Row>) = select(
-                vec!["T.id".to_string(), "T.name".to_string(), "T.age".to_string()], 
-                vec![("test_table".to_string(), "T".to_string())],
-                &get_db_instance().unwrap(), 
-                &user
-            ).unwrap();
+            vec![
+                "T.id".to_string(),
+                "T.name".to_string(),
+                "T.age".to_string(),
+            ],
+            vec![("test_table".to_string(), "T".to_string())],
+            &get_db_instance().unwrap(),
+            &user,
+        )
+        .unwrap();
 
         // Make sure the select result is correct
         assert_eq!(select_result.0, schema);
@@ -1109,51 +1106,55 @@ mod tests {
         table.insert_rows(rows).unwrap();
 
         // Create a temp branch
-         get_db_instance()
+        get_db_instance()
             .unwrap()
-            .create_temp_branch_directory(&mut user).unwrap();
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
 
         // Get the temp branch directory
         let tmp_branch_dir: String = format!(
-                "{}{}{}", 
-                &full_path_to_branch.clone(),
-                &DB_NAME_BRANCH_SEPARATOR.to_string(),
-                &user.get_user_id()
-            );
+            "{}{}{}",
+            &full_path_to_branch.clone(),
+            &DB_NAME_BRANCH_SEPARATOR.to_string(),
+            &user.get_user_id()
+        );
 
         // Make sure the temp branch directory exists
-        assert_eq!(
-            std::path::Path::new(&tmp_branch_dir).exists(),
-            true
-        );
+        assert_eq!(std::path::Path::new(&tmp_branch_dir).exists(), true);
 
         // Make sure that the user is on a temp branch
         assert_eq!(user.is_on_temp_commit(), true);
 
         // Read in the table from the temporary branch
         let mut table: Table = Table::new(
-            &get_db_instance().unwrap().get_current_working_branch_path(&user),
+            &get_db_instance()
+                .unwrap()
+                .get_current_working_branch_path(&user),
             &"test_table".to_string(),
-            None
-        ).unwrap();
+            None,
+        )
+        .unwrap();
 
         // Now update the table on the temp branch to make sure the main branch is not affected
-        let rows2: Vec<Row> = vec![
-            vec![
-                Value::I32(4),
-                Value::String("Bob".to_string()),
-                Value::I32(50),
-            ],
-        ];
+        let rows2: Vec<Row> = vec![vec![
+            Value::I32(4),
+            Value::String("Bob".to_string()),
+            Value::I32(50),
+        ]];
         table.insert_rows(rows2).unwrap();
 
         // Select from the temp branch table
         let select_result: (Schema, Vec<Row>) = select(
-                vec!["T.id".to_string(), "T.name".to_string(), "T.age".to_string()], 
-                vec![("test_table".to_string(), "T".to_string())],
-                &get_db_instance().unwrap(), 
-                &user
-            ).unwrap();
+            vec![
+                "T.id".to_string(),
+                "T.name".to_string(),
+                "T.age".to_string(),
+            ],
+            vec![("test_table".to_string(), "T".to_string())],
+            &get_db_instance().unwrap(),
+            &user,
+        )
+        .unwrap();
 
         // Make sure the select result is correct
         assert_eq!(select_result.0, schema);
@@ -1183,24 +1184,27 @@ mod tests {
         // Delete the temp branch directory
         get_db_instance()
             .unwrap()
-            .delete_temp_branch_directory(&mut user).unwrap();
+            .delete_temp_branch_directory(&mut user)
+            .unwrap();
 
         // Make sure the temp branch directory no longer exists
-        assert_eq!(
-            std::path::Path::new(&tmp_branch_dir).exists(),
-            false
-        );
+        assert_eq!(std::path::Path::new(&tmp_branch_dir).exists(), false);
 
         // Make sure that the user is no longer on a temp branch
         assert_eq!(user.is_on_temp_commit(), false);
 
         // Select from the main branch table
         let select_result: (Schema, Vec<Row>) = select(
-            vec!["T.id".to_string(), "T.name".to_string(), "T.age".to_string()], 
+            vec![
+                "T.id".to_string(),
+                "T.name".to_string(),
+                "T.age".to_string(),
+            ],
             vec![("test_table".to_string(), "T".to_string())],
-            &get_db_instance().unwrap(), 
-            &user
-        ).unwrap();
+            &get_db_instance().unwrap(),
+            &user,
+        )
+        .unwrap();
 
         // Make sure the select result is correct
         assert_eq!(select_result.0, schema);

@@ -3,20 +3,20 @@ use crate::{fileio::databaseio::*, version_control::diff::Diff};
 #[derive(Debug, Clone)]
 pub struct User {
     user_id: String,         // The id of the user
-    branch_name: String,     // The name of the branch that the user is currently on (DOES NOT INCLUDE TEMP BRANCH SUFFIX)
+    branch_name: String, // The name of the branch that the user is currently on (DOES NOT INCLUDE TEMP BRANCH SUFFIX)
     is_on_temp_commit: bool, // Whether the user is on a temporary commit. (uncommitted changes)
-                             // The temporary commit is the folder <db_name>-<branch_name>-<user_id>
-    diffs: Vec<Diff>,        // The changes that the user has made that are in an uncommitted state
+    // The temporary commit is the folder <db_name>-<branch_name>-<user_id>
+    diffs: Vec<Diff>, // The changes that the user has made that are in an uncommitted state
 }
 
 impl User {
     /// Create a new user with the given id, which defaults to the main branch
     pub fn new(user_id: String) -> Self {
         Self {
-            user_id: user_id,                         
+            user_id: user_id,
             branch_name: MAIN_BRANCH_NAME.to_string(),
-            is_on_temp_commit: false,                 
-            diffs: Vec::new(),                        
+            is_on_temp_commit: false,
+            diffs: Vec::new(),
         }
     }
 
