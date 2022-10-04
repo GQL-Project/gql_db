@@ -41,6 +41,12 @@ pub struct Database {
                      // TODO: maybe add permissions here
 }
 
+//Tuple List struct is used for the switch_branch logic
+pub struct TupleList {
+    branch_name: String, // The name of the branch the commit belongs to
+    commit_hash: String, // The commit hash for the current commit in the branch
+}
+
 static mut DATABASE_INSTANCE: Option<Database> = None;
 
 pub fn get_db_instance() -> Result<&'static mut Database, String> {
@@ -229,12 +235,11 @@ impl Database {
         Ok((node, commit))
     }
 
-    /// Returns the database's current branch path for a user: <path>/<db_name>/<branch_name>
-    pub fn get_current_branch_path(&self, user: &User) -> String {
+    /// Returns the path to the argument branch
+    pub fn get_branch_path_from_name(&self, branch_name: &String) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        let branch_name: String = user.get_current_branch_name();
         let path: String = format!(
             "{}{}{}{}{}",
             self.db_path,
@@ -244,6 +249,15 @@ impl Database {
             branch_name
         );
         path
+    }
+
+    /// Returns the database's current branch path for a user: <path>/<db_name>/<branch_name>
+    pub fn get_current_branch_path(&self, user: &User) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let branch_name: String = user.get_current_branch_name();
+        self.get_branch_path_from_name(&branch_name)
     }
 
     /// Returns the database's current branch HEAD
@@ -379,6 +393,48 @@ impl Database {
     pub fn switch_branch(&mut self, _branch_name: String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        //Checking if the argument branch exists
+        match self.branch_heads.get_branch_head(&_branch_name) {
+            Ok(_) => {} // Do nothing, we expect the user passes a branch that exists
+            Err(_) => {
+                return Err("Database::switch_branch() Error: Branch doesn't exist".to_owned());
+            } 
+        }
+
+        //Checking user didn't pass the same branch in
+        let user_curr_branch = user.get_current_branch_name();
+        if (user_curr_branch == _branch_name) {
+            return Err("Database::switch_branch() Error: User is already on this branch".to_owned());
+        }
+
+        //let user_curr_branch_path = self.get_current_branch_path(&user);
+        let new_branch_path = self.get_branch_path_from_name(&_branch_name);
+        let branch_dir_exists = Path::new(&new_branch_path).is_dir();
+
+        //If the branch directory doesn't exist, create it
+        if (!branch_dir_exists) {
+            std::fs::create_dir_all(&new_branch_path)
+                .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
+        }
+
+        //Checking if the branch heads exist just to be doubly sure
+        let curr_branch_head_check = self.branch_heads.get_branch_head(&user_curr_branch);
+        match curr_branch_head_check {
+            Ok(curr_branch_head) => {},
+            Err(s) => {
+                return Err("Database::switch_branch() Error: Current branch head is empty".to_owned());
+            }
+        }
+        let new_branch_head_check = self.branch_heads.get_branch_head(&_branch_name);
+        match new_branch_head_check {
+            Ok(new_branch_head) => {},
+            Err(s) => {
+                return Err("Database::switch_branch() Error: New branch head is empty".to_owned());
+            }
+        }
+
+        //Finding common ancestor for the branch heads
 
         // TODO: implementation
         Ok(())
