@@ -170,4 +170,75 @@ mod tests {
         let result = conn.disconnect_db(Request::new(request)).await;
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_update() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "ABCD INCORRECT QUERY;".to_string(),
+            }))
+            .await;
+        assert!(result.is_err());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_update_success() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "CREATE TABLE test (id INT);".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_query_success() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "CREATE TABLE test (id INT);".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "INSERT INTO test VALUES (88);".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let result = conn
+            .run_query(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "SELECT * FROM test;".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
 }
