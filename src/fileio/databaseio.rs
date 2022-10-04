@@ -229,7 +229,25 @@ impl Database {
         Ok((node, commit))
     }
 
-    /// Returns the database's current branch path for a user: <path>/<db_name>/<branch_name>
+    /// Returns the user's current working branch directory
+    /// It will return the temporary branch path if the user is on an a temporary branch (uncommitted changes).
+    /// It will return the normal branch path if the user does not have any uncommitted changes.
+    pub fn get_current_working_branch_path(&self, user: &User) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let branch_path: String;
+        if user.is_on_temp_commit() {
+            branch_path = self.get_temp_db_dir_path(user);
+        }
+        else {
+            branch_path = self.get_current_branch_path(user);
+        }
+        branch_path
+    }
+
+
+    /// Returns the database's current branch path for a user: <path>/<db_name>/<db_name>-<branch_name>
     pub fn get_current_branch_path(&self, user: &User) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -384,6 +402,49 @@ impl Database {
         Ok(())
     }
 
+    /// Create a temporary directory for the uncommited queries to be executed against
+    /// It also updates the user to indicate that they are on the current temp branch
+    pub fn create_temp_branch_directory(&mut self, user: &mut User) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Get the current branch path
+        let curr_branch_path: String = self.get_current_branch_path(user);
+
+        // Get the temp branch path
+        let temp_branch_path: String = self.get_temp_db_dir_path(user);
+        
+        // Copy the current branch directory <db_name>-<branch_name>
+        // to the temp branch directory <db_name>-<branch_name>-<user_id>
+        let options = fs_extra::dir::CopyOptions::new();
+        fs_extra::dir::copy(curr_branch_path, temp_branch_path, &options)
+            .map_err(|e| "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
+
+        // Update the user to indicate that they are on the temp branch
+        user.set_is_on_temp_commit(true);
+
+        Ok(())
+    }
+
+    /// Create a temporary directory for the uncommited queries to be executed against
+    /// It also updates the user to indicate that they are on the current temp branch
+    pub fn delete_temp_branch_directory(&mut self, user: &mut User) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Get the temp branch path
+        let temp_branch_path: String = self.get_temp_db_dir_path(user);
+        
+        // Remove the temp branch directory <db_name>-<branch_name>-<user_id>
+        std::fs::remove_dir_all(temp_branch_path)
+            .map_err(|e| "Database::delete_temp_branch_directory() Error: ".to_owned() + &e.to_string())?;
+
+        // Update the user to indicate that they are on the temp branch
+        user.set_is_on_temp_commit(false);
+
+        Ok(())
+    }
+
     /*********************************************************************************************/
     /*                                       Private Methods                                     */
     /*********************************************************************************************/
@@ -425,6 +486,19 @@ impl Database {
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         self.db_path.clone()
+    }
+
+    /// Returns the temporary database's path for a user: <path>/<db_name>/<db_name>-<branch_name>-<user_id>
+    fn get_temp_db_dir_path(&self, user: &User) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+        
+        // Get the current branch path
+        let curr_branch_path: String = self.get_current_branch_path(user);
+
+        // Append the user id to the current branch path
+        let temp_branch_path: String = format!("{}-{}", curr_branch_path, user.get_user_id());
+        temp_branch_path
     }
 
     /// Returns the path to the database's deltas file: <path>/<db_name>/deltas.gql

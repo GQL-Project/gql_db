@@ -3,6 +3,7 @@ use db_connection::*;
 use tonic::{Request, Response, Status};
 
 use crate::executor::query;
+use crate::fileio::databaseio::get_db_instance;
 use crate::parser::parser;
 use crate::server::connection::Connection;
 use crate::user::userdata::*;
@@ -21,7 +22,22 @@ impl DatabaseConnection for Connection {
     }
 
     async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<()>, Status> {
-        self.remove_client(request.into_inner().id)
+        let connect_res: ConnectResult = request.into_inner();
+
+        // Delete the temp branch directory in it's own scope to prevent issues when removing the client
+        {
+            // Get the user that is disconnecting
+            let user: &mut User = self
+                .get_client(&connect_res.id)
+                .map_err(|e| Status::internal(e))?;
+
+            // If the user is not on a temp branch, then we need to create a new one.
+            get_db_instance()
+                .map_err(|e| Status::internal(e))?
+                .delete_temp_branch_directory(user)
+                .map_err(|e| Status::internal(e))?;
+        }
+        self.remove_client(connect_res.id)
             .map_err(|e| Status::internal(e))?;
         Ok(Response::new(()))
     }
@@ -65,6 +81,12 @@ impl DatabaseConnection for Connection {
                 // Get the user that is running the query
                 let mut user: &mut User = self
                     .get_client(&request.id)
+                    .map_err(|e| Status::internal(e))?;
+
+                // If the user is not on a temp branch, then we need to create a new one.
+                get_db_instance()
+                    .map_err(|e| Status::internal(e))?
+                    .create_temp_branch_directory(user)
                     .map_err(|e| Status::internal(e))?;
 
                 let resp = query::execute_update(&tree, user).map_err(|e| Status::internal(e))?;

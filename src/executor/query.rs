@@ -138,7 +138,7 @@ pub fn create_table(
     database: &Database,
     user: &mut User,
 ) -> Result<(Table, TableCreateDiff), String> {
-    let table_dir: String = database.get_current_branch_path(&user);
+    let table_dir: String = database.get_current_working_branch_path(&user);
 
     // Create a table file and return it
     let results = create_table_in_dir(table_name, schema, &table_dir)?;
@@ -153,7 +153,7 @@ pub fn drop_table(
     database: &Database,
     user: &mut User,
 ) -> Result<TableRemoveDiff, String> {
-    let table_dir: String = database.get_current_branch_path(user);
+    let table_dir: String = database.get_current_working_branch_path(user);
 
     // Delete the table file and return it
     let results = delete_table_in_dir(table_name, &table_dir)?;
@@ -184,8 +184,8 @@ pub fn select(
 
     // Read in the tables into a vector of tuples where they are represented as (table, alias)
     let mut tables: Vec<(Table, String)> = Vec::new();
+    let table_dir: String = database.get_current_working_branch_path(user);
     for (table_name, alias) in table_names {
-        let table_dir: String = database.get_current_branch_path(user);
         tables.push((Table::new(&table_dir, &table_name, None)?, alias.clone()));
     }
 
@@ -291,7 +291,7 @@ pub fn insert(
     user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
-    let table_dir: String = database.get_current_branch_path(user);
+    let table_dir: String = database.get_current_working_branch_path(user);
     let mut table = Table::new(&table_dir, &table_name, None)?;
     // Ensure that the number of values to be inserted matches the number of columns in the table
     let values = values
