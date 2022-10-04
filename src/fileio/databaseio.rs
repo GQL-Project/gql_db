@@ -8,6 +8,7 @@ use crate::version_control::{
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::env;
+use std::fmt::format;
 use std::path::Path;
 
 // Branch Constants
@@ -199,6 +200,7 @@ impl Database {
         commit_msg: &String,
         command: &String,
         user: &User,
+        new_branch_name: Option<String>, // If this is Some, then a new branch is created
     ) -> Result<(BranchNode, Commit), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -208,11 +210,18 @@ impl Database {
             command.to_string(),
             user.get_diffs(),
         )?;
+
+        // Get the branch name for the new branch node
+        let branch_name = match new_branch_name {
+            Some(name) => name,
+            None => user.get_current_branch_name(),
+        };
+
         if self.branch_heads.get_all_branch_heads()?.len() == 0 {
             let node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 None,
-                &user.get_current_branch_name(),
+                &branch_name,
                 &commit.hash,
             )?;
             return Ok((node, commit));
@@ -223,7 +232,7 @@ impl Database {
         let node = self.branches.create_branch_node(
             &mut self.branch_heads,
             Some(&prev_node),
-            &user.get_current_branch_name(),
+            &branch_name,
             &commit.hash,
         )?;
         Ok((node, commit))
@@ -358,17 +367,25 @@ impl Database {
     /// It returns true on success, and false on failure.
     pub fn create_branch(&mut self, branch_name: &String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+        {
+            let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        // Check if the branch name already exists. We want to verify that it doesn't exist already.
-        match self.branch_heads.get_branch_head(branch_name) {
-            Ok(_) => {
-                return Err("Database::create_branch() Error: Branch already exists".to_owned());
+            // Check if the branch name already exists. We want to verify that it doesn't exist already.
+            match self.branch_heads.get_branch_head(branch_name) {
+                Ok(_) => {
+                    return Err("Database::create_branch() Error: Branch already exists".to_owned());
+                }
+                Err(_) => {} // Do nothing, we expect this error
             }
-            Err(_) => {} // Do nothing, we expect this error
+            //TODO: Ryan User Story 18
         }
-
-        //TODO: Ryan User Story 18
+        
+        user.set_diffs(&Vec::new());
+        // Create a commit for the new branch
+        self.create_commit_and_node(&format!("Created Branch {}", branch_name), &format!("GQL branch {}", branch_name), user, Some(branch_name.clone()))?;
+        
+        user.set_current_branch_name(branch_name.clone());
+        //clear user diffs
 
         Ok(())
     }
@@ -514,7 +531,7 @@ mod tests {
             dbtype::{Column, Value},
             row::Row,
         },
-        version_control,
+        version_control::{self, branch_heads},
     };
     use serial_test::serial;
 
@@ -798,6 +815,7 @@ mod tests {
                 &"commit_msg".to_string(),
                 &"create table; insert rows".to_string(),
                 &user,
+                None
             )
             .unwrap();
 
@@ -840,5 +858,155 @@ mod tests {
 
         // Delete the database
         delete_db_instance().unwrap();
+    }
+    #[test]
+    fn test_create_new_branch() {
+        // This tests creating a new branch
+        let db_name = "test_create_new_branch".to_string();
+        let db_branch_name: String =
+            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
+        let db_base_path: String = Database::get_database_base_path().unwrap()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + db_name.clone().as_str();
+        let full_path_to_branch: String = db_base_path.clone()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + &db_branch_name.clone();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        let mut table = table_result.0;
+
+        let rows: Vec<Row> = vec![
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(20),
+            ],
+        ];
+
+       
+        table.insert_rows(rows).unwrap();
+
+        get_db_instance().unwrap().create_branch(&"new branch".to_string(), &mut user).unwrap();
+        // Read the branch heads file and make sure the new branch is there
+        let branch_heads_file = get_db_instance()
+            .unwrap()
+            .get_branch_heads_file_mut();
+            let branch_head: BranchHead = branch_heads_file.get_branch_head(&"new branch".to_string()).unwrap();
+            //make sure the branch_heads contains the new bran
+            assert_eq!(&branch_head.branch_name, "new branch");
+            delete_db_instance().unwrap();
+    }
+    #[test]
+    fn test_create_multiple_branches(){
+        // This tests creating multiple branches
+        let db_name = "test_create_multiple_branches".to_string();
+        let db_branch_name: String =
+            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
+        let db_base_path: String = Database::get_database_base_path().unwrap()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + db_name.clone().as_str();
+        let full_path_to_branch: String = db_base_path.clone()
+            + std::path::MAIN_SEPARATOR.to_string().as_str()
+            + &db_branch_name.clone();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        let mut table = table_result.0;
+
+        let rows: Vec<Row> = vec![
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(30),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(25),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(20),
+            ],
+        ];
+
+       
+        table.insert_rows(rows).unwrap();
+
+        let first_node_results = get_db_instance().unwrap().create_commit_and_node(&"test message".to_string(), &"command".to_string(), &user, None).unwrap();
+        get_db_instance().unwrap().create_branch(&"new branch".to_string(), &mut user).unwrap();
+        
+        // Read the branch heads file and make sure the new branch is there
+        let branch_heads_file = get_db_instance()
+            .unwrap()
+            .get_branch_heads_file_mut();
+            let branch_head: BranchHead = branch_heads_file.get_branch_head(&"new branch".to_string()).unwrap();
+            assert_eq!(&branch_head.branch_name, "new branch");
+            assert_eq!(user.get_current_branch_name(), "new branch");
+            let branches_file =  get_db_instance().unwrap().get_branch_file_mut();
+            let branch_node = branch_heads_file.get_branch_node_from_head(&"new branch".to_string(), &branches_file).unwrap();
+            let first_node: Option<BranchNode> = branches_file.get_prev_branch_node(&branch_node).unwrap();
+            
+            assert_eq!(first_node.is_some(), true);
+            let first_node_val: BranchNode = first_node.unwrap();
+            
+            assert_eq!(first_node_val.branch_name, MAIN_BRANCH_NAME.to_string());
+            assert_eq!(first_node_val.commit_hash, first_node_results.1.hash);
+            assert_eq!(first_node_val.is_head, true);
+            assert_eq!(branch_node.is_head, true);
+            assert_eq!(branch_node.branch_name, "new branch".to_string());
+            let main_branch_node = branch_heads_file.get_branch_node_from_head(&MAIN_BRANCH_NAME.to_string(), &branches_file).unwrap();
+            assert_eq!(first_node_val.branch_name, main_branch_node.branch_name);
+            assert_eq!(first_node_val.commit_hash, main_branch_node.commit_hash);
+            assert_eq!(first_node_val.is_head, main_branch_node.is_head);
+            delete_db_instance().unwrap();
     }
 }

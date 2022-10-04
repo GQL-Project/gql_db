@@ -27,6 +27,10 @@ impl User {
         self.branch_name.clone()
     }
 
+    pub fn set_current_branch_name(&mut self, branch_name: String) {
+        self.branch_name = branch_name;
+    }
+
     /// Get the list of diffs that the user has made
     pub fn get_diffs(&self) -> Vec<Diff> {
         self.diffs.clone()
