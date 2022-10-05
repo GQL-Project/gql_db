@@ -1,10 +1,9 @@
 use super::tableio::*;
-use crate::user::userdata::*;
-use crate::version_control::branches::BranchNode;
+use crate::user::userdata::{*, self};
 use crate::version_control::commit::Commit;
 use crate::version_control::diff::*;
 use crate::version_control::{
-    branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
+    branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff,
 };
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
@@ -148,8 +147,6 @@ impl Database {
         // Create a directory for the main branch database.
         std::fs::create_dir(&main_branch_path)
             .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
-
-        // TODO: construct the main branch database from the diffs file
 
         Ok(Database {
             db_path: db_path,
@@ -490,33 +487,57 @@ impl Database {
         }
     }
 
-    /// Finds the diffs between node1 and node2 where node1 is the older node
+    /// Finds the diffs between node1 and node2 where node1 is the older node (closer to the origin).
+    /// If node1 is None, it returns all diffs between the origin and node2.
     /// Returns a vector of diffs where the older diffs are first
-    fn get_diffs_between_nodes(&self, node1: &BranchNode, node2: &BranchNode) -> Result<Vec<Diff>, String> {
+    fn get_diffs_between_nodes(&self, node1: Option<&BranchNode>, node2: &BranchNode) -> Result<Vec<Diff>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         let mut diffs: Vec<Vec<Diff>> = Vec::new();
 
-        // Loop from node2 back to node1
-        let mut curr_node: Option<BranchNode> = Some(node2.clone());
-        loop {
-            match curr_node {
-                Some(curr_node_value) => {
-                    if curr_node_value.commit_hash == node1.commit_hash {
-                        // We have reached node1, so break
-                        break;
-                    }
-                    // Append the diffs of the current node to the diffs vector
-                    diffs.push(self.commit_file.fetch_commit(&curr_node_value.commit_hash)?.diffs);
+        // Check if node1 is Some or None
+        match node1 {
+            // Loop from node2 back to node1
+            Some(node1) => {
+                let mut curr_node: Option<BranchNode> = Some(node2.clone());
+                loop {
+                    match curr_node {
+                        Some(curr_node_value) => {
+                            if curr_node_value.commit_hash == node1.commit_hash {
+                                // We have reached node1, so break
+                                break;
+                            }
+                            // Append the diffs of the current node to the diffs vector
+                            diffs.push(self.commit_file.fetch_commit(&curr_node_value.commit_hash)?.diffs);
 
-                    curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
-                },
-                None => {
-                    return Err("There is no common ancestor".to_string());
+                            curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
+                        },
+                        None => {
+                            return Err("There is no common ancestor".to_string());
+                        }
+                    }
+                }
+            },
+            // Loop from node2 back to origin
+            None => {
+                let mut curr_node: Option<BranchNode> = Some(node2.clone());
+                loop {
+                    match curr_node {
+                        Some(curr_node_value) => {
+                            // Append the diffs of the current node to the diffs vector
+                            diffs.push(self.commit_file.fetch_commit(&curr_node_value.commit_hash)?.diffs);
+
+                            curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
+                        },
+                        None => {
+                            break;
+                        }
+                    }
                 }
             }
         }
+
         // Now diffs contain all the diffs between node1 and node2
         diffs.reverse();
 
@@ -587,15 +608,30 @@ impl Database {
         ).map_err(|e| "Database::create_branch() Error: ".to_owned() + &e.to_string())?;
 
         // 3. Find the common ancestor between the main branch and the new branch
-        let node1: BranchNode = self.branch_heads.get_branch_node_from_head(&MAIN_BRANCH_NAME.to_string(), &self.branches)?;
+        // Get the node for the new branch's HEAD
         let node2: BranchNode = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
+        // Get the node for the main branch's HEAD
+        let node1: BranchNode = match self.branch_heads.get_branch_node_from_head(&MAIN_BRANCH_NAME.to_string(), &self.branches) {
+            Ok(main_branch_head) => {
+                // The main branch does exist
+                main_branch_head
+            },
+            Err(e) => {
+                // We are trying to create a new branch, but the main branch does not exist. 
+                // This is still OK. We just have to apply the diffs between the origin and the new branch's HEAD.
+                let diffs_from_origin: Vec<Diff> = self.get_diffs_between_nodes(None, &node2)?;
+                construct_tables_from_diffs(&new_branch_path, &diffs_from_origin)?;
+
+                return Ok(());
+            }
+        };
         let common_ancestor: BranchNode = self.find_common_ancestor(&node1, &node2)?;
 
         // 4. Collect the diffs between the common ancestor and the main branch HEAD
-        let diffs_to_main = self.get_diffs_between_nodes(&common_ancestor, &node1)?;
+        let diffs_to_main = self.get_diffs_between_nodes(Some(&common_ancestor), &node1)?;
 
         // 5. Collect the diffs between the common ancestor and the new branch HEAD
-        let diffs_to_new_branch = self.get_diffs_between_nodes(&common_ancestor, &node2)?;
+        let diffs_to_new_branch = self.get_diffs_between_nodes(Some(&common_ancestor), &node2)?;
         
         // 6. Revert the diffs from the main branch HEAD to the new branch directory
         revert_tables_from_diffs(&new_branch_path,  &diffs_to_main)?;
@@ -1077,6 +1113,7 @@ mod tests {
         // Delete the database
         delete_db_instance().unwrap();
     }
+
     #[test]
     #[serial]
     fn test_create_new_branch() {
@@ -1230,4 +1267,9 @@ mod tests {
             delete_db_instance().unwrap();
     }
    
+    #[test]
+    #[serial]
+    fn test_create_branch() {
+
+    }
 }

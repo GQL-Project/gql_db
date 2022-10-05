@@ -1,5 +1,7 @@
 use crate::{fileio::databaseio::*, version_control::diff::Diff};
 
+pub const SYSTEM_USER_ID: &str = "system";
+
 #[derive(Debug, Clone)]
 pub struct User {
     user_id: String,     // The id of the user
