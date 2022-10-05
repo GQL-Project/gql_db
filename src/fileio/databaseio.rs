@@ -90,8 +90,8 @@ impl Database {
     pub fn new(database_name: String) -> Result<Database, String> {
         let db_base_path = Database::get_database_base_path()?;
         // If the databases base path './databases/' doesn't exist, create it
-        if !Path::new(&db_base_path.clone()).exists() {
-            std::fs::create_dir(&db_base_path.clone())
+        if !Path::new(&db_base_path).exists() {
+            std::fs::create_dir(&db_base_path)
                 .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
         }
 
@@ -100,7 +100,7 @@ impl Database {
         db_path.push(std::path::MAIN_SEPARATOR);
         db_path.push_str(database_name.as_str());
         // If the database already exists, return an error
-        if Path::new(&db_path.clone()).exists() {
+        if Path::new(&db_path).exists() {
             return Err("Database::new() Error: Database already exists".to_owned());
         }
         std::fs::create_dir(&db_path)

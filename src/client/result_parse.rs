@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use chrono::NaiveDateTime;
 use prost_types::Timestamp;
 use tabled::{builder::Builder, Style};
@@ -25,7 +23,7 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
                 Value::String(s) => row_value.push(s),
                 Value::I32(i) => row_value.push(i.to_string()),
                 Value::Float(f) => row_value.push(f.to_string()),
-                Value::Timestamp(t) => row_value.push(),
+                Value::Timestamp(t) => row_value.push(from_timestamp(&t)),
                 Value::I64(i) => row_value.push(i.to_string()),
                 Value::Double(d) => row_value.push(d.to_string()),
                 Value::Bool(b) => row_value.push(b.to_string()),
