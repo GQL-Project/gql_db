@@ -173,8 +173,10 @@ mod tests {
     use super::*;
     use crate::util::dbtype::*;
     use file_diff::diff;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_create_table_diff() {
         let dir_to_create_in: String = "test_create_table".to_string();
         let dir_to_build_in: String = "test_create_table_diff".to_string();
@@ -210,6 +212,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_table_and_inserts_diff() {
         let dir_to_create_in: String = "test_create_table_and_inserts".to_string();
         let dir_to_build_in: String = "test_create_table_and_inserts_diff".to_string();
@@ -286,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_update_diff() {
         let dir_to_create_in: String = "test_update".to_string();
         let dir_to_build_in: String = "test_update_diff".to_string();
@@ -367,6 +371,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_diffs_on_existing_tables() {
         let dir_to_create_in: String = "test_diffs_on_existing_tables".to_string();
         let dir_to_build_in: String = "test_diffs_on_existing_tables_diff".to_string();
@@ -539,6 +544,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_revert_diffs_table() {
         //Setting up test table and directory
         let dir_to_create_in: String = "test_revert_diffs_on_table".to_string();
@@ -631,6 +637,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_reverting_all_diffs() {
         //Setting up test table and directory
         let dir_to_create_in: String = "test_dir_create_tables".to_string();
@@ -857,6 +864,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_reverting_every_diffs() {
         //Setting up test table and directory
         let dir_to_create_in: String = "test_dir_reverting_every_diffs".to_string();

@@ -782,7 +782,7 @@ mod tests {
             dbtype::{Column, Value},
             row::Row,
         },
-        version_control::{self},
+        version_control::{self, branch_heads},
     };
     use serial_test::serial;
 
@@ -1167,6 +1167,7 @@ mod tests {
             assert_eq!(&branch_head.branch_name, "new branch");
             delete_db_instance().unwrap();
     }
+    
     #[test]
     #[serial]
     fn test_create_multiple_branches(){
@@ -1249,7 +1250,8 @@ mod tests {
     #[serial]
     fn test_create_branch() {
         // This will test creating a branch off of the main branch and then creating a commit on the new branch
-        let db_name = "test_create_branch".to_string();
+        let db_name: String = "test_create_branch".to_string();
+        let branch_name: String = "new branch".to_string();
 
         // Create the database
         create_db_instance(&db_name).unwrap();
@@ -1271,7 +1273,7 @@ mod tests {
         .unwrap();
         let mut table = table_result.0;
 
-        // Create a commit on the main branch
+        // Create the first commit on the main branch
         get_db_instance().unwrap().create_commit_and_node(
             &"First Commit".to_string(),
             &"Create Table;".to_string(),
@@ -1288,7 +1290,7 @@ mod tests {
         let insert_diff: InsertDiff = table.insert_rows(rows).unwrap();
         user.append_diff(&Diff::Insert(insert_diff));
 
-        // Create a commit on the main branch
+        // Create the second commit on the main branch
         get_db_instance().unwrap().create_commit_and_node(
             &"Second Commit".to_string(),
             &"Insert;".to_string(),
@@ -1296,6 +1298,104 @@ mod tests {
             None
         ).unwrap();
 
-        get_db_instance().unwrap().create_branch(&"new branch".to_string(), &mut user).unwrap();
+        // Create a new branch off of the main branch
+        get_db_instance().unwrap().create_branch(&branch_name, &mut user).unwrap();
+
+        // Make sure the new branch has the same tables as the main branch
+        let main_branch_table_dir: String = get_db_instance().unwrap().get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+        let new_branch_table_dir: String = get_db_instance().unwrap().get_branch_path_from_name(&branch_name);
+        let branch_table: Table = Table::new(&new_branch_table_dir, &"test_table".to_string(), None).unwrap();
+        assert!(compare_tables(&table, &branch_table, &main_branch_table_dir, &new_branch_table_dir));
+
+        // Create a new table in the new branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        create_table(
+            &"test_table2".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // Create a commit on the new branch
+        get_db_instance().unwrap().create_commit_and_node(
+            &"Third Commit".to_string(),
+            &"Create Table;".to_string(),
+            &user, 
+            None
+        ).unwrap();
+
+        // Make sure the new branch has the new table
+        assert_eq!(std::path::Path::new(&format!("{}/test_table2.db", new_branch_table_dir)).exists(), true);
+        // Make sure the main branch does not have the new table
+        assert_eq!(std::path::Path::new(&format!("{}/test_table2.db", main_branch_table_dir)).exists(), false);
+
+        // Swap the user to the main branch
+        user.set_current_branch_name(MAIN_BRANCH_NAME.to_string());
+
+        // Create a new table in the main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+            ("address".to_string(), Column::String(50)),
+        ];
+        create_table(
+            &"test_table3".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // Create a commit on the main branch
+        get_db_instance().unwrap().create_commit_and_node(
+            &"Fourth Commit".to_string(),
+            &"Create Table;".to_string(),
+            &user, 
+            None
+        ).unwrap();
+
+        // Make sure the main branch has the new table
+        assert_eq!(std::path::Path::new(&format!("{}/test_table3.db", main_branch_table_dir)).exists(), true);
+        // Make sure the new branch does not have the new table
+        assert_eq!(std::path::Path::new(&format!("{}/test_table3.db", new_branch_table_dir)).exists(), false);
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    /// Helper that compares two tables to make sure that they are identical, but in separate directories
+    fn compare_tables(
+        table1: &Table,
+        table2: &Table,
+        table1dir: &String,
+        table2dir: &String,
+    ) -> bool {
+        if table1dir == table2dir {
+            return false;
+        }
+
+        // Make sure that table1 and table2 are the same and they point to the right directories
+        if std::path::Path::new(&table1.path)
+            != std::path::Path::new(&format!("{}/{}.db", table1dir, table1.name))
+        {
+            return false;
+        }
+
+        if std::path::Path::new(&table2.path)
+            != std::path::Path::new(&format!("{}/{}.db", table2dir, table1.name))
+        {
+            return false;
+        }
+
+        if !file_diff::diff(&table1.path, &table2.path) {
+            return false;
+        }
+        true
     }
 }
