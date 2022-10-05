@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 use std::string::String;
+use colored::Colorize;
 use tonic::Request;
 
 use crate::client::result_parse;
@@ -52,7 +53,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // need to type "exit" to exit
-        if command == "exit" {
+        if command.to_lowercase().starts_with("exit") {
             client
                 .disconnect_db(Request::new(ConnectResult { id: request.id }))
                 .await?;
@@ -60,31 +61,33 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // GQL
-        if command.starts_with("GQL ") {
+        let success = format!("{} ", "GQL>".green());
+        let error = format!("{} ", "GQL>".red());
+        if command.to_lowercase().starts_with("gql ") {
             let result = client
                 .run_version_control_command(Request::new(request))
                 .await;
             if result.is_ok() {
                 let get_response = result.unwrap().into_inner();
-                println!("{}", get_response.message);
+                println!("{}{}", success, get_response.message);
             } else {
-                println!("Error: {}", result.unwrap_err().message());
+                println!("{}{}", error, result.unwrap_err().message());
             }
-        } else if command.starts_with("SELECT ") {
+        } else if command.to_lowercase().starts_with("select ") {
             let result = client.run_query(Request::new(request)).await;
             if result.is_ok() {
                 // parses through the result and prints the table
                 result_parse::result_parse(result.unwrap().into_inner())?;
             } else {
-                println!("Error: {}", result.unwrap_err().message());
+                println!("{}{}", error, result.unwrap_err().message());
             }
         } else {
             let result = client.run_update(Request::new(request)).await;
             if result.is_ok() {
                 let get_response = result.unwrap().into_inner();
-                println!("{}", get_response.message);
+                println!("{}{}", success, get_response.message);
             } else {
-                println!("Error: {}", result.unwrap_err().message());
+                println!("{}{}", error, result.unwrap_err().message());
             }
         }
     }

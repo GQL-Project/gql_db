@@ -28,6 +28,7 @@ file_diff = "1.0.0"
 tabled = "0.9.0"
 parking_lot = "0.5.5"
 fs_extra = "1.2.0"
+colored = "2"
 
 [build-dependencies]
 tonic-build = "0.8.0"
