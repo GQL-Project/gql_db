@@ -27,7 +27,11 @@ pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
-pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<Row>), String> {
+pub fn execute_query(
+    ast: &Vec<Statement>,
+    user: &mut User,
+    command: &String,
+) -> Result<(Schema, Vec<Row>), String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -50,6 +54,7 @@ pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<R
                             table_names.push((table_name[0].to_string(), "".to_string()));
                         }
                     }
+                    user.append_command(&command);
                     return select(column_names, table_names, get_db_instance()?, user);
                 }
                 _ => {
@@ -64,7 +69,11 @@ pub fn execute_query(ast: &Vec<Statement>, user: &User) -> Result<(Schema, Vec<R
     Err("No query found".to_string())
 }
 
-pub fn execute_update(ast: &Vec<Statement>, user: &mut User) -> Result<String, String> {
+pub fn execute_update(
+    ast: &Vec<Statement>,
+    user: &mut User,
+    command: &String,
+) -> Result<String, String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
@@ -127,6 +136,7 @@ pub fn execute_update(ast: &Vec<Statement>, user: &mut User) -> Result<String, S
     if results.len() == 0 {
         Err("No command found".to_string())
     } else {
+        user.append_command(command);
         Ok(results.join("\n"))
     }
 }
@@ -160,7 +170,6 @@ pub fn drop_table(
     // Delete the table file and return it
     let results = delete_table_in_dir(table_name, &table_dir)?;
     user.append_diff(&Diff::TableRemove(results.clone()));
-
     Ok(results)
 }
 
