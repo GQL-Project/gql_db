@@ -111,11 +111,14 @@ fn map_error(err: Error) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
 
     /// Note that the tests use unwrap, is fine to use in tests,
     /// but not in actual code.
     #[test]
+    #[serial]
     fn test_file_io() {
         let path = "test_file_io".to_string();
         create_file(&path).unwrap();
@@ -133,6 +136,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_pages_u8() {
         let mut page = [0; PAGE_SIZE];
         write_type::<u8>(&mut page, 0, 241).unwrap();
@@ -143,6 +147,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_pages_u16() {
         let mut page = [0; PAGE_SIZE];
         write_type::<u16>(&mut page, 0, 1241).unwrap();
@@ -153,6 +158,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_pages_array() {
         let mut page = [0; PAGE_SIZE];
         write_type::<[char; 5]>(&mut page, 0, ['A', 'B', 'C', 'D', 'E']).unwrap();
@@ -163,6 +169,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_pages_strings() {
         let mut page = [0; PAGE_SIZE];
         // Works with exact length strings
@@ -177,6 +184,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_out_of_range() {
         let mut page = [0; PAGE_SIZE];
         write_type::<u8>(&mut page, 0, 241).unwrap();

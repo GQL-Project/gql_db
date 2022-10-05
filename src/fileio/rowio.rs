@@ -63,10 +63,13 @@ pub fn clear_row(schema: &Schema, page: &mut Page, rownum: u16) -> Result<(), St
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
     use crate::util::dbtype::{Column, Value};
 
     #[test]
+    #[serial]
     fn test_page_rows() {
         let schema = vec![
             ("id".to_string(), Column::I32),
@@ -92,6 +95,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_insert() {
         let schema = vec![
             ("id".to_string(), Column::I32),
@@ -117,6 +121,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_clear_row() {
         let schema = vec![
             ("id".to_string(), Column::I32),
@@ -142,6 +147,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_out_of_bounds() {
         let schema = vec![
             ("id".to_string(), Column::I32),

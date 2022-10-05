@@ -128,6 +128,8 @@ pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use crate::{
         executor::query::create_table,
         fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance},
@@ -138,6 +140,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
@@ -147,6 +150,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd2() {
         let query = "GQL commit";
         // Create a new user on the main branch
@@ -156,6 +160,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd3() {
         let query = "GQL branch";
         // Create a new user on the main branch
@@ -165,6 +170,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
         // Create a new user on the main branch
@@ -174,6 +180,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd5() {
         let query = "GQL branch branch name";
         // Create a new user on the main branch
@@ -183,6 +190,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd6() {
         let query = "GQL switch_branch branch_name";
         // Create a new user on the main branch
@@ -192,6 +200,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
         // Create a new user on the main branch
@@ -201,6 +210,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
         create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
@@ -215,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd9() {
         let query = "GQL log -m";
         // Create a new user on the main branch
@@ -224,6 +235,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd10() {
         let query = "GQL revert commit_hash";
         // Create a new user on the main branch
@@ -233,6 +245,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd11() {
         let query = "GQL revert";
         // Create a new user on the main branch
@@ -242,6 +255,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd12() {
         let query = "GQL status";
         // Create a new user on the main branch
@@ -251,6 +265,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_vc_cmd13() {
         let query = "GQL status -m";
         // Create a new user on the main branch
