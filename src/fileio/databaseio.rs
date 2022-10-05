@@ -8,7 +8,6 @@ use crate::version_control::{
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::env;
-use std::fmt::format;
 use std::path::Path;
 
 // Branch Constants
@@ -616,7 +615,7 @@ impl Database {
                 // The main branch does exist
                 main_branch_head
             },
-            Err(e) => {
+            Err(_) => {
                 // We are trying to create a new branch, but the main branch does not exist. 
                 // This is still OK. We just have to apply the diffs between the origin and the new branch's HEAD.
                 let diffs_from_origin: Vec<Diff> = self.get_diffs_between_nodes(None, &node2)?;
@@ -777,13 +776,13 @@ impl Database {
 mod tests {
     use super::*;
     use crate::{
-        executor::query::create_table,
+        executor::query::{create_table, insert},
         fileio::header::Schema,
         util::{
             dbtype::{Column, Value},
             row::Row,
         },
-        version_control::{self, branch_heads},
+        version_control::{self},
     };
     use serial_test::serial;
 
@@ -1001,14 +1000,9 @@ mod tests {
     fn test_create_commit_branch_node() {
         // This tests creating a commit branch node
         let db_name = "test_create_commit_branch_node".to_string();
-        let db_branch_name: String =
-            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
         let db_base_path: String = Database::get_database_base_path().unwrap()
             + std::path::MAIN_SEPARATOR.to_string().as_str()
             + db_name.clone().as_str();
-        let full_path_to_branch: String = db_base_path.clone()
-            + std::path::MAIN_SEPARATOR.to_string().as_str()
-            + &db_branch_name.clone();
 
         // Create the database
         create_db_instance(&db_name).unwrap();
@@ -1119,14 +1113,6 @@ mod tests {
     fn test_create_new_branch() {
         // This tests creating a new branch
         let db_name = "test_create_new_branch".to_string();
-        let db_branch_name: String =
-            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
-        let db_base_path: String = Database::get_database_base_path().unwrap()
-            + std::path::MAIN_SEPARATOR.to_string().as_str()
-            + db_name.clone().as_str();
-        let full_path_to_branch: String = db_base_path.clone()
-            + std::path::MAIN_SEPARATOR.to_string().as_str()
-            + &db_branch_name.clone();
 
         // Create the database
         create_db_instance(&db_name).unwrap();
@@ -1186,14 +1172,6 @@ mod tests {
     fn test_create_multiple_branches(){
         // This tests creating multiple branches
         let db_name = "test_create_multiple_branches".to_string();
-        let db_branch_name: String =
-            db_name.clone() + &DB_NAME_BRANCH_SEPARATOR.to_string() + MAIN_BRANCH_NAME;
-        let db_base_path: String = Database::get_database_base_path().unwrap()
-            + std::path::MAIN_SEPARATOR.to_string().as_str()
-            + db_name.clone().as_str();
-        let full_path_to_branch: String = db_base_path.clone()
-            + std::path::MAIN_SEPARATOR.to_string().as_str()
-            + &db_branch_name.clone();
 
         // Create the database
         create_db_instance(&db_name).unwrap();
@@ -1270,6 +1248,54 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_branch() {
+        // This will test creating a branch off of the main branch and then creating a commit on the new branch
+        let db_name = "test_create_branch".to_string();
 
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let table_result = create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        let mut table = table_result.0;
+
+        // Create a commit on the main branch
+        get_db_instance().unwrap().create_commit_and_node(
+            &"First Commit".to_string(),
+            &"Create Table;".to_string(),
+            &user, 
+            None
+        ).unwrap();
+
+        // Insert rows into the table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("John".to_string())],
+            vec![Value::I32(2), Value::String("Jane".to_string())],
+            vec![Value::I32(3), Value::String("Joe".to_string())],
+        ];
+        let insert_diff: InsertDiff = table.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Create a commit on the main branch
+        get_db_instance().unwrap().create_commit_and_node(
+            &"Second Commit".to_string(),
+            &"Insert;".to_string(),
+            &user, 
+            None
+        ).unwrap();
+
+        get_db_instance().unwrap().create_branch(&"new branch".to_string(), &mut user).unwrap();
     }
 }
