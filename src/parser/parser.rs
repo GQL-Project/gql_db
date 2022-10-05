@@ -54,7 +54,6 @@ pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
                         user,
                         None,
                     );
-                    println!("{:?}", result);
                     return Ok("Commit with message".to_string());
                 }
             } else {
