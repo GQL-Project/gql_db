@@ -2,6 +2,7 @@ use super::tableio::*;
 use crate::user::userdata::*;
 use crate::version_control::branches::BranchNode;
 use crate::version_control::commit::Commit;
+use crate::version_control::diff::*;
 use crate::version_control::{
     branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
 };
@@ -42,6 +43,7 @@ pub struct Database {
 }
 
 //Tuple List struct is used for the switch_branch logic
+#[derive(Clone)]
 pub struct TupleList {
     branch_name: String, // The name of the branch the commit belongs to
     commit_hash: String, // The commit hash for the current commit in the branch
@@ -404,7 +406,7 @@ impl Database {
 
         //Checking user didn't pass the same branch in
         let user_curr_branch = user.get_current_branch_name();
-        if (user_curr_branch == _branch_name) {
+        if user_curr_branch == _branch_name {
             return Err("Database::switch_branch() Error: User is already on this branch".to_owned());
         }
 
@@ -413,30 +415,148 @@ impl Database {
         let branch_dir_exists = Path::new(&new_branch_path).is_dir();
 
         //If the branch directory doesn't exist, create it
-        if (!branch_dir_exists) {
+        if !branch_dir_exists {
             std::fs::create_dir_all(&new_branch_path)
                 .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
         }
 
         //Checking if the branch heads exist just to be doubly sure
-        let curr_branch_head_check = self.branch_heads.get_branch_head(&user_curr_branch);
-        match curr_branch_head_check {
-            Ok(curr_branch_head) => {},
-            Err(s) => {
-                return Err("Database::switch_branch() Error: Current branch head is empty".to_owned());
-            }
+        //let curr_branch_head_check = self.branch_heads.get_branch_head(&user_curr_branch)?;
+        //let new_branch_head_check = self.branch_heads.get_branch_head(&_branch_name)?;
+    
+        //Grabbing the nodes for the current user branch and the new branch
+        let mut user_branch_node = self.branch_heads.get_branch_node_from_head(&user_curr_branch, &self.branches)?;
+        let mut new_branch_node = self.branch_heads.get_branch_node_from_head(&_branch_name, &self.branches)?;
+
+        //Making TupleLists to represent the commit histories for the 2 branches
+        let mut user_tupleList: Vec<TupleList> = Vec::new();
+        let mut new_tupleList: Vec<TupleList> = Vec::new();
+
+        //Finding common ancestor
+        let mut common_ancestor:Commit;
+        //The loop below stores the commit information in the user_tupleList
+        loop {
+            user_tupleList.push(TupleList {
+                branch_name: user_branch_node.branch_name.clone(),
+                commit_hash: user_branch_node.commit_hash.clone(),
+            });
+
+            let prev_match = self.branches.get_prev_branch_node(&user_branch_node);
+            let prev_user_node = match prev_match {
+                Ok(node) => node,
+                Err(_) => break,
+            };
+            user_branch_node = prev_user_node.unwrap();
         }
-        let new_branch_head_check = self.branch_heads.get_branch_head(&_branch_name);
-        match new_branch_head_check {
-            Ok(new_branch_head) => {},
-            Err(s) => {
-                return Err("Database::switch_branch() Error: New branch head is empty".to_owned());
+        //the loop below stores the commit information in the new_tupleList
+        'outer: loop {
+            new_tupleList.push(TupleList {
+                branch_name: new_branch_node.branch_name.clone(),
+                commit_hash: new_branch_node.commit_hash.clone(),
+            });
+
+            for tuple in user_tupleList.clone() {
+                if tuple.branch_name == new_branch_node.branch_name {
+                    let user_commit = self.commit_file.fetch_commit(&tuple.commit_hash)?;
+                    let new_commit = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
+
+                    let user_commit_time_stamp = user_commit.timestamp;
+                    let new_commit_time_stamp = new_commit.timestamp;
+
+                    if user_commit_time_stamp >= new_commit_time_stamp {
+                        common_ancestor = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
+                        break 'outer;
+                    } else {
+                        common_ancestor = self.commit_file.fetch_commit(&tuple.commit_hash)?;
+                        break 'outer;
+                    }
+                }
             }
         }
 
-        //Finding common ancestor for the branch heads
+        //Obtaining a list of diffs to revert
+        //The list is technically a vec of vec of diff as it stores
+        // the diff list from each commit in a list
+        let mut revert_diff_list:Vec<Vec<Diff>> = Vec::new();
 
-        // TODO: implementation
+        //The loop below stores the diff information in the revert_diff_list
+        //Also resetting the user_branch_node pointer to the head
+        user_branch_node = self.branch_heads.get_branch_node_from_head(&user_curr_branch, &self.branches)?;
+        loop {
+            let commit = self.commit_file.fetch_commit(&user_branch_node.commit_hash)?;
+            let diff_list = commit.diffs;
+            revert_diff_list.push(diff_list);
+
+            let prev_match = self.branches.get_prev_branch_node(&user_branch_node)?;
+            let prev_user_node = match prev_match {
+                Some(node) => {
+                    if node.commit_hash == common_ancestor.hash {
+                        break;
+                    } else {
+                        node
+                    }
+                },
+                None => break,
+            };
+            user_branch_node = prev_user_node;
+        }
+
+        //Create the new branches director if it doesn't exist
+        if Path::new(&self.get_branch_path_from_name(&_branch_name)).is_dir() {
+            std::fs::create_dir_all(&self.get_branch_path_from_name(&_branch_name))
+                .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
+        }
+        //Copying the files from main to the new branch folder
+        let mut options = fs_extra::dir::CopyOptions::new();
+        options.content_only = true; // Only copy the files not the directory
+        fs_extra::dir::copy(
+            self.get_branch_path_from_name(
+                    &MAIN_BRANCH_NAME.to_string()
+                ), 
+                &new_branch_path, 
+                &options
+        ).map_err(|e| {
+            "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string()
+        })?;
+
+        //Applying reverts to the new branch
+        for diff in revert_diff_list {
+           revert_tables_from_diffs(&new_branch_path, &diff)?;
+        }
+
+        //Obtaining a list of diffs to apply
+        //The list is technically a vec of vec of diff as it stores
+        // the diff list from each commit in a list
+        let mut apply_diff_list:Vec<Vec<Diff>> = Vec::new();
+
+        //The loop below stores the diff information in the apply_diff_list
+        //Also resetting the new_branch_node pointer to the head
+        new_branch_node = self.branch_heads.get_branch_node_from_head(&_branch_name, &self.branches)?;
+        loop {
+            let commit = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
+            let diff_list = commit.diffs;
+            apply_diff_list.push(diff_list);
+
+            let prev_match = self.branches.get_prev_branch_node(&new_branch_node)?;
+            let prev_user_node = match prev_match {
+                Some(node) => {
+                    if node.commit_hash == common_ancestor.hash {
+                        break;
+                    } else {
+                        node
+                    }
+                },
+                None => break,
+            };
+            new_branch_node = prev_user_node;
+        }
+    
+        //Applying diffs to the new branch
+        apply_diff_list.reverse();
+        for diff in apply_diff_list {
+            construct_tables_from_diffs(&new_branch_path, &diff)?;
+        }
+
         Ok(())
     }
 
