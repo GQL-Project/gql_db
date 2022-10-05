@@ -3,7 +3,9 @@ use crate::user::userdata::*;
 use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 use crate::version_control::diff::*;
+use chrono::NaiveDateTime;
 use itertools::Itertools;
+use prost_types::Timestamp;
 use sqlparser::ast::{ColumnDef, DataType, Expr, SetExpr, Statement};
 
 pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
@@ -311,7 +313,7 @@ pub fn insert(
                             Column::Float => Value::Float(str.parse().map_err(|_x| "Could not parse value")?),
                             Column::String(_) => Value::String(str.clone()),
                             Column::Bool => Value::Bool(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Timestamp => Value::Timestamp(str.parse().map_err(|_x| "Could not parse value")?),
+                            Column::Timestamp => Value::Timestamp(parse_time(str)?),
                             Column::I64 => Value::I64(str.parse().map_err(|_x| "Could not parse value")?),
                             Column::Double => Value::Double(str.parse().map_err(|_x| "Could not parse value")?),
                         };
@@ -347,6 +349,18 @@ pub fn insert(
     let diff: InsertDiff = table.insert_rows(values)?;
     user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
+}
+
+fn parse_time(str: &String) -> Result<Timestamp, String> {
+    let time = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S");
+    if let Ok(x) = time {
+        Ok(Timestamp {
+            seconds: x.timestamp(),
+            nanos: x.timestamp_subsec_nanos() as i32,
+        })
+    } else {
+        Err(format!("Could not parse time {}", str))
+    }
 }
 
 #[cfg(test)]

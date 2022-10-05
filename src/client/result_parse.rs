@@ -1,3 +1,7 @@
+use std::fmt::Display;
+
+use chrono::NaiveDateTime;
+use prost_types::Timestamp;
 use tabled::{builder::Builder, Style};
 
 use crate::{
@@ -21,7 +25,7 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
                 Value::String(s) => row_value.push(s),
                 Value::I32(i) => row_value.push(i.to_string()),
                 Value::Float(f) => row_value.push(f.to_string()),
-                Value::Timestamp(t) => row_value.push(t.to_string()),
+                Value::Timestamp(t) => row_value.push(),
                 Value::I64(i) => row_value.push(i.to_string()),
                 Value::Double(d) => row_value.push(d.to_string()),
                 Value::Bool(b) => row_value.push(b.to_string()),
@@ -44,6 +48,11 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
     // will print the table on the terminal
     println!("{}", table);
     Ok(())
+}
+
+fn from_timestamp(t: &Timestamp) -> String {
+    let time = NaiveDateTime::from_timestamp(t.seconds, t.nanos as u32);
+    time.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 #[cfg(test)]
