@@ -4,7 +4,7 @@ use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 use crate::version_control::diff::*;
 use itertools::Itertools;
-use sqlparser::ast::{ColumnDef, DataType, Expr, Function, Query, SetExpr, Statement};
+use sqlparser::ast::{ColumnDef, DataType, Expr, SetExpr, Statement};
 
 pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
     let data_col = match data_type.data_type {
@@ -912,24 +912,6 @@ mod tests {
         let mut user: User = User::new("test_user".to_string());
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-        let rows = vec![
-            vec![
-                Value::I32(1),
-                Value::String("Iron Man".to_string()),
-                Value::I32(40),
-            ],
-            vec![
-                Value::I32(2),
-                Value::String("Spiderman".to_string()),
-                Value::I32(20),
-            ],
-            vec![Value::I32(3), Value::I32(35)],
-            vec![
-                Value::I32(4),
-                Value::String("Captain America".to_string()),
-                Value::I32(100),
-            ],
-        ];
 
         let newrows = vec![
             vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],

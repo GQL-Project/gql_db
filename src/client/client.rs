@@ -1,6 +1,6 @@
-use std::io::{self, BufRead, Write};
-use std::string::String;
 use colored::Colorize;
+use std::io::{self, Write};
+use std::string::String;
 use tonic::Request;
 
 use crate::client::result_parse;

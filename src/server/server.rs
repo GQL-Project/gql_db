@@ -81,7 +81,7 @@ impl DatabaseConnection for Connection {
         match result {
             Ok(tree) => {
                 // Get the user that is running the query
-                let mut user: &mut User = self
+                let user: &mut User = self
                     .get_client(&request.id)
                     .map_err(|e| Status::internal(e))?;
 
@@ -109,7 +109,7 @@ impl DatabaseConnection for Connection {
         let request = request.into_inner();
 
         // Get the user that is running the query
-        let mut user: &mut User = self
+        let user: &mut User = self
             .get_client(&request.id)
             .map_err(|e| Status::internal(e))?;
 
@@ -135,7 +135,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn connect_db() {
-        let conn = Connection::new();
+        let conn = Connection::default();
         let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
     }
@@ -143,7 +143,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn disconnect_db() {
-        let conn = Connection::new();
+        let conn = Connection::default();
         let result = conn.connect_db(Request::new(())).await;
         result.as_ref().unwrap();
         let result = conn
@@ -155,7 +155,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn run_query() {
-        let conn = Connection::new();
+        let conn = Connection::default();
         let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
@@ -174,7 +174,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn run_update() {
-        let conn = Connection::new();
+        let conn = Connection::default();
         let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
@@ -193,7 +193,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn run_update_success() {
-        let conn = Connection::new();
+        let conn = Connection::default();
         let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn run_query_success() {
-        let conn = Connection::new();
+        let conn = Connection::default();
         let result = conn.connect_db(Request::new(())).await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;

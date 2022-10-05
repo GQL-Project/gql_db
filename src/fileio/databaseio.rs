@@ -2,9 +2,7 @@ use super::tableio::*;
 use crate::user::userdata::*;
 use crate::version_control::branches::BranchNode;
 use crate::version_control::commit::Commit;
-use crate::version_control::{
-    branch_heads::*, branches::Branches, commitfile::CommitFile, diff::Diff,
-};
+use crate::version_control::{branch_heads::*, branches::Branches, commitfile::CommitFile};
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::env;
@@ -596,7 +594,7 @@ mod tests {
             dbtype::{Column, Value},
             row::Row,
         },
-        version_control,
+        version_control::{self, diff::Diff},
     };
     use serial_test::serial;
 

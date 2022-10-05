@@ -1,10 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::fileio::databaseio::{
-    create_db_instance, delete_db_instance, get_db_instance, load_db_instance,
-};
+use crate::fileio::databaseio::{get_db_instance, load_db_instance};
 use crate::user::userdata::*;
-use crate::version_control::diff::Diff;
 
 #[derive(Debug, Default)]
 pub struct Connection {
@@ -12,10 +9,6 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /* Client Management Methods */
     /// Gets a mutable reference to the client with the given ID.
     pub fn get_client<'a>(&self, id: &String) -> Result<&'a mut User, String> {
@@ -83,14 +76,14 @@ mod tests {
         fileio::header::Schema,
         util::dbtype::Column,
         util::{dbtype::Value, row::*},
-        version_control::diff::InsertDiff,
+        version_control::diff::{Diff, InsertDiff},
     };
     use serial_test::serial;
 
     #[test]
     #[serial]
     fn test_new_client() {
-        let connection = Connection::new();
+        let connection = Connection::default();
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
@@ -99,7 +92,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_new_clients() {
-        let connection = Connection::new();
+        let connection = Connection::default();
         let id1 = connection.new_client().unwrap();
         let id2 = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 2);
@@ -110,7 +103,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_remove_client() {
-        let connection = Connection::new();
+        let connection = Connection::default();
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
@@ -122,7 +115,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_remove_non_client() {
-        let connection = Connection::new();
+        let connection = Connection::default();
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
@@ -134,7 +127,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_mutability_of_get_client() {
-        let connection: Connection = Connection::new();
+        let connection: Connection = Connection::default();
 
         // Create a scope for appending the diff
         {

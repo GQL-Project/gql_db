@@ -1,5 +1,5 @@
 use crate::{
-    fileio::{databaseio::*, header::*, tableio::*},
+    fileio::{header::*, tableio::*},
     util::row::*,
 };
 

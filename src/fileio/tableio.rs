@@ -1,5 +1,5 @@
-use super::{databaseio::*, header::*, pageio::*, rowio::*};
-use crate::{user::userdata::User, util::row::*, version_control::diff::*};
+use super::{header::*, pageio::*, rowio::*};
+use crate::{util::row::*, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -156,7 +156,7 @@ pub fn delete_table_in_dir(
 
     // Collect all the rows that are currently in the table, which are needed when commit is reverted
     let mut rows: Vec<RowInfo> = Vec::new();
-    let mut table = Table::new(&table_dir.clone(), &table_name.clone(), None)?;
+    let table = Table::new(&table_dir.clone(), &table_name.clone(), None)?;
     for row in table {
         rows.push(row);
     }
@@ -451,7 +451,7 @@ mod tests {
             schema: schema.clone(),
         };
         write_header(&filepath, &header).unwrap();
-        let mut page = [0u8; PAGE_SIZE];
+        let page = [0u8; PAGE_SIZE];
         write_page(1, &filepath, &page).unwrap();
         let mut table = Table::new(&"".to_string(), &path.to_string(), None).unwrap();
         //Adding in 1st entry
@@ -515,9 +515,9 @@ mod tests {
 
         //Checking if the 7th entry is removed & the last entry's contents
         let mut count = 0;
-        for (i, rowinfo) in table.enumerate() {
+        for rowinfo in table {
             count += 1;
-            if (count == 5) {
+            if count == 5 {
                 // assert_eq!(rowinfo.row[0], Value::I32(6));
                 assert_eq!(rowinfo.row[1], Value::String("Dinah Lance".to_string()));
                 assert_eq!(rowinfo.row[2], Value::I32(35));

@@ -13,7 +13,7 @@ use crate::{
     },
     util::{
         dbtype::{Column, Value},
-        row::{Row, RowInfo, RowLocation},
+        row::{Row, RowInfo},
     },
 };
 use std::time::{SystemTime, UNIX_EPOCH};
