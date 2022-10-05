@@ -114,7 +114,7 @@ impl DatabaseConnection for Connection {
             .map_err(|e| Status::internal(e))?;
 
         /* VC Command Pipeline Begins Here */
-        let result = parser::parse_vc_cmd(&request.query, &user);
+        let result = parser::parse_vc_cmd(&request.query, user);
 
         /* Creating Result */
         match result {
