@@ -122,7 +122,7 @@ impl BranchHEADs {
 
             // Get the branch name
             match row.get(0) {
-                Some(Value::String(br_name)) => { branch_names.push(br_name.to_string()) },
+                Some(Value::String(br_name)) => branch_names.push(br_name.to_string()),
                 _ => return Err("Error: Branch name not found".to_string()),
             }
         }
