@@ -68,8 +68,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             } else {
                 // vec[2] should be a branch name
                 // create branch
-                get_db_instance()?.create_branch(&vec[2].to_string(), user).map_err(|e| e.to_string())?;
-                
+                get_db_instance()?
+                    .create_branch(&vec[2].to_string(), user)
+                    .map_err(|e| e.to_string())?;
+
                 return Ok("Valid Branch Command".to_string());
             }
         }
