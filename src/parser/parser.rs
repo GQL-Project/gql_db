@@ -130,9 +130,7 @@ pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
 mod tests {
     use serial_test::serial;
 
-    use crate::{
-        fileio::databaseio::{create_db_instance, delete_db_instance},
-    };
+    use crate::fileio::databaseio::{create_db_instance, delete_db_instance};
 
     use super::*;
 
