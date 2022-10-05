@@ -1,3 +1,4 @@
+use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::log;
 use sqlparser::ast::Statement;
@@ -46,6 +47,14 @@ pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
                 } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
+                    let message = vec[3];
+                    let result = get_db_instance().unwrap().create_commit_and_node(
+                        &message.to_string(),
+                        &user.get_commands().join(":"),
+                        user,
+                        None,
+                    );
+                    println!("{:?}", result);
                     return Ok("Commit with message".to_string());
                 }
             } else {
