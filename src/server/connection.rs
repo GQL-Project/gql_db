@@ -73,7 +73,7 @@ impl Drop for Connection {
 mod tests {
     use super::*;
     use crate::{
-        fileio::{header::Schema, databaseio::*},
+        fileio::{databaseio::*, header::Schema},
         util::dbtype::Column,
         util::{dbtype::Value, row::*},
         version_control::diff::{Diff, InsertDiff},
@@ -86,7 +86,7 @@ mod tests {
         let connection = Connection::default();
         // Create a new database instance
         create_db_instance(&"test_new_client".to_string()).unwrap();
-        
+
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
