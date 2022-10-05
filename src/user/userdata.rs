@@ -1,10 +1,14 @@
 use crate::{fileio::databaseio::*, version_control::diff::Diff};
 
+pub const SYSTEM_USER_ID: &str = "system";
+
 #[derive(Debug, Clone)]
 pub struct User {
-    user_id: String,     // The id of the user
-    branch_name: String, // The name of the branch that the user is currently on
-    diffs: Vec<Diff>,    // The changes that the user has made that are in an uncommitted state
+    user_id: String,         // The id of the user
+    branch_name: String, // The name of the branch that the user is currently on (DOES NOT INCLUDE TEMP BRANCH SUFFIX)
+    is_on_temp_commit: bool, // Whether the user is on a temporary commit. (uncommitted changes)
+    // The temporary commit is the folder <db_name>-<branch_name>-<user_id>
+    diffs: Vec<Diff>, // The changes that the user has made that are in an uncommitted state
 }
 
 impl User {
@@ -13,6 +17,7 @@ impl User {
         Self {
             user_id: user_id,
             branch_name: MAIN_BRANCH_NAME.to_string(),
+            is_on_temp_commit: false,
             diffs: Vec::new(),
         }
     }
@@ -27,7 +32,7 @@ impl User {
         self.branch_name.clone()
     }
 
-    /// Set the name of the branch that the user is currently on
+    /// Set the name of the branch that the user is currently on to a new branch
     pub fn set_current_branch_name(&mut self, new_branch_name: &String) {
         self.branch_name = new_branch_name.clone();
     }
@@ -45,5 +50,15 @@ impl User {
     /// Replaces the user's diffs with the given list of diffs
     pub fn set_diffs(&mut self, diffs: &Vec<Diff>) {
         self.diffs = diffs.clone();
+    }
+
+    /// Whether the user is currently on a temporary commit
+    pub fn is_on_temp_commit(&self) -> bool {
+        self.is_on_temp_commit
+    }
+
+    /// Set whether the user is currently on a temporary commit
+    pub fn set_is_on_temp_commit(&mut self, is_on_temp_commit: bool) {
+        self.is_on_temp_commit = is_on_temp_commit;
     }
 }
