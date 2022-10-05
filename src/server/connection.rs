@@ -53,16 +53,26 @@ impl Connection {
             .lock()
             .unwrap()
             .retain(|x| &x.get_user_id() != &id);
-        if self.clients.lock().unwrap().len() != 0 {
-            Ok(())
-        } else {
-            delete_db_instance()
-        }
+        Ok(())
     }
 
     /// Gets the list of clients, but cloned in a non-mutable way.
     fn get_clients_readonly(&self) -> Vec<User> {
         self.clients.lock().unwrap().clone()
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let clients = self.get_clients_readonly();
+        for mut client in clients {
+            if client.is_on_temp_commit() {
+                get_db_instance()
+                    .unwrap()
+                    .delete_temp_branch_directory(&mut client)
+                    .expect("Failed to delete temp branch directory");
+            }
+        }
     }
 }
 

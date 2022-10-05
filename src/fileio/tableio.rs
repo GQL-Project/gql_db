@@ -39,7 +39,7 @@ impl Table {
 
         // If the file doesn't exist, return an error.
         if !std::path::Path::new(&path).exists() {
-            return Err(format!("Table file {} does not exist.", path));
+            return Err(format!("Table file {} does not exist.", table_name));
         }
 
         let header = read_header(&path)?;

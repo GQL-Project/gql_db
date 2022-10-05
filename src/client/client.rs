@@ -15,18 +15,17 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", "GQL> ");
         io::stdout().flush()?;
 
-        let mut lines = io::stdin().lock().lines();
         let mut command = String::new();
 
-        while let Some(line) = lines.next() {
-            let last_input = line.unwrap();
-
+        loop {
             // add a new line once user_input starts storing user input
+            let mut last_input = String::new();
             if command.len() > 0 {
                 command.push_str("\n");
             }
 
             // store user input
+            io::stdin().read_line(&mut last_input)?;
             command.push_str(&last_input);
 
             // makes sure these are in the first line (VC commands and exit)
@@ -34,12 +33,12 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
 
-            // stop reading if there's a semi colon or if command doesn't start with SELECT
-            if last_input.contains(";") || !command.starts_with("SELECT") {
+            // stop reading if there's a semi colon
+            if last_input.contains(";") {
                 break;
             }
 
-            print!("{}", ">");
+            print!("{}", "   > ");
             io::stdout().flush()?;
         }
 
@@ -48,8 +47,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         command = command.replace("\n", " ");
 
         let request = QueryRequest {
-            id: String::from(response.id.clone()),
-            query: String::from(command.clone()),
+            id: String::from(&response.id),
+            query: String::from(&command),
         };
 
         // need to type "exit" to exit
@@ -63,7 +62,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // GQL
         if command.starts_with("GQL ") {
             let result = client
-                .run_version_control_command(Request::new(request.clone()))
+                .run_version_control_command(Request::new(request))
                 .await;
             if result.is_ok() {
                 let get_response = result.unwrap().into_inner();
@@ -72,7 +71,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Error: {}", result.unwrap_err().message());
             }
         } else if command.starts_with("SELECT ") {
-            let result = client.run_query(Request::new(request.clone())).await;
+            let result = client.run_query(Request::new(request)).await;
             if result.is_ok() {
                 // parses through the result and prints the table
                 result_parse::result_parse(result.unwrap().into_inner())?;
@@ -80,7 +79,13 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Error: {}", result.unwrap_err().message());
             }
         } else {
-            println!("Invalid command");
+            let result = client.run_update(Request::new(request)).await;
+            if result.is_ok() {
+                let get_response = result.unwrap().into_inner();
+                println!("{}", get_response.message);
+            } else {
+                println!("Error: {}", result.unwrap_err().message());
+            }
         }
     }
     Ok(())
