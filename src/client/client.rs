@@ -1,4 +1,5 @@
 use colored::Colorize;
+use tonic::transport::Channel;
 use std::io::{self, Write};
 use std::string::String;
 use tonic::Request;
@@ -7,16 +8,22 @@ use crate::client::result_parse;
 use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
 use crate::server::server::db_connection::{ConnectResult, QueryRequest};
 
+const GQL_PROMPT: &str = "GQL> ";
+const DEFAULT_IP: &str = "[::1]";
+const DEFAULT_PORT: &str = "50051";
+
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
-    let request = tonic::Request::new(());
-    let response = client.connect_db(request).await?.into_inner();
+    // Query for IP address and port of server
+    let mut client: DatabaseConnectionClient<Channel> = query_for_ip_port().await?;
+
+    let request: Request<()> = tonic::Request::new(());
+    let response: ConnectResult = client.connect_db(request).await?.into_inner();
 
     loop {
-        print!("{}", "GQL> ");
+        print!("{}", &GQL_PROMPT.to_string());
         io::stdout().flush()?;
 
-        let mut command = String::new();
+        let mut command: String = String::new();
 
         loop {
             // add a new line once user_input starts storing user input
@@ -61,8 +68,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // GQL
-        let success = format!("{} ", "GQL>".green());
-        let error = format!("{} ", "GQL>".red());
+        let success = format!("{}", GQL_PROMPT.to_string().green());
+        let error = format!("{}", GQL_PROMPT.to_string().red());
         if command.to_lowercase().starts_with("gql ") {
             let result = client
                 .run_version_control_command(Request::new(request))
@@ -92,4 +99,66 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+// Indefinitely loops until a successful connection is made
+async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dyn std::error::Error>> {
+    let client: DatabaseConnectionClient<Channel>;
+
+    // Loop until we successfully connect
+    loop {
+        /* Query for IP address */
+        print!("{}", "Enter IP Address of Database> ");
+        io::stdout().flush()?;
+        let mut ip_address: String = String::new();
+        // store user input
+        io::stdin().read_line(&mut ip_address)?;
+        ip_address = ip_address.replace("\n", "").trim().to_string();
+        // Set default IP address if none is given
+        if ip_address.is_empty() {
+            ip_address = DEFAULT_IP.to_string();
+        }
+
+        /* Query for port */
+        print!("{}", "Enter Port of Database> ");
+        io::stdout().flush()?;
+        let mut port: String = String::new();
+        // store user input
+        io::stdin().read_line(&mut port)?;
+        port = port.replace("\n", "").trim().to_string();
+        // Set default port if none is given
+        if port.is_empty() {
+            port = DEFAULT_PORT.to_string();
+        }
+
+        // Attempt to connect to server
+        let conn_str: String = format!("http://{}:{}", ip_address, port);
+        match DatabaseConnectionClient::connect(conn_str.clone()).await {
+            Ok(db_client) => {
+                client = db_client;
+                // Print a success msg
+                print!(
+                    "{}", 
+                    format!(
+                        "Successfully Connected to Database at {}\n", 
+                        conn_str
+                    ).green().to_string()
+                );
+                io::stdout().flush()?;
+                break;
+            }
+            Err(_) => {
+                // Start over if connection fails
+                print!(
+                    "{}",
+                    format!(
+                        "Error: Unable to connect to database at: {}\n",
+                        &conn_str.clone()
+                    ).red().to_string()
+                );
+                io::stdout().flush()?;
+            }
+        }
+    }
+    Ok(client)
 }
