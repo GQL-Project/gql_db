@@ -110,6 +110,7 @@ mod tests {
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &user,
+                None,
             )
             .unwrap();
         let commit: Commit = commit_result.1;
@@ -184,6 +185,7 @@ mod tests {
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &user,
+                None,
             )
             .unwrap();
         let commit: Commit = commit_result.1;
@@ -195,6 +197,7 @@ mod tests {
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
                 &user,
+                None,
             )
             .unwrap();
         let second_commit: Commit = commit_result.1;

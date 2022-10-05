@@ -372,6 +372,7 @@ mod tests {
     };
 
     #[test]
+    #[serial]
     fn test_read_iterator() {
         let path = "test_readterator".to_string();
         let table = create_table(&path);
@@ -396,6 +397,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_replaces() {
         let path = "test_replacerator".to_string();
         let table = create_table(&path);
@@ -527,6 +529,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_inserts() {
         let path = "test_inserterator".to_string();
         let mut table = create_table(&path);
@@ -580,6 +583,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_diffs() {
         let path = "test_differator".to_string();
         let mut table = create_table(&path);
@@ -656,6 +660,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_delete_table() {
         let tablename = "test_delete_table".to_string();
         let tablename_with_extension = tablename.clone() + &TABLE_FILE_EXTENSION.to_string();
@@ -671,6 +676,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_write_rows() {
         let path: String = "test_write_rows".to_string();
         let schema = vec![

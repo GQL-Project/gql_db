@@ -1,5 +1,7 @@
 use crate::{fileio::databaseio::*, version_control::diff::Diff};
 
+pub const SYSTEM_USER_ID: &str = "system";
+
 #[derive(Debug, Clone)]
 pub struct User {
     user_id: String,         // The id of the user
@@ -28,6 +30,10 @@ impl User {
     /// Get the name of the branch that the user is currently on
     pub fn get_current_branch_name(&self) -> String {
         self.branch_name.clone()
+    }
+
+    pub fn set_current_branch_name(&mut self, branch_name: String) {
+        self.branch_name = branch_name;
     }
 
     /// Get the list of diffs that the user has made

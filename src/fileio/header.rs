@@ -60,10 +60,13 @@ pub fn schema_size(schema: &Schema) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
     use crate::util::dbtype::Column;
 
     #[test]
+    #[serial]
     fn test_schema_size() {
         let schema = vec![
             ("col1".to_string(), Column::I32),
@@ -74,6 +77,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_read_write_header() {
         let schema = vec![
             ("col1".to_string(), Column::I32),
@@ -95,6 +99,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_read_write_large_header() {
         let schema = vec![
             ("column name 345".to_string(), Column::I32),
