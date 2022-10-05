@@ -1,7 +1,7 @@
 use colored::Colorize;
-use tonic::transport::Channel;
 use std::io::{self, Write};
 use std::string::String;
+use tonic::transport::Channel;
 use tonic::Request;
 
 use crate::client::result_parse;
@@ -102,7 +102,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Indefinitely loops until a successful connection is made
-async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dyn std::error::Error>> {
+async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dyn std::error::Error>>
+{
     let client: DatabaseConnectionClient<Channel>;
 
     // Loop until we successfully connect
@@ -138,11 +139,10 @@ async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dy
                 client = db_client;
                 // Print a success msg
                 print!(
-                    "{}", 
-                    format!(
-                        "Successfully Connected to Database at {}\n", 
-                        conn_str
-                    ).green().to_string()
+                    "{}",
+                    format!("Successfully Connected to Database at {}\n", conn_str)
+                        .green()
+                        .to_string()
                 );
                 io::stdout().flush()?;
                 break;
@@ -154,7 +154,9 @@ async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dy
                     format!(
                         "Error: Unable to connect to database at: {}\n",
                         &conn_str.clone()
-                    ).red().to_string()
+                    )
+                    .red()
+                    .to_string()
                 );
                 io::stdout().flush()?;
             }
