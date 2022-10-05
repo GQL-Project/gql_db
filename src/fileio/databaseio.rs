@@ -364,6 +364,14 @@ impl Database {
         self.db_name.clone()
     }
 
+    /// Returns a list of all branches on the database
+    pub fn get_all_branch_names(&mut self) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        Ok(self.branch_heads.get_all_branch_names()?)
+    }
+
     /// Deletes the database at the given path.
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {

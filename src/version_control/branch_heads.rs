@@ -111,6 +111,24 @@ impl BranchHEADs {
         })?)
     }
 
+    /// Returns a list of all branches on the database
+    pub fn get_all_branch_names(&mut self) -> Result<Vec<String>, String> {
+        let mut branch_names: Vec<String> = Vec::new();
+
+        for row_info in self.branch_heads_table.by_ref().into_iter().clone() {
+            let row: Row = row_info.row;
+
+            let branch_name: String;
+
+            // Get the branch name
+            match row.get(0) {
+                Some(Value::String(br_name)) => { branch_names.push(br_name.to_string()) },
+                _ => return Err("Error: Branch name not found".to_string()),
+            }
+        }
+        Ok(branch_names)
+    }
+
     /// Read the branch heads file and return a vector of BranchHead objects
     pub fn get_all_branch_heads(&mut self) -> Result<Vec<BranchHead>, String> {
         let mut branch_heads: Vec<BranchHead> = Vec::new();
