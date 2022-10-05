@@ -680,7 +680,7 @@ impl Database {
     /// Switches the database to the given branch.
     /// The branch MUST exist already.
     /// It returns true on success, and false on failure.
-    pub fn switch_branch(&mut self, branch_name: String, user: &mut User) -> Result<(), String> {
+    pub fn switch_branch(&mut self, branch_name: &String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -689,7 +689,7 @@ impl Database {
 
         // Checking user didn't pass the same branch in
         let user_curr_branch = user.get_current_branch_name();
-        if user_curr_branch == branch_name {
+        if user_curr_branch == branch_name.clone() {
             // Switching to the same branch you are already on is a no-op
             return Ok(());
         }
@@ -2202,6 +2202,120 @@ mod tests {
 
         // Make sure the main branch nodes are correct
         assert_eq!(main_commit1.message, "First Commit");
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_switch_branch() {
+        // This will test creating a branch off of main then switching to it
+        let db_name: String = "test_creating_and_switch_branch".to_string();
+        let branch_name: String = "new_branch".to_string();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Get the directories for all the branches
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+        let branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&branch_name);
+        let temp_branch_table_dir: String = branch_table_dir.clone() + &"-temp".to_string();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // Create a commit on the main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &user,
+                None,
+            )
+            .unwrap();
+
+        // Create a new branch off of the main branch
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch_name, &mut user)
+            .unwrap();
+
+        // Insert rows into the table on new branch
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("John".to_string())],
+            vec![Value::I32(2), Value::String("Jane".to_string())],
+            vec![Value::I32(3), Value::String("Joe".to_string())],
+        ];
+        let mut table_branch1: Table =
+            Table::new(&branch_table_dir, &"test_table".to_string(), None).unwrap();
+        let insert_diff: InsertDiff = table_branch1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Create commit on new branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit".to_string(),
+                &"Insert;".to_string(),
+                &user,
+                None,
+            )
+            .unwrap();
+
+        // Copy the contents of the new branch directory to a temp directory
+        std::fs::create_dir_all(&branch_table_dir).unwrap();
+        let mut options = fs_extra::dir::CopyOptions::new();
+        options.content_only = true;
+        fs_extra::dir::copy(
+            &branch_table_dir,
+            &temp_branch_table_dir,
+            &options,
+        ).unwrap();
+
+        // Delete the new branch directory
+        std::fs::remove_dir_all(branch_table_dir.clone()).unwrap();
+        
+        // Verify that the new branch directory is not there anymore
+        assert_eq!(std::path::Path::new(&branch_table_dir).exists(), false);
+
+        // Set user back to main branch
+        user.set_current_branch_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Switch the user to the new branch using switch_branch
+        get_db_instance().unwrap().switch_branch(&branch_name, &mut user).unwrap();
+
+        // Check that the user got set to the new branch
+        assert_eq!(user.get_current_branch_name(), branch_name.clone());
+
+        // Read in all the tables from the branch directories before we compare them
+        let table_temp_branch: Table = Table::new(&temp_branch_table_dir, &"test_table".to_string(), None).unwrap();
+        let table_new_branch: Table = Table::new(&branch_table_dir, &"test_table".to_string(), None).unwrap();
+        let table_main: Table = Table::new(&main_branch_table_dir, &"test_table".to_string(), None).unwrap();
+
+        // Make sure that the new branch directory table and the temp branch directory have the same table
+        assert!(compare_tables(&table_temp_branch, &table_new_branch, &temp_branch_table_dir, &branch_table_dir));
+
+        // Make sure that the main branch didn't get updated
+        assert_eq!(compare_tables(&table_main, &table_new_branch, &main_branch_table_dir, &branch_table_dir), false);
 
         // Delete the database
         delete_db_instance().unwrap();
