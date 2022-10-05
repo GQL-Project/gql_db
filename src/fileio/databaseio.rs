@@ -260,6 +260,8 @@ impl Database {
         self.get_branch_path_from_name(&branch_name)
     }
 
+    /// Gets the branch path from a branch name: <path>/<db_name>/<db_name>-<branch_name>.
+    /// This works even if the branch does not exist.
     pub fn get_branch_path_from_name(&self, branch_name: &String) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -273,15 +275,6 @@ impl Database {
             branch_name
         );
         path
-    }
-
-    /// Returns the database's current branch path for a user: <path>/<db_name>/<branch_name>
-    pub fn get_current_branch_path(&self, user: &User) -> String {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        let branch_name: String = user.get_current_branch_name();
-        self.get_branch_path_from_name(&branch_name)
     }
 
     /// Returns the database's current branch HEAD
@@ -617,7 +610,7 @@ impl Database {
         )?;
 
         // Set the user on the new branch
-        user.set_current_branch_name(branch_name.clone());
+        user.set_current_branch_name(&branch_name);
 
         // Now we need to construct the directory for the new branch
         // Steps:
@@ -691,7 +684,7 @@ impl Database {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        // Checking if the argument branch exists
+        // Checking if the argument branch exists. It will return an error if it doesn't exist.
         self.branch_heads.get_branch_head(&branch_name)?;
 
         // Checking user didn't pass the same branch in
@@ -712,147 +705,59 @@ impl Database {
 
         // Create the branch directory
         std::fs::create_dir_all(&new_branch_path)
-            .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
+            .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path: ".to_owned() + &e.to_string())?;
+            
+        // Copy all the tables from the main branch to the new branch directory
+        let mut options = fs_extra::dir::CopyOptions::new();
+        options.content_only = true;
+        fs_extra::dir::copy(
+            self.get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string()),
+            &new_branch_path,
+            &options,
+        )
+        .map_err(|e| "Database::create_branch() Error: ".to_owned() + &e.to_string())?;
     
         // Grabbing the nodes for the current user branch HEAD and the new branch HEAD
-        let mut user_branch_node = self.branch_heads.get_branch_node_from_head(&user_curr_branch, &self.branches)?;
-        let mut new_branch_node = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
-
-        // TODO: Find common ancestor
-
-        // Making TupleLists to represent the commit histories for the 2 branches
-        // Where the first element is the branch name and the second is the commit hash
-        let mut user_tupleList: Vec<(String, String)> = Vec::new();
-        let mut new_tupleList: Vec<(String, String)> = Vec::new();
-
-        //Finding common ancestor
-        let mut common_ancestor:Commit;
-        //The loop below stores the commit information in the user_tupleList
-        loop {
-            user_tupleList.push(
-                (
-                    user_branch_node.branch_name.clone(),
-                    user_branch_node.commit_hash.clone()
-                )
-            );
-
-            let prev_match = self.branches.get_prev_branch_node(&user_branch_node);
-            let prev_user_node = match prev_match {
-                Ok(node) => node,
-                Err(_) => break,
-            };
-            user_branch_node = prev_user_node.unwrap();
-        }
-        //the loop below stores the commit information in the new_tupleList
-        'outer: loop {
-            new_tupleList.push(
-                (
-                    new_branch_node.branch_name.clone(),
-                    new_branch_node.commit_hash.clone()
-                )
-            );
-
-            for tuple in user_tupleList.clone() {
-                if tuple.0 == new_branch_node.branch_name {
-                    let user_commit = self.commit_file.fetch_commit(&tuple.1)?;
-                    let new_commit = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
-
-                    let user_commit_time_stamp = user_commit.timestamp;
-                    let new_commit_time_stamp = new_commit.timestamp;
-
-                    if user_commit_time_stamp >= new_commit_time_stamp {
-                        common_ancestor = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
-                        break 'outer;
-                    } else {
-                        common_ancestor = self.commit_file.fetch_commit(&tuple.1)?;
-                        break 'outer;
-                    }
-                }
+        let new_branch_node = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
+        // Get the node for the main branch's HEAD
+        let main_branch_node: BranchNode = match self
+            .branch_heads
+            .get_branch_node_from_head(&MAIN_BRANCH_NAME.to_string(), &self.branches)
+        {
+            Ok(main_branch_head) => {
+                // The main branch does exist
+                main_branch_head
             }
-        }
+            Err(_) => {
+                // We are trying to switch to a branch, but the main branch does not exist.
+                // This is still OK. We just have to apply the diffs between the origin and the new branch's HEAD.
+                let diffs_from_origin: Vec<Diff> = self.get_diffs_between_nodes(None, &new_branch_node)?;
+                construct_tables_from_diffs(&new_branch_path, &diffs_from_origin)?;
 
-        //Obtaining a list of diffs to revert
-        //The list is technically a vec of vec of diff as it stores
-        // the diff list from each commit in a list
-        let mut revert_diff_list:Vec<Vec<Diff>> = Vec::new();
+                // Set the user onto the new branch
+                user.set_current_branch_name(&branch_name);
 
-        //The loop below stores the diff information in the revert_diff_list
-        //Also resetting the user_branch_node pointer to the head
-        user_branch_node = self.branch_heads.get_branch_node_from_head(&user_curr_branch, &self.branches)?;
-        loop {
-            let commit = self.commit_file.fetch_commit(&user_branch_node.commit_hash)?;
-            let diff_list = commit.diffs;
-            revert_diff_list.push(diff_list);
+                return Ok(());
+            }
+        };
 
-            let prev_match = self.branches.get_prev_branch_node(&user_branch_node)?;
-            let prev_user_node = match prev_match {
-                Some(node) => {
-                    if node.commit_hash == common_ancestor.hash {
-                        break;
-                    } else {
-                        node
-                    }
-                },
-                None => break,
-            };
-            user_branch_node = prev_user_node;
-        }
+        // Find the common ancestor between the two branches
+        let common_ancestor: BranchNode = self.find_common_ancestor(&main_branch_node, &new_branch_node)?;
 
-        //Create the new branches director if it doesn't exist
-        if Path::new(&self.get_branch_path_from_name(&branch_name)).is_dir() {
-            std::fs::create_dir_all(&self.get_branch_path_from_name(&branch_name))
-                .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
-        }
-        //Copying the files from main to the new branch folder
-        let mut options = fs_extra::dir::CopyOptions::new();
-        options.content_only = true; // Only copy the files not the directory
-        fs_extra::dir::copy(
-            self.get_branch_path_from_name(
-                    &MAIN_BRANCH_NAME.to_string()
-                ), 
-                &new_branch_path, 
-                &options
-        ).map_err(|e| {
-            "Database::create_temp_branch_directory() Error: ".to_owned() + &e.to_string()
-        })?;
+        // Collect the diffs between the common ancestor and the main branch HEAD
+        let revert_diff_list: Vec<Diff> = self.get_diffs_between_nodes(Some(&common_ancestor), &main_branch_node)?;
+        
+        // Collect the diffs between the common ancestor and the new branch HEAD
+        let apply_diff_list: Vec<Diff> = self.get_diffs_between_nodes(Some(&common_ancestor), &new_branch_node)?;
 
-        //Applying reverts to the new branch
-        for diff in revert_diff_list {
-           revert_tables_from_diffs(&new_branch_path, &diff)?;
-        }
+        // Apply reverts to the new branch
+        revert_tables_from_diffs(&new_branch_path, &revert_diff_list)?;
 
-        //Obtaining a list of diffs to apply
-        //The list is technically a vec of vec of diff as it stores
-        // the diff list from each commit in a list
-        let mut apply_diff_list:Vec<Vec<Diff>> = Vec::new();
+        // Apply diffs to the new branch
+        construct_tables_from_diffs(&new_branch_path, &apply_diff_list)?;
 
-        //The loop below stores the diff information in the apply_diff_list
-        //Also resetting the new_branch_node pointer to the head
-        new_branch_node = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
-        loop {
-            let commit = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
-            let diff_list = commit.diffs;
-            apply_diff_list.push(diff_list);
-
-            let prev_match = self.branches.get_prev_branch_node(&new_branch_node)?;
-            let prev_user_node = match prev_match {
-                Some(node) => {
-                    if node.commit_hash == common_ancestor.hash {
-                        break;
-                    } else {
-                        node
-                    }
-                },
-                None => break,
-            };
-            new_branch_node = prev_user_node;
-        }
-    
-        //Applying diffs to the new branch
-        apply_diff_list.reverse();
-        for diff in apply_diff_list {
-            construct_tables_from_diffs(&new_branch_path, &diff)?;
-        }
+        // Set the user onto the new branch
+        user.set_current_branch_name(&branch_name);
 
         Ok(())
     }
@@ -1960,7 +1865,7 @@ mod tests {
         );
 
         // Swap the user to the main branch
-        user.set_current_branch_name(MAIN_BRANCH_NAME.to_string());
+        user.set_current_branch_name(&MAIN_BRANCH_NAME.to_string());
 
         // Create a new table in the main branch
         let schema: Schema = vec![
@@ -2113,7 +2018,7 @@ mod tests {
         );
 
         // Swap user to branch1
-        user.set_current_branch_name(branch1_name.clone());
+        user.set_current_branch_name(&branch1_name);
 
         // Add a new table to branch1
         let schema: Schema = vec![
@@ -2142,7 +2047,7 @@ mod tests {
             .unwrap();
 
         // Swap user to branch2
-        user.set_current_branch_name(branch2_name.clone());
+        user.set_current_branch_name(&branch2_name);
 
         // Make sure that branch2 does not have the new table and branch1 does
         assert_eq!(
