@@ -385,202 +385,6 @@ impl Database {
         Ok(())
     }
 
-    /// Finds the common ancestor between two branch nodes
-    fn find_common_ancestor(
-        &self,
-        node1: &BranchNode,
-        node2: &BranchNode,
-    ) -> Result<BranchNode, String> {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        // Store the node1 ancestors, which are tuples of (branch name, BranchNode, commit hash)
-        let mut node1_ancestors: Vec<(String, BranchNode, String)> = Vec::new();
-
-        // Start with node1 and iterate back to the origin while sappending the possible ancestors to the vector
-        let mut current_node: BranchNode = node1.clone();
-        node1_ancestors.push((
-            current_node.branch_name.clone(),
-            current_node.clone(),
-            current_node.commit_hash.clone(),
-        ));
-
-        // Iterate back to the origin
-        loop {
-            // Get the previous node and break if current_node is the origin
-            let prev_node: Option<BranchNode> =
-                self.branches.get_prev_branch_node(&current_node)?;
-            match prev_node {
-                Some(prev_node_value) => {
-                    // Check if we have reached a new branch
-                    if current_node.branch_name != prev_node_value.branch_name {
-                        // Get the commit hash of the previous node
-                        let commit_hash: String = prev_node_value.commit_hash.clone();
-                        // Add the previous node to the vector
-                        node1_ancestors.push((
-                            prev_node_value.branch_name.clone(),
-                            prev_node_value.clone(),
-                            commit_hash,
-                        ));
-                    }
-
-                    // Update the current node
-                    current_node = prev_node_value;
-                }
-                None => {
-                    // The current node is the origin, so break
-                    break;
-                }
-            }
-        }
-
-        // Now node1_ancestors contains all the possible common ancestors of node1
-
-        // Start with node2 and iterate back to until we find a branch name that is in node1_ancestors
-        current_node = node2.clone();
-        // check if the current node's branch is in node1_ancestors
-        let mut is_found: Option<(String, BranchNode, String, usize)> = None;
-        for (idx, node) in node1_ancestors.clone().iter().enumerate() {
-            if node.0 == current_node.branch_name {
-                // We found a common ancestor
-                is_found = Some((
-                    current_node.branch_name.clone(),
-                    current_node.clone(),
-                    current_node.commit_hash.clone(),
-                    idx,
-                ));
-                break;
-            }
-        }
-
-        // If we didn't find it immediately, iterate back to a common ancestor
-        if is_found.is_none() {
-            'outer: loop {
-                // Get the previous node and break if current_node is the origin
-                let prev_node: Option<BranchNode> =
-                    self.branches.get_prev_branch_node(&current_node)?;
-                match prev_node {
-                    Some(prev_node_value) => {
-                        // Check if the current node's branch name is in node1_ancestors
-                        for (idx, node) in node1_ancestors.clone().iter().enumerate() {
-                            if node.0 == prev_node_value.branch_name {
-                                // We found a common ancestor
-                                is_found = Some((
-                                    prev_node_value.branch_name.clone(),
-                                    prev_node_value.clone(),
-                                    prev_node_value.commit_hash.clone(),
-                                    idx,
-                                ));
-                                break 'outer;
-                            }
-                        }
-
-                        // Update the current node
-                        current_node = prev_node_value;
-                    }
-                    None => {
-                        // There is no common ancestor
-                        return Err("There is no common ancestor".to_string());
-                    }
-                }
-            }
-        }
-
-        // Now we have found a common branch ancestor
-        if is_found.is_some() {
-            // Compare which time stamp is older, the node in is_found or the node in node1_ancestors
-            let is_found_node: (String, BranchNode, String, usize) = is_found.unwrap();
-            let node1_ancestors_node: &(String, BranchNode, String) =
-                node1_ancestors.get(is_found_node.3).unwrap();
-
-            let is_found_commit: Commit =
-                self.commit_file.fetch_commit(&is_found_node.2.clone())?;
-            let node1_ancestors_commit: Commit = self
-                .commit_file
-                .fetch_commit(&node1_ancestors_node.2.clone())?;
-
-            // Compare timestamps of the two nodes
-            if is_found_commit.timestamp > node1_ancestors_commit.timestamp {
-                // The node in node1_ancestors is older, so return it
-                return Ok(node1_ancestors_node.1.clone());
-            } else {
-                // The node in is_found is older, so return it
-                return Ok(is_found_node.1.clone());
-            }
-        } else {
-            return Err("There is no common ancestor".to_string());
-        }
-    }
-
-    /// Finds the diffs between node1 and node2 where node1 is the older node (closer to the origin).
-    /// If node1 is None, it returns all diffs between the origin and node2.
-    /// Returns a vector of diffs where the older diffs are first
-    fn get_diffs_between_nodes(
-        &self,
-        node1: Option<&BranchNode>,
-        node2: &BranchNode,
-    ) -> Result<Vec<Diff>, String> {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        let mut diffs: Vec<Vec<Diff>> = Vec::new();
-
-        // Check if node1 is Some or None
-        match node1 {
-            // Loop from node2 back to node1
-            Some(node1) => {
-                let mut curr_node: Option<BranchNode> = Some(node2.clone());
-                loop {
-                    match curr_node {
-                        Some(curr_node_value) => {
-                            if curr_node_value.commit_hash == node1.commit_hash {
-                                // We have reached node1, so break
-                                break;
-                            }
-                            // Append the diffs of the current node to the diffs vector
-                            diffs.push(
-                                self.commit_file
-                                    .fetch_commit(&curr_node_value.commit_hash)?
-                                    .diffs,
-                            );
-
-                            curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
-                        }
-                        None => {
-                            return Err("There is no common ancestor".to_string());
-                        }
-                    }
-                }
-            }
-            // Loop from node2 back to origin
-            None => {
-                let mut curr_node: Option<BranchNode> = Some(node2.clone());
-                loop {
-                    match curr_node {
-                        Some(curr_node_value) => {
-                            // Append the diffs of the current node to the diffs vector
-                            diffs.push(
-                                self.commit_file
-                                    .fetch_commit(&curr_node_value.commit_hash)?
-                                    .diffs,
-                            );
-
-                            curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
-                        }
-                        None => {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Now diffs contain all the diffs between node1 and node2
-        diffs.reverse();
-
-        Ok(diffs.into_iter().flatten().collect::<Vec<Diff>>())
-    }
-
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
@@ -817,6 +621,202 @@ impl Database {
     /*********************************************************************************************/
     /*                                       Private Methods                                     */
     /*********************************************************************************************/
+    
+    /// Finds the common ancestor between two branch nodes
+    fn find_common_ancestor(
+        &self,
+        node1: &BranchNode,
+        node2: &BranchNode,
+    ) -> Result<BranchNode, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Store the node1 ancestors, which are tuples of (branch name, BranchNode, commit hash)
+        let mut node1_ancestors: Vec<(String, BranchNode, String)> = Vec::new();
+
+        // Start with node1 and iterate back to the origin while sappending the possible ancestors to the vector
+        let mut current_node: BranchNode = node1.clone();
+        node1_ancestors.push((
+            current_node.branch_name.clone(),
+            current_node.clone(),
+            current_node.commit_hash.clone(),
+        ));
+
+        // Iterate back to the origin
+        loop {
+            // Get the previous node and break if current_node is the origin
+            let prev_node: Option<BranchNode> =
+                self.branches.get_prev_branch_node(&current_node)?;
+            match prev_node {
+                Some(prev_node_value) => {
+                    // Check if we have reached a new branch
+                    if current_node.branch_name != prev_node_value.branch_name {
+                        // Get the commit hash of the previous node
+                        let commit_hash: String = prev_node_value.commit_hash.clone();
+                        // Add the previous node to the vector
+                        node1_ancestors.push((
+                            prev_node_value.branch_name.clone(),
+                            prev_node_value.clone(),
+                            commit_hash,
+                        ));
+                    }
+
+                    // Update the current node
+                    current_node = prev_node_value;
+                }
+                None => {
+                    // The current node is the origin, so break
+                    break;
+                }
+            }
+        }
+
+        // Now node1_ancestors contains all the possible common ancestors of node1
+
+        // Start with node2 and iterate back to until we find a branch name that is in node1_ancestors
+        current_node = node2.clone();
+        // check if the current node's branch is in node1_ancestors
+        let mut is_found: Option<(String, BranchNode, String, usize)> = None;
+        for (idx, node) in node1_ancestors.clone().iter().enumerate() {
+            if node.0 == current_node.branch_name {
+                // We found a common ancestor
+                is_found = Some((
+                    current_node.branch_name.clone(),
+                    current_node.clone(),
+                    current_node.commit_hash.clone(),
+                    idx,
+                ));
+                break;
+            }
+        }
+
+        // If we didn't find it immediately, iterate back to a common ancestor
+        if is_found.is_none() {
+            'outer: loop {
+                // Get the previous node and break if current_node is the origin
+                let prev_node: Option<BranchNode> =
+                    self.branches.get_prev_branch_node(&current_node)?;
+                match prev_node {
+                    Some(prev_node_value) => {
+                        // Check if the current node's branch name is in node1_ancestors
+                        for (idx, node) in node1_ancestors.clone().iter().enumerate() {
+                            if node.0 == prev_node_value.branch_name {
+                                // We found a common ancestor
+                                is_found = Some((
+                                    prev_node_value.branch_name.clone(),
+                                    prev_node_value.clone(),
+                                    prev_node_value.commit_hash.clone(),
+                                    idx,
+                                ));
+                                break 'outer;
+                            }
+                        }
+
+                        // Update the current node
+                        current_node = prev_node_value;
+                    }
+                    None => {
+                        // There is no common ancestor
+                        return Err("There is no common ancestor".to_string());
+                    }
+                }
+            }
+        }
+
+        // Now we have found a common branch ancestor
+        if is_found.is_some() {
+            // Compare which time stamp is older, the node in is_found or the node in node1_ancestors
+            let is_found_node: (String, BranchNode, String, usize) = is_found.unwrap();
+            let node1_ancestors_node: &(String, BranchNode, String) =
+                node1_ancestors.get(is_found_node.3).unwrap();
+
+            let is_found_commit: Commit =
+                self.commit_file.fetch_commit(&is_found_node.2.clone())?;
+            let node1_ancestors_commit: Commit = self
+                .commit_file
+                .fetch_commit(&node1_ancestors_node.2.clone())?;
+
+            // Compare timestamps of the two nodes
+            if is_found_commit.timestamp > node1_ancestors_commit.timestamp {
+                // The node in node1_ancestors is older, so return it
+                return Ok(node1_ancestors_node.1.clone());
+            } else {
+                // The node in is_found is older, so return it
+                return Ok(is_found_node.1.clone());
+            }
+        } else {
+            return Err("There is no common ancestor".to_string());
+        }
+    }
+
+    /// Finds the diffs between node1 and node2 where node1 is the older node (closer to the origin).
+    /// If node1 is None, it returns all diffs between the origin and node2.
+    /// Returns a vector of diffs where the older diffs are first
+    fn get_diffs_between_nodes(
+        &self,
+        node1: Option<&BranchNode>,
+        node2: &BranchNode,
+    ) -> Result<Vec<Diff>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let mut diffs: Vec<Vec<Diff>> = Vec::new();
+
+        // Check if node1 is Some or None
+        match node1 {
+            // Loop from node2 back to node1
+            Some(node1) => {
+                let mut curr_node: Option<BranchNode> = Some(node2.clone());
+                loop {
+                    match curr_node {
+                        Some(curr_node_value) => {
+                            if curr_node_value.commit_hash == node1.commit_hash {
+                                // We have reached node1, so break
+                                break;
+                            }
+                            // Append the diffs of the current node to the diffs vector
+                            diffs.push(
+                                self.commit_file
+                                    .fetch_commit(&curr_node_value.commit_hash)?
+                                    .diffs,
+                            );
+
+                            curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
+                        }
+                        None => {
+                            return Err("There is no common ancestor".to_string());
+                        }
+                    }
+                }
+            }
+            // Loop from node2 back to origin
+            None => {
+                let mut curr_node: Option<BranchNode> = Some(node2.clone());
+                loop {
+                    match curr_node {
+                        Some(curr_node_value) => {
+                            // Append the diffs of the current node to the diffs vector
+                            diffs.push(
+                                self.commit_file
+                                    .fetch_commit(&curr_node_value.commit_hash)?
+                                    .diffs,
+                            );
+
+                            curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now diffs contain all the diffs between node1 and node2
+        diffs.reverse();
+
+        Ok(diffs.into_iter().flatten().collect::<Vec<Diff>>())
+    }
 
     /// Private static method that returns the full absolute path to the databases directory
     fn get_database_base_path() -> Result<String, String> {
