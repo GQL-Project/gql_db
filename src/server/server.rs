@@ -3,6 +3,7 @@ use db_connection::*;
 use tonic::{Request, Response, Status};
 
 use crate::executor::query;
+use crate::fileio::databaseio::get_db_instance;
 use crate::parser::parser;
 use crate::server::connection::Connection;
 use crate::user::userdata::*;
@@ -21,7 +22,24 @@ impl DatabaseConnection for Connection {
     }
 
     async fn disconnect_db(&self, request: Request<ConnectResult>) -> Result<Response<()>, Status> {
-        self.remove_client(request.into_inner().id)
+        let connect_res: ConnectResult = request.into_inner();
+
+        // Delete the temp branch directory in it's own scope to prevent issues when removing the client
+        {
+            // Get the user that is disconnecting
+            let user: &mut User = self
+                .get_client(&connect_res.id)
+                .map_err(|e| Status::internal(e))?;
+
+            // If the user is on a temp branch, then we need to delete it.
+            if user.is_on_temp_commit() {
+                get_db_instance()
+                    .map_err(|e| Status::internal(e))?
+                    .delete_temp_branch_directory(user)
+                    .map_err(|e| Status::internal(e))?;
+            }
+        }
+        self.remove_client(connect_res.id)
             .map_err(|e| Status::internal(e))?;
         Ok(Response::new(()))
     }
@@ -67,6 +85,14 @@ impl DatabaseConnection for Connection {
                     .get_client(&request.id)
                     .map_err(|e| Status::internal(e))?;
 
+                // If the user is not on a temp branch, then we need to create a new one.
+                if user.is_on_temp_commit() == false {
+                    get_db_instance()
+                        .map_err(|e| Status::internal(e))?
+                        .create_temp_branch_directory(user)
+                        .map_err(|e| Status::internal(e))?;
+                }
+
                 let resp = query::execute_update(&tree, user).map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_update_result(resp)))
             }
@@ -93,7 +119,6 @@ impl DatabaseConnection for Connection {
         /* Creating Result */
         match result {
             Ok(value) => Ok(Response::new(to_vc_cmd_result(value))),
-            // Err(err) => Ok(Response::new(to_vc_cmd_result(err))), // Changed it because the other one would end the command line, but this does not pass the test cases
             Err(err) => Err(Status::cancelled(&err)),
         }
     }
@@ -142,6 +167,94 @@ mod tests {
             .await;
         assert!(result.is_err());
         let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_update() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "ABCD INCORRECT QUERY;".to_string(),
+            }))
+            .await;
+        assert!(result.is_err());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_update_success() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "CREATE TABLE test (id INT);".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_query_success() {
+        let conn = Connection::new();
+        let result = conn.connect_db(Request::new(())).await;
+        assert!(result.is_ok());
+        let id = result.unwrap().into_inner().id;
+        let result2 = conn.connect_db(Request::new(())).await;
+        assert!(result2.is_ok());
+        let id2 = result2.unwrap().into_inner().id;
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "CREATE TABLE test (id INT);".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let result = conn
+            .run_update(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "INSERT INTO test VALUES (88);".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let result = conn
+            .run_query(Request::new(super::QueryRequest {
+                id: id.clone(),
+                query: "SELECT * FROM test;".to_string(),
+            }))
+            .await;
+        assert!(result.is_ok());
+        let request = ConnectResult { id };
+        let result = conn.disconnect_db(Request::new(request)).await;
+        assert!(result.is_ok());
+
+        // Make sure that the temporary branch directory did not affect the main branch
+        let result = conn
+            .run_query(Request::new(super::QueryRequest {
+                id: id2.clone(),
+                query: "SELECT * FROM test;".to_string(),
+            }))
+            .await;
+        assert!(result.is_err());
+
+        // Disconnect the second client
+        let request = ConnectResult { id: id2 };
         let result = conn.disconnect_db(Request::new(request)).await;
         assert!(result.is_ok());
     }

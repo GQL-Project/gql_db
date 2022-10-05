@@ -2,10 +2,9 @@ use std::io::{self, BufRead, Write};
 use std::string::String;
 use tonic::Request;
 
+use crate::client::result_parse;
 use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
-use crate::server::server::db_connection::{ConnectResult, QueryRequest, QueryResult};
-use crate::util::convert::to_row_value;
-use crate::util::dbtype::Value;
+use crate::server::server::db_connection::{ConnectResult, QueryRequest};
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = DatabaseConnectionClient::connect("http://[::1]:50051").await?;
@@ -75,26 +74,14 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if command.starts_with("SELECT ") {
             let result = client.run_query(Request::new(request.clone())).await;
             if result.is_ok() {
-                // Parsing here
-                // let get_response = result.unwrap().into_inner();
-                // println!("{}", get_response.tree);
+                // parses through the result and prints the table
+                result_parse::result_parse(result.unwrap().into_inner())?;
             } else {
                 println!("Error: {}", result.unwrap_err().message());
             }
         } else {
             println!("Invalid command");
         }
-
-        let result = QueryResult {
-            column_names: vec![
-                "Name".to_string(),
-                "Age".to_string(),
-                "Height".to_string(),
-                "Weight".to_string(),
-                "Location".to_string(),
-            ],
-            row_values: vec![],
-        };
     }
     Ok(())
 }
