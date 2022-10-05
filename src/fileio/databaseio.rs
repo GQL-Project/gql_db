@@ -42,13 +42,6 @@ pub struct Database {
                      // TODO: maybe add permissions here
 }
 
-//Tuple List struct is used for the switch_branch logic
-#[derive(Clone)]
-pub struct TupleList {
-    branch_name: String, // The name of the branch the commit belongs to
-    commit_hash: String, // The commit hash for the current commit in the branch
-}
-
 static mut DATABASE_INSTANCE: Option<Database> = None;
 
 pub fn get_db_instance() -> Result<&'static mut Database, String> {
@@ -392,54 +385,54 @@ impl Database {
     /// Switches the database to the given branch.
     /// The branch MUST exist already.
     /// It returns true on success, and false on failure.
-    pub fn switch_branch(&mut self, _branch_name: String, user: &mut User) -> Result<(), String> {
+    pub fn switch_branch(&mut self, branch_name: String, user: &mut User) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        //Checking if the argument branch exists
-        match self.branch_heads.get_branch_head(&_branch_name) {
-            Ok(_) => {} // Do nothing, we expect the user passes a branch that exists
-            Err(_) => {
-                return Err("Database::switch_branch() Error: Branch doesn't exist".to_owned());
-            } 
-        }
+        // Checking if the argument branch exists
+        self.branch_heads.get_branch_head(&branch_name)?;
 
-        //Checking user didn't pass the same branch in
+        // Checking user didn't pass the same branch in
         let user_curr_branch = user.get_current_branch_name();
-        if user_curr_branch == _branch_name {
-            return Err("Database::switch_branch() Error: User is already on this branch".to_owned());
+        if user_curr_branch == branch_name {
+            // Switching to the same branch you are already on is a no-op
+            return Ok(());
         }
 
-        //let user_curr_branch_path = self.get_current_branch_path(&user);
-        let new_branch_path = self.get_branch_path_from_name(&_branch_name);
-        let branch_dir_exists = Path::new(&new_branch_path).is_dir();
+        // Get the path to where the new branch will be
+        let new_branch_path: String = self.get_branch_path_from_name(&branch_name);
 
-        //If the branch directory doesn't exist, create it
-        if !branch_dir_exists {
-            std::fs::create_dir_all(&new_branch_path)
-                .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
+        // If the branch directory already exists, then we can just switch to it without building that branch
+        if Path::new(&new_branch_path).exists() {
+            user.set_current_branch_name(&branch_name);
+            return Ok(());
         }
 
-        //Checking if the branch heads exist just to be doubly sure
-        //let curr_branch_head_check = self.branch_heads.get_branch_head(&user_curr_branch)?;
-        //let new_branch_head_check = self.branch_heads.get_branch_head(&_branch_name)?;
+        // Create the branch directory
+        std::fs::create_dir_all(&new_branch_path)
+            .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
     
-        //Grabbing the nodes for the current user branch and the new branch
+        // Grabbing the nodes for the current user branch HEAD and the new branch HEAD
         let mut user_branch_node = self.branch_heads.get_branch_node_from_head(&user_curr_branch, &self.branches)?;
-        let mut new_branch_node = self.branch_heads.get_branch_node_from_head(&_branch_name, &self.branches)?;
+        let mut new_branch_node = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
 
-        //Making TupleLists to represent the commit histories for the 2 branches
-        let mut user_tupleList: Vec<TupleList> = Vec::new();
-        let mut new_tupleList: Vec<TupleList> = Vec::new();
+        // TODO: Find common ancestor
+
+        // Making TupleLists to represent the commit histories for the 2 branches
+        // Where the first element is the branch name and the second is the commit hash
+        let mut user_tupleList: Vec<(String, String)> = Vec::new();
+        let mut new_tupleList: Vec<(String, String)> = Vec::new();
 
         //Finding common ancestor
         let mut common_ancestor:Commit;
         //The loop below stores the commit information in the user_tupleList
         loop {
-            user_tupleList.push(TupleList {
-                branch_name: user_branch_node.branch_name.clone(),
-                commit_hash: user_branch_node.commit_hash.clone(),
-            });
+            user_tupleList.push(
+                (
+                    user_branch_node.branch_name.clone(),
+                    user_branch_node.commit_hash.clone()
+                )
+            );
 
             let prev_match = self.branches.get_prev_branch_node(&user_branch_node);
             let prev_user_node = match prev_match {
@@ -450,14 +443,16 @@ impl Database {
         }
         //the loop below stores the commit information in the new_tupleList
         'outer: loop {
-            new_tupleList.push(TupleList {
-                branch_name: new_branch_node.branch_name.clone(),
-                commit_hash: new_branch_node.commit_hash.clone(),
-            });
+            new_tupleList.push(
+                (
+                    new_branch_node.branch_name.clone(),
+                    new_branch_node.commit_hash.clone()
+                )
+            );
 
             for tuple in user_tupleList.clone() {
-                if tuple.branch_name == new_branch_node.branch_name {
-                    let user_commit = self.commit_file.fetch_commit(&tuple.commit_hash)?;
+                if tuple.0 == new_branch_node.branch_name {
+                    let user_commit = self.commit_file.fetch_commit(&tuple.1)?;
                     let new_commit = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
 
                     let user_commit_time_stamp = user_commit.timestamp;
@@ -467,7 +462,7 @@ impl Database {
                         common_ancestor = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
                         break 'outer;
                     } else {
-                        common_ancestor = self.commit_file.fetch_commit(&tuple.commit_hash)?;
+                        common_ancestor = self.commit_file.fetch_commit(&tuple.1)?;
                         break 'outer;
                     }
                 }
@@ -502,8 +497,8 @@ impl Database {
         }
 
         //Create the new branches director if it doesn't exist
-        if Path::new(&self.get_branch_path_from_name(&_branch_name)).is_dir() {
-            std::fs::create_dir_all(&self.get_branch_path_from_name(&_branch_name))
+        if Path::new(&self.get_branch_path_from_name(&branch_name)).is_dir() {
+            std::fs::create_dir_all(&self.get_branch_path_from_name(&branch_name))
                 .map_err(|e| "Database::switch_branch() Error: Failed to create directory for given branch path".to_owned())?;
         }
         //Copying the files from main to the new branch folder
@@ -531,7 +526,7 @@ impl Database {
 
         //The loop below stores the diff information in the apply_diff_list
         //Also resetting the new_branch_node pointer to the head
-        new_branch_node = self.branch_heads.get_branch_node_from_head(&_branch_name, &self.branches)?;
+        new_branch_node = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
         loop {
             let commit = self.commit_file.fetch_commit(&new_branch_node.commit_hash)?;
             let diff_list = commit.diffs;
