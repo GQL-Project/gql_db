@@ -375,79 +375,113 @@ impl Database {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
         
-        // Store the node1 ancestors, which are tuples of BranchName, BranchNode, Commit_hash
+        // Store the node1 ancestors, which are tuples of (branch name, BranchNode, commit hash)
         let mut node1_ancestors: Vec<(String, BranchNode, String)> = Vec::new();
        
-        //start with node1 and iterate back to the origin appending ancestors to the vector
+        // Start with node1 and iterate back to the origin while sappending the possible ancestors to the vector
         let mut current_node: BranchNode = node1.clone();
-        node1_ancestors.push((current_node.branch_name.clone(), current_node.clone(), current_node.commit_hash.clone()));
+        node1_ancestors.push(
+            (
+                current_node.branch_name.clone(), 
+                current_node.clone(), 
+                current_node.commit_hash.clone()
+            )
+        );
 
-        loop{
+        // Iterate back to the origin
+        loop {
+            // Get the previous node and break if current_node is the origin
             let prev_node: Option<BranchNode> = self.branches.get_prev_branch_node(&current_node)?;
             match prev_node {
                 Some(prev_node_value) => {
-              
+                    // Check if we have reached a new branch
                     if current_node.branch_name != prev_node_value.branch_name {
+                        // Get the commit hash of the previous node
                         let commit_hash:String = prev_node_value.commit_hash.clone();
+                        // Add the previous node to the vector
                         node1_ancestors.push((prev_node_value.branch_name.clone(), prev_node_value.clone(), commit_hash));
                     }
+
+                    // Update the current node
                     current_node = prev_node_value;
                 }
                 None => {
-                    // There is no common ancestor
-                    return Err("There is no common ancestor".to_string());
-                }
-            }
-        }
-            // Now node1_ancestors contains all the ancestors of node1
-            // Start with node2 and iterate back to until we find a branch name that is in node1_ancestors
-            current_node = node2.clone();
-            // check if the current node is in node1_ancestors
-            let mut is_found: Option<(String, BranchNode, String, usize)> = None;
-            for (idx,node)in node1_ancestors.clone().iter().enumerate(){ {
-                if node.0 == current_node.branch_name {
-                    is_found = Some((current_node.branch_name.clone(), current_node.clone(), current_node.commit_hash.clone(), idx));
+                    // The current node is the origin, so break
                     break;
                 }
             }
+        }
 
-            if is_found.is_none() {
-                'outer: loop {
-                    let prev_node: Option<BranchNode> = self.branches.get_prev_branch_node(&current_node)?;
-                    match prev_node {
-                        Some(prev_node_value) => {
-                            
-                            for (idx,node)in node1_ancestors.clone().iter().enumerate(){ 
-                                if node.0 == prev_node_value.branch_name {
-                                    is_found = Some((prev_node_value.branch_name.clone(), prev_node_value.clone(), prev_node_value.commit_hash.clone(), idx));
-                                    break 'outer;
-                                }
+        // Now node1_ancestors contains all the possible common ancestors of node1
+
+        // Start with node2 and iterate back to until we find a branch name that is in node1_ancestors
+        current_node = node2.clone();
+        // check if the current node's branch is in node1_ancestors
+        let mut is_found: Option<(String, BranchNode, String, usize)> = None;
+        for (idx,node)in node1_ancestors.clone().iter().enumerate() {
+            if node.0 == current_node.branch_name {
+                // We found a common ancestor
+                is_found = Some(
+                    (
+                        current_node.branch_name.clone(),
+                        current_node.clone(),
+                        current_node.commit_hash.clone(),
+                        idx
+                    )
+                );
+                break;
+            }
+        }
+
+        // If we didn't find it immediately, iterate back to a common ancestor
+        if is_found.is_none() {
+            'outer: loop {
+                // Get the previous node and break if current_node is the origin
+                let prev_node: Option<BranchNode> = self.branches.get_prev_branch_node(&current_node)?;
+                match prev_node {
+                    Some(prev_node_value) => {
+                        // Check if the current node's branch name is in node1_ancestors
+                        for (idx,node)in node1_ancestors.clone().iter().enumerate(){ 
+                            if node.0 == prev_node_value.branch_name {
+                                // We found a common ancestor
+                                is_found = Some(
+                                    (
+                                        prev_node_value.branch_name.clone(),
+                                        prev_node_value.clone(),
+                                        prev_node_value.commit_hash.clone(),
+                                        idx
+                                    )
+                                );
+                                break 'outer;
                             }
-                            current_node = prev_node_value;
-                        },
-                        None => {
-                            // There is no common ancestor
-                            return Err("There is no common ancestor".to_string());
                         }
+
+                        // Update the current node
+                        current_node = prev_node_value;
+                    },
+                    None => {
+                        // There is no common ancestor
+                        return Err("There is no common ancestor".to_string());
                     }
                 }
             }
         }
-        // Now we have found the common ancestor
+
+        // Now we have found a common branch ancestor
         if is_found.is_some() {
             // Compare which time stamp is older, the node in is_found or the node in node1_ancestors
-            let is_found_node = is_found.unwrap();
-            let node1_ancestors_node = node1_ancestors.get(is_found_node.3).unwrap();
+            let is_found_node: (String, BranchNode, String, usize) = is_found.unwrap();
+            let node1_ancestors_node: &(String, BranchNode, String) = node1_ancestors.get(is_found_node.3).unwrap();
             
-            let is_found_commit = self.commit_file.fetch_commit(&is_found_node.2.clone())?;
-            let node1_ancestors_commit = self.commit_file.fetch_commit(&node1_ancestors_node.2.clone())?;
+            let is_found_commit: Commit = self.commit_file.fetch_commit(&is_found_node.2.clone())?;
+            let node1_ancestors_commit: Commit = self.commit_file.fetch_commit(&node1_ancestors_node.2.clone())?;
 
             // Compare timestamps of the two nodes
             if is_found_commit.timestamp > node1_ancestors_commit.timestamp {
-                // is_found is older
+                // The node in node1_ancestors is older, so return it
                 return Ok(node1_ancestors_node.1.clone())
             } else {
-                // node1_ancestors is older
+                // The node in is_found is older, so return it
                 return Ok(is_found_node.1.clone())
             }
         }
@@ -456,33 +490,36 @@ impl Database {
         }
     }
 
-    /// Finds the diffs between node1 and node2 where nose1 is the older node
+    /// Finds the diffs between node1 and node2 where node1 is the older node
+    /// Returns a vector of diffs where the older diffs are first
     fn get_diffs_between_nodes(&self, node1: &BranchNode, node2: &BranchNode) -> Result<Vec<Diff>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         let mut diffs: Vec<Vec<Diff>> = Vec::new();
 
+        // Loop from node2 back to node1
         let mut curr_node: Option<BranchNode> = Some(node2.clone());
         loop {
             match curr_node {
                 Some(curr_node_value) => {
                     if curr_node_value.commit_hash == node1.commit_hash {
-                        // We have reached the common ancestor
+                        // We have reached node1, so break
                         break;
                     }
+                    // Append the diffs of the current node to the diffs vector
                     diffs.push(self.commit_file.fetch_commit(&curr_node_value.commit_hash)?.diffs);
 
                     curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
                 },
                 None => {
-                    // There is no common ancestor
                     return Err("There is no common ancestor".to_string());
                 }
             }
         }
         // Now diffs contain all the diffs between node1 and node2
         diffs.reverse();
+
         Ok(diffs.into_iter().flatten().collect::<Vec<Diff>>())
     }
 
@@ -501,44 +538,70 @@ impl Database {
                 }
                 Err(_) => {} // Do nothing, we expect this error
             }
-            //TODO: Ryan User Story 18
         }
         
         // Clear the user's diffs
         user.set_diffs(&Vec::new());
 
         // Create a commit for the new branch
-        self.create_commit_and_node(&format!("Created Branch {}", branch_name), &format!("GQL branch {}", branch_name), user, Some(branch_name.clone()))?;
+        self.create_commit_and_node(
+            &format!(
+                "Created Branch {}",
+                branch_name
+            ), 
+            &format!(
+                "GQL branch {}", 
+                branch_name), 
+                user, 
+                Some(branch_name.clone()
+            )
+        )?;
         
         // Set the user on the new branch
         user.set_current_branch_name(branch_name.clone());
 
-        // Construct directory for the new branch
+        // Now we need to construct the directory for the new branch
+        // Steps:
+        // 1. Create a new directory for the branch
+        // 2. Copy all the tables from the main branch to the new branch directory
+        // 3. Find the common ancestor between the main branch and the new branch
+        // 4. Collect the diffs between the common ancestor and the main branch HEAD
+        // 5. Collect the diffs between the common ancestor and the new branch HEAD
+        // 6. Revert the diffs from the main branch HEAD to the new branch directory
+        // 7. Apply the diffs from the new branch HEAD to the new branch directory
+
+        // 1. Create a new directory for the branch
         let new_branch_path: String = self.get_current_branch_path(user);
         std::fs::create_dir_all(&new_branch_path)
             .map_err(|e| "Database::create_branch() Error: ".to_owned() + &e.to_string())?;
 
+        // 2. Copy all the tables from the main branch to the new branch directory
         let mut options = fs_extra::dir::CopyOptions::new();
         options.content_only = true;
-        fs_extra::dir::copy(self.get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string()), &new_branch_path, &options).map_err(|e| "Database::create_branch() Error: ".to_owned() + &e.to_string())?;
+        fs_extra::dir::copy(
+            self.get_branch_path_from_name(
+                &MAIN_BRANCH_NAME.to_string()
+            ), 
+            &new_branch_path, 
+            &options
+        ).map_err(|e| "Database::create_branch() Error: ".to_owned() + &e.to_string())?;
 
-        //Find common ancestor between main branch and new branch
+        // 3. Find the common ancestor between the main branch and the new branch
         let node1: BranchNode = self.branch_heads.get_branch_node_from_head(&MAIN_BRANCH_NAME.to_string(), &self.branches)?;
         let node2: BranchNode = self.branch_heads.get_branch_node_from_head(&branch_name, &self.branches)?;
         let common_ancestor: BranchNode = self.find_common_ancestor(&node1, &node2)?;
 
-        //Revert the tables in the new branch directory to the common ancestor
-        // Accumulate a list of diffs from the common ancestor in the main branch's head
+        // 4. Collect the diffs between the common ancestor and the main branch HEAD
         let diffs_to_main = self.get_diffs_between_nodes(&common_ancestor, &node1)?;
+
+        // 5. Collect the diffs between the common ancestor and the new branch HEAD
         let diffs_to_new_branch = self.get_diffs_between_nodes(&common_ancestor, &node2)?;
         
-        // Revert the diffs to the new branch
+        // 6. Revert the diffs from the main branch HEAD to the new branch directory
         revert_tables_from_diffs(&new_branch_path,  &diffs_to_main)?;
 
-        // Apply the diffs to the new branch
+        // 7. Apply the diffs from the new branch HEAD to the new branch directory
         construct_tables_from_diffs(&new_branch_path, &diffs_to_new_branch)?;
-
-
 
         Ok(())
     }
