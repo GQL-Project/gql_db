@@ -73,7 +73,7 @@ impl Drop for Connection {
 mod tests {
     use super::*;
     use crate::{
-        fileio::header::Schema,
+        fileio::{header::Schema, databaseio::*},
         util::dbtype::Column,
         util::{dbtype::Value, row::*},
         version_control::diff::{Diff, InsertDiff},
@@ -84,50 +84,76 @@ mod tests {
     #[serial]
     fn test_new_client() {
         let connection = Connection::default();
+        // Create a new database instance
+        create_db_instance(&"test_new_client".to_string()).unwrap();
+        
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
     }
 
     #[test]
     #[serial]
     fn test_new_clients() {
         let connection = Connection::default();
+        // Create a new database instance
+        create_db_instance(&"test_new_clients".to_string()).unwrap();
+
         let id1 = connection.new_client().unwrap();
         let id2 = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 2);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id1);
         assert_eq!(connection.get_clients_readonly()[1].get_user_id(), id2);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
     }
 
     #[test]
     #[serial]
     fn test_remove_client() {
         let connection = Connection::default();
+        // Create a new database instance
+        create_db_instance(&"test_new_clients".to_string()).unwrap();
+
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
         connection.remove_client(id.clone()).unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 0);
         assert_eq!(does_contain_id(&connection, &id), false);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
     }
 
     #[test]
     #[serial]
     fn test_remove_non_client() {
         let connection = Connection::default();
+        // Create a new database instance
+        create_db_instance(&"test_new_clients".to_string()).unwrap();
+
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
         connection.remove_client("12345".to_string()).unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(does_contain_id(&connection, &id), true);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
     }
 
     #[test]
     #[serial]
     fn test_mutability_of_get_client() {
         let connection: Connection = Connection::default();
+        // Create a new database instance
+        create_db_instance(&"test_new_clients".to_string()).unwrap();
 
         // Create a scope for appending the diff
         {
@@ -168,6 +194,9 @@ mod tests {
             }
             _ => assert!(false), // The diff should be an insert
         }
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
     }
 
     fn does_contain_id(connection: &Connection, id: &String) -> bool {

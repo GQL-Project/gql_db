@@ -1832,6 +1832,36 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_create_2_branches() {
+        // This will test creating a branch off of another branch and then creating a commit on the new branch
+        let db_name: String = "test_create_2_branches".to_string();
+        let branch1_name: String = "new_branch1".to_string();
+        let branch2_name: String = "new_branch2".to_string();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new branch immediately
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch1_name, &mut user)
+            .unwrap();
+
+        // Create a second branch off that branch
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch2_name, &mut user)
+            .unwrap();
+
+        // Delete the database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
     fn test_creating_branch_off_another_branch() {
         // This will test creating a branch off of another branch and then creating a commit on the new branch
         let db_name: String = "test_creating_branch_off_another_branch".to_string();
