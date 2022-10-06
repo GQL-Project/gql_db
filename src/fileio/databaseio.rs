@@ -213,8 +213,13 @@ impl Database {
         };
 
         // If the branch that the user is on doesn't exist, create a new branch off a None previous node
-        if self.branch_heads.get_all_branch_heads()?.len() == 0 || 
-            self.branch_heads.get_all_branch_names()?.contains(&user.get_current_branch_name()) == false {
+        if self.branch_heads.get_all_branch_heads()?.len() == 0
+            || self
+                .branch_heads
+                .get_all_branch_names()?
+                .contains(&user.get_current_branch_name())
+                == false
+        {
             let node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 None,

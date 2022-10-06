@@ -80,8 +80,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     let branch_names_str: String = branch_names.join(",");
 
                     return Ok(branch_names_str);
-                } 
-                else {
+                } else {
                     // vec[2] should be a branch name
                     // create branch
                     get_db_instance()?
