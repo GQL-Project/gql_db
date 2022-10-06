@@ -212,7 +212,9 @@ impl Database {
             None => user.get_current_branch_name(),
         };
 
-        if self.branch_heads.get_all_branch_heads()?.len() == 0 {
+        // If the branch that the user is on doesn't exist, create a new branch off a None previous node
+        if self.branch_heads.get_all_branch_heads()?.len() == 0 || 
+            self.branch_heads.get_all_branch_names()?.contains(&user.get_current_branch_name()) == false {
             let node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 None,
@@ -221,6 +223,8 @@ impl Database {
             )?;
             return Ok((node, commit));
         }
+
+        // There is a previous branch node to create a new branch node off of
         let prev_node = self
             .branch_heads
             .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;

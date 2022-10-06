@@ -62,7 +62,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             }
         }
         "branch" => {
-            // branch (CoPilot rec: Possible flags: -d, -m)
+            // branch (CoPilot rec: Possible flags: -d, -m, -l (list branches))
             // Needs an argument
             println!("{:?}", "branch command");
             if vec.len() < 3 {
@@ -73,13 +73,23 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 // error message here
                 return Err("Invalid Branch Name".to_string());
             } else {
-                // vec[2] should be a branch name
-                // create branch
-                get_db_instance()?
-                    .create_branch(&vec[2].to_string(), user)
-                    .map_err(|e| e.to_string())?;
+                if vec[2].to_string() == "-l" {
+                    // We want to return a list of branches
+                    let branch_names: Vec<String> = get_db_instance()?.get_all_branch_names()?;
+                    // Join the branch_names into a single comma separated string
+                    let branch_names_str: String = branch_names.join(",");
 
-                return Ok("Valid Branch Command".to_string());
+                    return Ok(branch_names_str);
+                } 
+                else {
+                    // vec[2] should be a branch name
+                    // create branch
+                    get_db_instance()?
+                        .create_branch(&vec[2].to_string(), user)
+                        .map_err(|e| e.to_string())?;
+
+                    return Ok("Valid Branch Command".to_string());
+                }
             }
         }
         "switch_branch" => {

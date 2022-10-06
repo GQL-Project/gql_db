@@ -95,7 +95,7 @@ impl BranchHEADs {
             }
         }
 
-        return Err("Branch name not present in branch HEADs file".to_string());
+        return Err(format!("Branch name '{}' not present in branch HEADs file", branch_name).to_string());
     }
 
     /// Returns the branch node for the HEAD of the given branch.
