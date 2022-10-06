@@ -47,6 +47,13 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
+                    let message = vec[3];
+                    let result = get_db_instance().unwrap().create_commit_and_node(
+                        &message.to_string(),
+                        &user.get_commands().join(":"),
+                        user,
+                        None,
+                    );
                     return Ok("Commit with message".to_string());
                 }
             } else {
@@ -145,6 +152,7 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
+        create_db_instance(&"gql_lo_db_instance".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());

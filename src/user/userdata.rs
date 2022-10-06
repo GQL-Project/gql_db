@@ -7,6 +7,7 @@ pub struct User {
     is_on_temp_commit: bool, // Whether the user is on a temporary commit. (uncommitted changes)
     // The temporary commit is the folder <db_name>-<branch_name>-<user_id>
     diffs: Vec<Diff>, // The changes that the user has made that are in an uncommitted state
+    commands: Vec<String>, // The commands that the user has executed that are in an uncommitted state
 }
 
 impl User {
@@ -17,6 +18,7 @@ impl User {
             branch_name: MAIN_BRANCH_NAME.to_string(),
             is_on_temp_commit: false,
             diffs: Vec::new(),
+            commands: Vec::new(),
         }
     }
 
@@ -47,6 +49,21 @@ impl User {
     /// Replaces the user's diffs with the given list of diffs
     pub fn set_diffs(&mut self, diffs: &Vec<Diff>) {
         self.diffs = diffs.clone();
+    }
+
+    /// Get the list of commands that the user has executed
+    pub fn get_commands(&self) -> Vec<String> {
+        self.commands.clone()
+    }
+
+    /// Append a command to the user's commands
+    pub fn append_command(&mut self, command: &String) {
+        self.commands.push(command.clone());
+    }
+
+    /// Replaces the user's commands with the given list of commands
+    pub fn set_commands(&mut self, commands: &Vec<String>) {
+        self.commands = commands.clone();
     }
 
     /// Whether the user is currently on a temporary commit
