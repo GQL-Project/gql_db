@@ -181,7 +181,7 @@ mod tests {
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
