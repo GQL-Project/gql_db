@@ -32,8 +32,9 @@ impl User {
         self.branch_name.clone()
     }
 
-    pub fn set_current_branch_name(&mut self, branch_name: String) {
-        self.branch_name = branch_name;
+    /// Set the name of the branch that the user is currently on to a new branch
+    pub fn set_current_branch_name(&mut self, new_branch_name: &String) {
+        self.branch_name = new_branch_name.clone();
     }
 
     /// Get the list of diffs that the user has made
