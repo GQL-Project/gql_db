@@ -54,6 +54,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     if message == "\"\"" {
                         return Err("Commit message cannot be empty".to_string());
                     }
+
+                    // Make sure the user has some changes to commit
+                    if user.get_diffs().len() == 0 {
+                        return Err("No changes to commit".to_string());
+                    }
+
                     let result = get_db_instance().unwrap().create_commit_and_node(
                         &message.to_string(),
                         &user.get_commands().join(":"),
@@ -171,7 +177,8 @@ mod tests {
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
-        assert!(result.is_ok());
+        // We want it to return an error because the user has no changes to commit
+        assert!(result.is_err());
     }
 
     #[test]
