@@ -109,7 +109,7 @@ mod tests {
             .create_commit_and_node(
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
-                &user,
+                &mut user,
                 None,
             )
             .unwrap();
@@ -184,7 +184,7 @@ mod tests {
             .create_commit_and_node(
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
-                &user,
+                &mut user,
                 None,
             )
             .unwrap();
@@ -196,7 +196,7 @@ mod tests {
             .create_commit_and_node(
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
-                &user,
+                &mut user,
                 None,
             )
             .unwrap();
