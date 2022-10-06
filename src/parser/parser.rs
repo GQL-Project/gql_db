@@ -72,7 +72,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     // Join the branch_names into a single comma separated string
                     let branch_names_str: String = branch_names.join(",");
 
-                    return Ok(format!(branch_names_str));
+                    return Ok(branch_names_str);
                 } 
                 else {
                     // vec[2] should be a branch name
