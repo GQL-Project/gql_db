@@ -118,6 +118,13 @@ impl DatabaseConnection for Connection {
         /* VC Command Pipeline Begins Here */
         let result = parser::parse_vc_cmd(&request.query, user);
 
+        // In case a user switched to a new branch, we want the db to remove any directories that are not needed.
+        let in_use_branch_names: Vec<String> = self.get_all_branches_clients_are_connected_to();
+        get_db_instance()
+            .map_err(|e| Status::internal(e))?
+            .remove_unneeded_branch_directories(&in_use_branch_names)
+            .map_err(|e| Status::internal(e))?;
+
         /* Creating Result */
         match result {
             Ok(value) => Ok(Response::new(to_vc_cmd_result(value))),

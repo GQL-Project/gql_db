@@ -64,7 +64,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 }
             } else {
                 // commit with no message
-                return Ok("Commit with no message".to_string());
+                return Err("Must include a commit message".to_string());
             }
         }
         "branch" => {
@@ -181,7 +181,7 @@ mod tests {
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
