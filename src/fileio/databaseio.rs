@@ -364,6 +364,14 @@ impl Database {
         self.db_name.clone()
     }
 
+    /// Returns a list of all branches on the database
+    pub fn get_all_branch_names(&mut self) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        Ok(self.branch_heads.get_all_branch_names()?)
+    }
+
     /// Deletes the database at the given path.
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {
@@ -1827,6 +1835,36 @@ mod tests {
         );
 
         // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_2_branches() {
+        // This will test creating a branch off of another branch and then creating a commit on the new branch
+        let db_name: String = "test_create_2_branches".to_string();
+        let branch1_name: String = "new_branch1".to_string();
+        let branch2_name: String = "new_branch2".to_string();
+
+        // Create the database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new branch immediately
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch1_name, &mut user)
+            .unwrap();
+
+        // Create a second branch off that branch
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch2_name, &mut user)
+            .unwrap();
+
+        // Delete the database instance
         delete_db_instance().unwrap();
     }
 

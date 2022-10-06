@@ -22,7 +22,7 @@ pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
 
 /// This method parses a version control command's query string into the individual components.
 /// Format "GQL <command> <flags> <args>"
-pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
+pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
     if query.len() == 0 || query == "GQL" {
         return Err("Empty VC Command query".to_string());
     }
@@ -74,6 +74,11 @@ pub fn parse_vc_cmd(query: &str, user: &User) -> Result<String, String> {
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
+                // create branch
+                get_db_instance()?
+                    .create_branch(&vec[2].to_string(), user)
+                    .map_err(|e| e.to_string())?;
+
                 return Ok("Valid Branch Command".to_string());
             }
         }
@@ -147,8 +152,8 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
     }
 
@@ -157,8 +162,8 @@ mod tests {
     fn test_parse_vc_cmd2() {
         let query = "GQL commit";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
     }
 
@@ -167,8 +172,8 @@ mod tests {
     fn test_parse_vc_cmd3() {
         let query = "GQL branch";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
     }
 
@@ -177,9 +182,11 @@ mod tests {
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
+        delete_db_instance().unwrap();
     }
 
     #[test]
@@ -187,8 +194,8 @@ mod tests {
     fn test_parse_vc_cmd5() {
         let query = "GQL branch branch name";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
     }
 
@@ -197,8 +204,8 @@ mod tests {
     fn test_parse_vc_cmd6() {
         let query = "GQL switch_branch branch_name";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
     }
 
@@ -207,8 +214,8 @@ mod tests {
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
     }
 
@@ -219,9 +226,9 @@ mod tests {
         create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
 
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
+        let mut user: User = User::new("test_user".to_string());
 
-        let result = parse_vc_cmd(query, &user);
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
 
         delete_db_instance().unwrap();
@@ -232,8 +239,8 @@ mod tests {
     fn test_parse_vc_cmd9() {
         let query = "GQL log -m";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
     }
 
@@ -242,8 +249,8 @@ mod tests {
     fn test_parse_vc_cmd10() {
         let query = "GQL revert commit_hash";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
     }
 
@@ -252,8 +259,8 @@ mod tests {
     fn test_parse_vc_cmd11() {
         let query = "GQL revert";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
     }
 
@@ -262,8 +269,8 @@ mod tests {
     fn test_parse_vc_cmd12() {
         let query = "GQL status";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
     }
 
@@ -272,8 +279,8 @@ mod tests {
     fn test_parse_vc_cmd13() {
         let query = "GQL status -m";
         // Create a new user on the main branch
-        let user: User = User::new("test_user".to_string());
-        let result = parse_vc_cmd(query, &user);
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
     }
 }
