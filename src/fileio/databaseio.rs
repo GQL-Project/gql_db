@@ -878,7 +878,12 @@ impl Database {
             if !branches_to_keep.contains(&branch_dir) {
                 // Delete the branch directory
                 std::fs::remove_dir_all(self.get_branch_path_from_name(&branch_dir)).map_err(
-                    |e| "Database::remove_unneeded_branch_directories() ".to_owned() + &branch_dir.clone() + &"Error: ".to_string() + &e.to_string(),
+                    |e| {
+                        "Database::remove_unneeded_branch_directories() ".to_owned()
+                            + &branch_dir.clone()
+                            + &"Error: ".to_string()
+                            + &e.to_string()
+                    },
                 )?;
             }
         }
