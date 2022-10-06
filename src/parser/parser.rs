@@ -80,11 +80,15 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             if vec.len() < 3 {
                 // error message here
                 return Err("Invalid VC Command".to_string());
-            } else if vec.len() > 3 {
+            } else if !vec[2].to_string().starts_with("-") && vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
                 return Err("Invalid Branch Name".to_string());
             } else {
+                // using a flag that's not supposed to be used
+                if !vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
+                    return Err("Invalid flag".to_string());
+                }
                 if vec[2].to_string() == "-l" {
                     // We want to return a list of branches
                     let branch_names: Vec<String> = get_db_instance()?.get_all_branch_names()?;
