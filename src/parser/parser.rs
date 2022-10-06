@@ -161,7 +161,7 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+        create_db_instance(&"gql_log_db_instance_ 1".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
@@ -192,7 +192,7 @@ mod tests {
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+        create_db_instance(&"gql_log_db_instance_2".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
@@ -233,7 +233,7 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
-        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
+        create_db_instance(&"gql_log_db_instance_3".to_string()).unwrap();
 
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
