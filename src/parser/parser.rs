@@ -47,7 +47,13 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
+                    if vec.len() == 3 {
+                        return Err("Commit message cannot be empty".to_string());
+                    }
                     let message = vec[3];
+                    if message == "\"\"" {
+                        return Err("Commit message cannot be empty".to_string());
+                    }
                     let result = get_db_instance().unwrap().create_commit_and_node(
                         &message.to_string(),
                         &user.get_commands().join(":"),
@@ -164,6 +170,7 @@ mod tests {
         create_db_instance(&"gql_log_db_instance_ 1".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
+        delete_db_instance().unwrap();
         assert!(result.is_ok());
     }
 
@@ -288,6 +295,26 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd13() {
         let query = "GQL status -m";
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_vc_cmd14() {
+        let query = "GQL commit -m ";
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_vc_cmd15() {
+        let query = "GQL commit -m \"\"";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
