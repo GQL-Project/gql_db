@@ -17,7 +17,7 @@ pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
     let ast = Parser::parse_sql(&dialect, query);
 
     // println!("AST: {:?}", ast);
-    ast.map_err(|e| e.to_string())
+    return ast.map_err(|e| e.to_string());
 }
 
 /// This method parses a version control command's query string into the individual components.
@@ -161,7 +161,7 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
-        create_db_instance(&"gql_lo_db_instance".to_string()).unwrap();
+        create_db_instance(&"gql_log_db_instance".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
@@ -292,5 +292,101 @@ mod tests {
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd() {
+        let query = "SELECT * FROM test_table";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd2() {
+        let query = "SELECT * FROM test_table WHERE id = 1";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd3() {
+        let query = "SELECT * FROM test_table WHERE id = 1 AND name = \"test\"";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd4() {
+        let query = "SELECT * FROM test_table WHERE id = 1 AND name = \"test\" OR age = 20";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd5() {
+        let query = "CREATE TABLE customers (customer_id int, name varchar(255), age int);";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd6() {
+        let query = "DROP TABLE dataquestDB;";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd7() {
+        let query = "DRP TABLE customers;";
+        let result = parse(query, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd8() {
+        let query = "INSERT INTO Customers (CustomerName, ContactName, Address, City, PostalCode, Country) VALUES ('Cardinal', 'Tom B. Erichsen', 'Skagen 21', 'Stavanger', '4006', 'Norway');";
+        let result = parse(query, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd9() {
+        let query = "INSERT INTO Customers (CustomerName, ContactName, Address, City, PostalCode, Country) VALUE ('Cardinal', 'Tom B. Erichsen', 'Skagen 21', 'Stavanger', '4006', 'Norway');";
+        let result = parse(query, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd10() {
+        let query = "";
+        let result = parse(query, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd11() {
+        let query = "gql SELECT * FROM test_table WHERE id = 1 AND name = \"test\" OR age = 20";
+        let result = parse(query, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_sql_cmd12() {
+        let query = "UPDATE Customers SET ContactName = 'Alfred Schmidt', City= 'Frankfurt' WHERE CustomerID = 1;";
+        let result = parse(query, true);
+        assert!(result.is_ok());
     }
 }
