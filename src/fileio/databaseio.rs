@@ -212,7 +212,7 @@ impl Database {
             None => user.get_current_branch_name(),
         };
 
-        let node: BranchNode; 
+        let node: BranchNode;
 
         // If the branch that the user is on doesn't exist, create a new branch off a None previous node
         if self.branch_heads.get_all_branch_heads()?.len() == 0
@@ -244,10 +244,11 @@ impl Database {
 
         // If the user is on a temp branch, apply the diffs to the non-temp branch
         if user.is_on_temp_commit() {
-            let non_temp_branch_dir: String = self.get_branch_path_from_name(&user.get_current_branch_name());
+            let non_temp_branch_dir: String =
+                self.get_branch_path_from_name(&user.get_current_branch_name());
             construct_tables_from_diffs(&non_temp_branch_dir, &user.get_diffs())?;
         }
-        
+
         // Clear the diffs for the user
         user.set_diffs(&Vec::new());
 
@@ -856,7 +857,10 @@ impl Database {
 
     /// Delete branch directories that aren't present in the branches_to_keep.
     /// It does not delete the main branch directory.
-    pub fn remove_unneeded_branch_directories(&mut self, branches_to_keep: &Vec<String>) -> Result<(), String> {
+    pub fn remove_unneeded_branch_directories(
+        &mut self,
+        branches_to_keep: &Vec<String>,
+    ) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -873,14 +877,9 @@ impl Database {
         for branch_dir in all_branch_names {
             if !branches_to_keep.contains(&branch_dir) {
                 // Delete the branch directory
-                std::fs::remove_dir_all(
-                    self.get_branch_path_from_name(
-                        &branch_dir
-                    )
-                )
-                .map_err(|e| {
-                    "Database::clear_branch_dirs() Error: ".to_owned() + &e.to_string()
-                })?;
+                std::fs::remove_dir_all(self.get_branch_path_from_name(&branch_dir)).map_err(
+                    |e| "Database::clear_branch_dirs() Error: ".to_owned() + &e.to_string(),
+                )?;
             }
         }
 
