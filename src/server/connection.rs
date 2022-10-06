@@ -49,6 +49,17 @@ impl Connection {
         Ok(())
     }
 
+    pub fn get_all_branches_clients_are_connected_to(&self) -> Vec<String> {
+        let mut branches: Vec<String> = Vec::new();
+        for client in self.clients.lock().unwrap().iter() {
+            let branch_name: String = client.get_current_branch_name();
+            if !branches.contains(&branch_name) {
+                branches.push(branch_name.clone());
+            }
+        }
+        branches
+    }
+
     /// Gets the list of clients, but cloned in a non-mutable way.
     fn get_clients_readonly(&self) -> Vec<User> {
         self.clients.lock().unwrap().clone()

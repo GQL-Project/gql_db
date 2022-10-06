@@ -200,17 +200,19 @@ impl Database {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        let commit = self.commit_file.create_commit(
+        let commit: Commit = self.commit_file.create_commit(
             commit_msg.to_string(),
             command.to_string(),
             user.get_diffs(),
         )?;
 
         // Get the branch name for the new branch node
-        let branch_name = match new_branch_name {
+        let branch_name: String = match new_branch_name {
             Some(name) => name,
             None => user.get_current_branch_name(),
         };
+
+        let node: BranchNode; 
 
         // If the branch that the user is on doesn't exist, create a new branch off a None previous node
         if self.branch_heads.get_all_branch_heads()?.len() == 0
@@ -220,25 +222,32 @@ impl Database {
                 .contains(&user.get_current_branch_name())
                 == false
         {
-            let node = self.branches.create_branch_node(
+            node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 None,
                 &branch_name,
                 &commit.hash,
             )?;
-            return Ok((node, commit));
+        }
+        // There is a previous branch node to create a new branch node off of
+        else {
+            let prev_node = self
+                .branch_heads
+                .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;
+            node = self.branches.create_branch_node(
+                &mut self.branch_heads,
+                Some(&prev_node),
+                &branch_name,
+                &commit.hash,
+            )?;
         }
 
-        // There is a previous branch node to create a new branch node off of
-        let prev_node = self
-            .branch_heads
-            .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;
-        let node = self.branches.create_branch_node(
-            &mut self.branch_heads,
-            Some(&prev_node),
-            &branch_name,
-            &commit.hash,
-        )?;
+        // If the user is on a temp branch, apply the diffs to the non-temp branch
+        if user.is_on_temp_commit() {
+            let non_temp_branch_dir: String = self.get_branch_path_from_name(&user.get_current_branch_name());
+            construct_tables_from_diffs(&non_temp_branch_dir, &user.get_diffs())?;
+        }
+
         Ok((node, commit))
     }
 
@@ -749,6 +758,39 @@ impl Database {
 
         // Update the user to indicate that they are on the temp branch
         user.set_is_on_temp_commit(false);
+
+        Ok(())
+    }
+
+    /// Delete branch directories that aren't present in the branches_to_keep.
+    /// It does not delete the main branch directory.
+    pub fn remove_unneeded_branch_directories(&mut self, branches_to_keep: &Vec<String>) -> Result<(), String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Get the list of all the branch directories
+        let all_branch_names: Vec<String> = self.branch_heads.get_all_branch_names()?;
+
+        // Append the main branch directory in branches_to_keep if it isn't there
+        let mut branches_to_keep: Vec<String> = branches_to_keep.clone();
+        if !branches_to_keep.contains(&MAIN_BRANCH_NAME.to_string()) {
+            branches_to_keep.push(MAIN_BRANCH_NAME.to_string());
+        }
+
+        // Delete all the branch directories that are not in the branches_to_keep
+        for branch_dir in all_branch_names {
+            if !branches_to_keep.contains(&branch_dir) {
+                // Delete the branch directory
+                std::fs::remove_dir_all(
+                    self.get_branch_path_from_name(
+                        &branch_dir
+                    )
+                )
+                .map_err(|e| {
+                    "Database::clear_branch_dirs() Error: ".to_owned() + &e.to_string()
+                })?;
+            }
+        }
 
         Ok(())
     }
