@@ -535,4 +535,156 @@ mod tests {
         std::fs::remove_file(delta.delta_path).unwrap();
         std::fs::remove_file(delta.header_path).unwrap();
     }
+
+    #[test]
+    #[serial]
+    fn test_commit_commands() {
+        let new_db: Database = Database::new("commit_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(225)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let mut rows = vec![
+            vec!["1".to_string(), "Nick Fury".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "35".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
+            ],
+            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+        ];
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        let (x, y) = rows.split_at(21); // 40 rows
+        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let commit1 = Commit::new(
+            "hash1".to_string(),
+            "timestamp1".to_string(),
+            "message1".to_string(),
+            "cmd1".to_string(),
+            vec![Diff::TableCreate(TableCreateDiff {
+                table_name: "test_table".to_string(),
+                schema: schema.clone(),
+            })],
+        );
+        let commit2 = Commit::new(
+            "hash2".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff1)],
+        );
+        let commit3 = Commit::new(
+            "hash3".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff2)],
+        );
+        new_db.delete_database().unwrap();
+        let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
+        delta.store_commit(&commit1).unwrap();
+        delta.store_commit(&commit2).unwrap();
+        delta.store_commit(&commit3).unwrap();
+        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        assert_eq!(commit3.command, commit13.command);
+        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        assert_eq!(commit1.command, commit11.command);
+        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        assert_eq!(commit2.command, commit12.command);
+
+        // Delete the test database
+        std::fs::remove_file(delta.delta_path).unwrap();
+        std::fs::remove_file(delta.header_path).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_commit_message() {
+        let new_db: Database = Database::new("commit_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(225)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let mut rows = vec![
+            vec!["1".to_string(), "Nick Fury".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "35".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
+            ],
+            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+        ];
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        let (x, y) = rows.split_at(21); // 40 rows
+        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let commit1 = Commit::new(
+            "hash1".to_string(),
+            "timestamp1".to_string(),
+            "message1".to_string(),
+            "cmd1".to_string(),
+            vec![Diff::TableCreate(TableCreateDiff {
+                table_name: "test_table".to_string(),
+                schema: schema.clone(),
+            })],
+        );
+        let commit2 = Commit::new(
+            "hash2".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff1)],
+        );
+        let commit3 = Commit::new(
+            "hash3".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff2)],
+        );
+        new_db.delete_database().unwrap();
+        let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
+        delta.store_commit(&commit1).unwrap();
+        delta.store_commit(&commit2).unwrap();
+        delta.store_commit(&commit3).unwrap();
+        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        assert_eq!(commit3.message, commit13.message);
+        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        assert_eq!(commit1.message, commit11.message);
+        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        assert_eq!(commit2.message, commit12.message);
+
+        // Delete the test database
+        std::fs::remove_file(delta.delta_path).unwrap();
+        std::fs::remove_file(delta.header_path).unwrap();
+    }
 }
