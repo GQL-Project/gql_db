@@ -93,7 +93,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // using a flag that's not supposed to be used
-                if !vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
+                if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
                     return Err("Invalid flag".to_string());
                 }
                 if vec[2].to_string() == "-l" {
