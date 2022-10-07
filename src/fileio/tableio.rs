@@ -103,7 +103,6 @@ impl Iterator for Table {
     }
 }
 
-
 // Useful to ensure first that the table does not exist.
 pub fn create_table(
     table_name: &String,
@@ -112,7 +111,8 @@ pub fn create_table(
 ) -> Result<(Table, TableCreateDiff), String> {
     let mut table_path: String = table_name.clone() + &TABLE_FILE_EXTENSION.to_string();
     if table_dir.len() > 0 {
-        table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &table_path;
+        table_path =
+            table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &table_path;
     }
 
     // If the file already exists, return an error.
