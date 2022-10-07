@@ -116,6 +116,11 @@ pub fn create_table_in_dir(
         table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
     }
 
+    // If the file already exists, return an error.
+    if std::path::Path::new(&table_path).exists() {
+        return Err(format!("Table {} already exists on current branch.", table_name));
+    }
+
     // Create the file
     create_file(&table_path).map_err(|e| e.to_string())?;
 
