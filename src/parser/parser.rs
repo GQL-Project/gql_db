@@ -67,13 +67,17 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         return Err("No changes to commit".to_string());
                     }
 
-                    get_db_instance().unwrap().create_commit_and_node(
-                        &message.to_string(),
-                        &user.get_commands().join(":"),
-                        user,
-                        None,
-                    )?;
-                    return Ok("Commit with message".to_string());
+                    let (res_node, res_commit) =
+                        get_db_instance().unwrap().create_commit_and_node(
+                            &message.to_string(),
+                            &user.get_commands().join(":"),
+                            user,
+                            None,
+                        )?;
+                    return Ok(format!(
+                        "Commit created on branch {} with hash {}",
+                        res_node.branch_name, res_commit.hash
+                    ));
                 }
             } else {
                 // commit with no message
@@ -110,7 +114,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         .create_branch(&vec[2].to_string(), user)
                         .map_err(|e| e.to_string())?;
 
-                    return Ok("Valid Branch Command".to_string());
+                    return Ok(format!("Branch {} created!", &vec[2]));
                 }
             }
         }
