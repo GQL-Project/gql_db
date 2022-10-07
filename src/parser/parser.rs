@@ -131,6 +131,9 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
+                get_db_instance()?
+                    .switch_branch(&vec[2].to_string(), user)
+                    .map_err(|e| e.to_string())?;
                 return Ok("Valid Switch Branch Command".to_string());
             }
         }
@@ -241,10 +244,14 @@ mod tests {
     #[test]
     #[serial]
     fn test_parse_vc_cmd6() {
+        let query0 = "GQL branch branch_name";
         let query = "GQL switch_branch branch_name";
         // Create a new user on the main branch
+        create_db_instance(&"TEST_DB".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
+        parse_vc_cmd(query0, &mut user).unwrap();
         let result = parse_vc_cmd(query, &mut user);
+        delete_db_instance().unwrap();
         assert!(result.is_ok());
     }
 
@@ -253,8 +260,10 @@ mod tests {
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
         // Create a new user on the main branch
+        create_db_instance(&"TEST_DB".to_string()).unwrap();
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
+        delete_db_instance().unwrap();
         assert!(result.is_err());
     }
 
