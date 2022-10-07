@@ -503,8 +503,7 @@ impl Database {
 
                     // Reset the user's diffs
                     user.set_diffs(&uncommitted_changes.clone());
-                }
-                else {
+                } else {
                     user.set_is_on_temp_commit(false);
                 }
 
@@ -535,8 +534,7 @@ impl Database {
 
             // Reset the user's diffs
             user.set_diffs(&uncommitted_changes.clone());
-        }
-        else {
+        } else {
             user.set_is_on_temp_commit(false);
         }
 
