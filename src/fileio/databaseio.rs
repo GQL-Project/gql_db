@@ -496,7 +496,10 @@ impl Database {
                     self.create_temp_branch_directory(user)?;
 
                     // Apply uncommitted changes to the temp branch dir
-                    construct_tables_from_diffs(&self.get_temp_db_dir_path(user), &uncommitted_changes)?;
+                    construct_tables_from_diffs(
+                        &self.get_temp_db_dir_path(user),
+                        &uncommitted_changes,
+                    )?;
 
                     // Reset the user's diffs
                     user.set_diffs(&uncommitted_changes.clone());
