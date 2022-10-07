@@ -118,7 +118,10 @@ pub fn create_table_in_dir(
 
     // If the file already exists, return an error.
     if std::path::Path::new(&table_path).exists() {
-        return Err(format!("Table {} already exists on current branch.", table_name));
+        return Err(format!(
+            "Table {} already exists on current branch.",
+            table_name
+        ));
     }
 
     // Create the file
