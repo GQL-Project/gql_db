@@ -50,7 +50,14 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     if vec.len() == 3 {
                         return Err("Commit message cannot be empty".to_string());
                     }
-                    let message = vec[3];
+
+                    // vec[3] and above are the commit messages
+                    let mut message: String = String::new();
+                    for i in 3..vec.len() {
+                        message.push_str(&vec[i].replace(&"\"".to_string(), &"".to_string()));
+                        message.push_str(" ");
+                    }
+
                     if message == "\"\"" {
                         return Err("Commit message cannot be empty".to_string());
                     }
@@ -60,12 +67,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         return Err("No changes to commit".to_string());
                     }
 
-                    let result = get_db_instance().unwrap().create_commit_and_node(
+                    get_db_instance().unwrap().create_commit_and_node(
                         &message.to_string(),
                         &user.get_commands().join(":"),
                         user,
                         None,
-                    );
+                    )?;
                     return Ok("Commit with message".to_string());
                 }
             } else {
