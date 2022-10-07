@@ -103,6 +103,28 @@ impl Iterator for Table {
     }
 }
 
+
+// Useful to ensure first that the table does not exist.
+pub fn create_table(
+    table_name: &String,
+    schema: &Schema,
+    table_dir: &String,
+) -> Result<(Table, TableCreateDiff), String> {
+    let mut table_path: String = table_name.clone() + &TABLE_FILE_EXTENSION.to_string();
+    if table_dir.len() > 0 {
+        table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &table_path;
+    }
+
+    // If the file already exists, return an error.
+    if std::path::Path::new(&table_path).exists() {
+        return Err(format!(
+            "Table {} already exists on current branch.",
+            table_name
+        ));
+    }
+
+    create_table_in_dir(table_name, schema, table_dir)
+}
 /// Create a new table within a given directory named <table_name><TABLE_FILE_EXTENSION>
 pub fn create_table_in_dir(
     table_name: &String,
@@ -115,15 +137,6 @@ pub fn create_table_in_dir(
     if table_dir.len() > 0 {
         table_path = table_dir.clone() + std::path::MAIN_SEPARATOR.to_string().as_str() + &filename;
     }
-
-    // If the file already exists, return an error.
-    if std::path::Path::new(&table_path).exists() {
-        return Err(format!(
-            "Table {} already exists on current branch.",
-            table_name
-        ));
-    }
-
     // Create the file
     create_file(&table_path).map_err(|e| e.to_string())?;
 

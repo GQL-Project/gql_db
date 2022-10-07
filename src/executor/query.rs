@@ -1,4 +1,8 @@
-use crate::fileio::{databaseio::*, header::*, tableio::*};
+use crate::fileio::{
+    databaseio::*,
+    header::*,
+    tableio::{self, *},
+};
 use crate::user::userdata::*;
 use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
@@ -153,7 +157,7 @@ pub fn create_table(
     let table_dir: String = database.get_current_working_branch_path(&user);
 
     // Create a table file and return it
-    let results = create_table_in_dir(table_name, schema, &table_dir)?;
+    let results = tableio::create_table(table_name, schema, &table_dir)?;
     user.append_diff(&Diff::TableCreate(results.1.clone()));
     Ok(results)
 }
