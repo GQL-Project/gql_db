@@ -50,17 +50,34 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     if vec.len() == 3 {
                         return Err("Commit message cannot be empty".to_string());
                     }
-                    let message = vec[3];
+
+                    // vec[3] and above are the commit messages
+                    let mut message: String = String::new();
+                    for i in 3..vec.len() {
+                        message.push_str(&vec[i].replace(&"\"".to_string(), &"".to_string()));
+                        message.push_str(" ");
+                    }
+
                     if message == "\"\"" {
                         return Err("Commit message cannot be empty".to_string());
                     }
-                    let result = get_db_instance().unwrap().create_commit_and_node(
-                        &message.to_string(),
-                        &user.get_commands().join(":"),
-                        user,
-                        None,
-                    );
-                    return Ok("Commit with message".to_string());
+
+                    // Make sure the user has some changes to commit
+                    if user.get_diffs().len() == 0 {
+                        return Err("No changes to commit".to_string());
+                    }
+
+                    let (res_node, res_commit) =
+                        get_db_instance().unwrap().create_commit_and_node(
+                            &message.to_string(),
+                            &user.get_commands().join(":"),
+                            user,
+                            None,
+                        )?;
+                    return Ok(format!(
+                        "Commit created on branch {} with hash {}",
+                        res_node.branch_name, res_commit.hash
+                    ));
                 }
             } else {
                 // commit with no message
@@ -80,7 +97,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // using a flag that's not supposed to be used
-                if !vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
+                if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
                     return Err("Invalid flag".to_string());
                 }
                 if vec[2].to_string() == "-l" {
@@ -97,7 +114,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         .create_branch(&vec[2].to_string(), user)
                         .map_err(|e| e.to_string())?;
 
-                    return Ok("Valid Branch Command".to_string());
+                    return Ok(format!("Branch {} created!", &vec[2]));
                 }
             }
         }
@@ -175,7 +192,8 @@ mod tests {
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
-        assert!(result.is_ok());
+        // We want it to return an error because the user has no changes to commit
+        assert!(result.is_err());
     }
 
     #[test]

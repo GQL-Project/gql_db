@@ -430,7 +430,8 @@ impl Database {
             }
         }
 
-        // Clear the user's diffs
+        // Clear the user's diffs and store the uncommitted changes
+        let uncommitted_changes: Vec<Diff> = user.get_diffs().clone();
         user.set_diffs(&Vec::new());
 
         // Create a commit for the new branch
@@ -489,6 +490,21 @@ impl Database {
                 let diffs_from_origin: Vec<Diff> = self.get_diffs_between_nodes(None, &node2)?;
                 construct_tables_from_diffs(&new_branch_path, &diffs_from_origin)?;
 
+                // Apply uncommitted changes to the new branch
+                if uncommitted_changes.len() > 0 {
+                    // Create temp branch dir
+                    self.create_temp_branch_directory(user)?;
+
+                    // Apply uncommitted changes to the temp branch dir
+                    construct_tables_from_diffs(
+                        &self.get_temp_db_dir_path(user),
+                        &uncommitted_changes,
+                    )?;
+
+                    // Reset the user's diffs
+                    user.set_diffs(&uncommitted_changes.clone());
+                }
+
                 return Ok(());
             }
         };
@@ -505,6 +521,18 @@ impl Database {
 
         // 7. Apply the diffs from the new branch HEAD to the new branch directory
         construct_tables_from_diffs(&new_branch_path, &diffs_to_new_branch)?;
+
+        // Apply uncommitted changes to the new branch
+        if uncommitted_changes.len() > 0 {
+            // Create temp branch dir
+            self.create_temp_branch_directory(user)?;
+
+            // Apply uncommitted changes to the temp branch dir
+            construct_tables_from_diffs(&self.get_temp_db_dir_path(user), &uncommitted_changes)?;
+
+            // Reset the user's diffs
+            user.set_diffs(&uncommitted_changes.clone());
+        }
 
         Ok(())
     }
@@ -878,7 +906,12 @@ impl Database {
             if !branches_to_keep.contains(&branch_dir) {
                 // Delete the branch directory
                 std::fs::remove_dir_all(self.get_branch_path_from_name(&branch_dir)).map_err(
-                    |e| "Database::clear_branch_dirs() Error: ".to_owned() + &e.to_string(),
+                    |e| {
+                        "Database::remove_unneeded_branch_directories() ".to_owned()
+                            + &branch_dir.clone()
+                            + &"Error: ".to_string()
+                            + &e.to_string()
+                    },
                 )?;
             }
         }
