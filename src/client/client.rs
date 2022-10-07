@@ -37,7 +37,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             command.push_str(&last_input);
 
             // makes sure these are in the first line (VC commands and exit)
-            if command.starts_with("exit") || command.starts_with("GQL ") {
+            if command.starts_with("exit") || command.starts_with("GQL ") || command.starts_with("gql ") {
                 break;
             }
 

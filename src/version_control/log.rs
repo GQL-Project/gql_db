@@ -201,12 +201,9 @@ mod tests {
             )
             .unwrap();
         let second_commit: Commit = commit_result.1;
-        //println!("Commit.message: {:?}", second_commit.message);
 
         // Log the commits
         let result: Vec<Vec<String>> = log(&user).unwrap().1;
-        //println!("{}", (result[0][2]).to_string());
-        //println!("{}", (result[1][2]).to_string());
 
         // Assert that the result is correct
         assert_eq!(result.len(), 2);
