@@ -148,7 +148,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 get_db_instance()?
                     .switch_branch(&vec[2].to_string(), user)
                     .map_err(|e| e.to_string())?;
-                return Ok("Valid Switch Branch Command".to_string());
+                return Ok(format!("Branch switched to {}", &vec[2]));
             }
         }
         "log" => {
