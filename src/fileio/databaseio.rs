@@ -504,6 +504,9 @@ impl Database {
                     // Reset the user's diffs
                     user.set_diffs(&uncommitted_changes.clone());
                 }
+                else {
+                    user.set_is_on_temp_commit(false);
+                }
 
                 return Ok(());
             }
@@ -532,6 +535,9 @@ impl Database {
 
             // Reset the user's diffs
             user.set_diffs(&uncommitted_changes.clone());
+        }
+        else {
+            user.set_is_on_temp_commit(false);
         }
 
         Ok(())
@@ -909,7 +915,7 @@ impl Database {
                     |e| {
                         "Database::remove_unneeded_branch_directories() ".to_owned()
                             + &branch_dir.clone()
-                            + &"Error: ".to_string()
+                            + &" Error: ".to_string()
                             + &e.to_string()
                     },
                 )?;
