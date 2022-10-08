@@ -38,18 +38,15 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
     match vec[1] {
         "commit" => {
             // commit (Possible flags: -m [maybe -a? Copilot recommended it])
-            println!("{:?}", "commit command");
             // message
             if vec.len() > 2 {
                 if vec[2] != "-m" {
                     // error message here
-                    println!("Invalid flag for commit");
                     return Err("Invalid Flag for Commit VC Command".to_string());
                 } else {
                     // -m message here
                     // vec[4 and above] should be a commit message
                     if vec.len() == 3 {
-                        println!("No commit message");
                         return Err("Commit message cannot be empty".to_string());
                     }
 
@@ -61,13 +58,11 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     }
 
                     if message == "\"\"" {
-                        println!("No commit message");
                         return Err("Commit message cannot be empty".to_string());
                     }
 
                     // Make sure the user has some changes to commit
                     if user.get_diffs().len() == 0 {
-                        println!("No changes to commit");
                         return Err("No changes to commit".to_string());
                     }
 
@@ -78,7 +73,6 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                             user,
                             None,
                         )?;
-                    println!("Successful commit");
                     return Ok(format!(
                         "Commit created on branch {} with hash {}",
                         res_node.branch_name, res_commit.hash
@@ -86,27 +80,22 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 }
             } else {
                 // commit with no message
-                println!("No commit message");
                 return Err("Must include a commit message".to_string());
             }
         }
         "branch" => {
             // branch (CoPilot rec: Possible flags: -d, -m, -l (list branches))
             // Needs an argument
-            println!("{:?}", "branch command");
             if vec.len() < 3 {
                 // error message here
-                println!("Invalid Branch VC Command");
                 return Err("Invalid VC Command".to_string());
             } else if !vec[2].to_string().starts_with("-") && vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                println!("Invalid Branch Name");
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // using a flag that's not supposed to be used
                 if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
-                    println!("Invalid Flag for Branch VC Command");
                     return Err("Invalid flag".to_string());
                 }
                 if vec[2].to_string() == "-l" {
@@ -114,7 +103,6 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     let branch_names: Vec<String> = get_db_instance()?.get_all_branch_names()?;
                     // Join the branch_names into a single comma separated string
                     let branch_names_str: String = branch_names.join(",");
-                    println!("Branch command with list flag");
 
                     return Ok(branch_names_str);
                 } else {
@@ -124,7 +112,6 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         .create_branch(&vec[2].to_string(), user)
                         .map_err(|e| e.to_string())?;
 
-                    println!("Successful branch");
                     return Ok(format!("Branch {} created!", &vec[2]));
                 }
             }
@@ -132,19 +119,15 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         "switch_branch" => {
             // merge
             // Needs an argument
-            println!("{:?}", "switch branch command");
             if vec.len() < 3 {
                 // error message here
-                println!("Invalid Switch Branch VC Command");
                 return Err("Invalid VC Command".to_string());
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                println!("Invalid Branch Name");
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // vec[2] should be a branch name
-                println!("Valid Switch Branch VC Command");
                 get_db_instance()?
                     .switch_branch(&vec[2].to_string(), user)
                     .map_err(|e| e.to_string())?;
@@ -153,47 +136,36 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         }
         "log" => {
             // log (NO FLAGS OR ARGS)
-            println!("{:?}", "log command");
-
             if vec.len() != 2 {
                 // Error message here
-                println!("Invalid Log VC Command");
                 return Err("Invalid VC Command".to_string());
             }
 
             let log_results = log::log(user)?;
             let log_string: String = log_results.0;
-            println!("Successful log");
 
             return Ok(log_string);
         }
         "revert" => {
             // revert (Needs an argument)
-            println!("{:?}", "revert command");
             if vec.len() != 3 {
                 // error message here
-                println!("Invalid Revert VC Command");
                 return Err("Invalid VC Command".to_string());
             } else {
                 // vec[2] should be a commit hash
-                println!("Valid Revert VC Command");
                 return Ok("Valid Revert Command".to_string());
             }
         }
         "status" => {
             // status (NO FLAGS OR ARGS)
-            println!("{:?}", "status command");
             if vec.len() != 2 {
                 // error message here
-                println!("Invalid Status VC Command");
                 return Err("Invalid VC Command".to_string());
             }
-            println!("Successful status");
             return Ok("Valid Status Command".to_string());
         }
         _ => {
             // error message here
-            println!("Invalid VC Command");
             return Err("Invalid VC Command".to_string());
         }
     }

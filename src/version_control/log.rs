@@ -34,9 +34,9 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
             .get_commit_file_mut()
             .fetch_commit(&node.commit_hash)?;
 
-        log_string = format!("{}\nCommit {}", log_string, commit.hash);
-        log_string = format!("{}\nMessage {}", log_string, commit.message);
-        log_string = format!("{}\nTimestamp {}", log_string, commit.timestamp);
+        log_string = format!("{}\nCommit: {}", log_string, commit.hash);
+        log_string = format!("{}\nMessage: {}", log_string, commit.message);
+        log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
         log_string = format!("{}\n-----------------------\n", log_string);
 
         let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
@@ -189,7 +189,6 @@ mod tests {
             )
             .unwrap();
         let commit: Commit = commit_result.1;
-        //println!("Commit.message: {:?}", commit.message);
 
         commit_result = get_db_instance()
             .unwrap()
@@ -201,12 +200,9 @@ mod tests {
             )
             .unwrap();
         let second_commit: Commit = commit_result.1;
-        //println!("Commit.message: {:?}", second_commit.message);
 
         // Log the commits
         let result: Vec<Vec<String>> = log(&user).unwrap().1;
-        //println!("{}", (result[0][2]).to_string());
-        //println!("{}", (result[1][2]).to_string());
 
         // Assert that the result is correct
         assert_eq!(result.len(), 2);
