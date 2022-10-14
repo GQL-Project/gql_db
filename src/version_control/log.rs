@@ -28,11 +28,9 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
         .get_branch_node_from_head(&branch_name, &branches_from_head)
         .unwrap();
 
-    let mut branch_nodes: Vec<BranchNode> = get_db_instance()?
+    let branch_nodes: Vec<BranchNode> = get_db_instance()?
         .get_branch_file()
         .traverse_branch_nodes(&branch_node)?;
-
-    branch_nodes.reverse();
 
     // String to capture all the output
     let mut log_strings: Vec<Vec<String>> = Vec::new();
