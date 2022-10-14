@@ -1,9 +1,18 @@
 use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
+use serde::{Deserialize, Serialize};
+use serde_json;
 
 use super::branches::{BranchNode, Branches};
 
+#[derive(Serialize, Deserialize)]
+pub struct Log {
+    hash: String,
+    timestamp: String,
+    message: String,
+}
+
 /// This function implements the GQL log command
-pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
+pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     let branch_name: String = user.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
@@ -12,7 +21,7 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
 
     // If there are no commits, return an empty vector
     if branch_heads_instance.get_all_branch_heads()?.len() == 0 {
-        return Ok(("No Commits!".to_string(), vec![]));
+        return Ok(("No Commits!".to_string(), vec![], "".to_string()));
     }
 
     let branch_node = branch_heads_instance
@@ -28,11 +37,14 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
     // String to capture all the output
     let mut log_strings: Vec<Vec<String>> = Vec::new();
     let mut log_string: String = String::new();
+    let mut log_objects: Vec<Log> = Vec::new();
 
     for node in branch_nodes {
         let commit = get_db_instance()?
             .get_commit_file_mut()
             .fetch_commit(&node.commit_hash)?;
+
+        let commit_clone = commit.clone();
 
         log_string = format!("{}\nCommit: {}", log_string, commit.hash);
         log_string = format!("{}\nMessage: {}", log_string, commit.message);
@@ -40,10 +52,20 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
         log_string = format!("{}\n-----------------------\n", log_string);
 
         let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
+
+        let log_object = Log {
+            hash: commit_clone.hash,
+            timestamp: commit_clone.timestamp,
+            message: commit_clone.message,
+        };
+
+        log_objects.push(log_object);
         log_strings.push(printed_vals);
     }
 
-    Ok((log_string, log_strings))
+    let json = serde_json::to_string(&log_objects).unwrap();
+
+    Ok((log_string, log_strings, json))
 }
 
 #[cfg(test)]
