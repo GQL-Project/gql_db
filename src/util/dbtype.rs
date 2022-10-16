@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
-use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 use core::mem::size_of;
 use prost_types::Timestamp;
+use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 
 use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
@@ -33,11 +33,9 @@ pub enum Column {
 impl Column {
     pub fn from_col_def(data_type: &ColumnDef) -> Result<Column, String> {
         // If the Null option is present, then the column is nullable.
-        let is_nullable: bool = data_type.options.iter().any(|option| {
-            match option.option {
-                ColumnOption::Null => true,
-                _ => false,
-            }
+        let is_nullable: bool = data_type.options.iter().any(|option| match option.option {
+            ColumnOption::Null => true,
+            _ => false,
         });
         let data_col = match data_type.data_type {
             DataType::SmallInt(_) => Column::I32,
@@ -200,13 +198,28 @@ impl Column {
 
     pub fn parse(&self, str: &String) -> Result<Value, String> {
         let res = match self {
-            Column::I32 => Value::I32(str.parse().map_err(|_x| format!("Could not parse value {str} into type Int32"))?),
-            Column::Float => Value::Float(str.parse().map_err(|_x| format!("Could not parse value {str} into type Float"))?),
+            Column::I32 => Value::I32(
+                str.parse()
+                    .map_err(|_x| format!("Could not parse value {str} into type Int32"))?,
+            ),
+            Column::Float => Value::Float(
+                str.parse()
+                    .map_err(|_x| format!("Could not parse value {str} into type Float"))?,
+            ),
             Column::String(_) => Value::String(str.clone()),
-            Column::Bool => Value::Bool(str.parse().map_err(|_x| format!("Could not parse value {str} into type Bool"))?),
+            Column::Bool => Value::Bool(
+                str.parse()
+                    .map_err(|_x| format!("Could not parse value {str} into type Bool"))?,
+            ),
             Column::Timestamp => Value::Timestamp(parse_time(str)?),
-            Column::I64 => Value::I64(str.parse().map_err(|_x| format!("Could not parse value {str} into type Int64"))?),
-            Column::Double => Value::Double(str.parse().map_err(|_x| format!("Could not parse value {str} into type Double"))?),
+            Column::I64 => Value::I64(
+                str.parse()
+                    .map_err(|_x| format!("Could not parse value {str} into type Int64"))?,
+            ),
+            Column::Double => Value::Double(
+                str.parse()
+                    .map_err(|_x| format!("Could not parse value {str} into type Double"))?,
+            ),
             Column::Nullable(x) => {
                 if str == "" {
                     Value::Null

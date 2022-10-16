@@ -1083,7 +1083,10 @@ mod tests {
         let schema: Schema = vec![
             ("id".to_string(), Column::Nullable(Box::new(Column::I32))),
             ("name".to_string(), Column::String(50)),
-            ("age".to_string(), Column::Nullable(Box::new(Column::Double))),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
         ];
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
@@ -1147,7 +1150,10 @@ mod tests {
         let user: User = User::new("test_user".to_string());
         let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
 
-        assert_eq!(result.0[0], ("id".to_string(), Column::Nullable(Box::new(Column::I32))));
+        assert_eq!(
+            result.0[0],
+            ("id".to_string(), Column::Nullable(Box::new(Column::I32)))
+        );
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
 
         // Assert that 3 rows were returned
@@ -1185,7 +1191,10 @@ mod tests {
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
-            ("age".to_string(), Column::Nullable(Box::new(Column::Double))),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
         ];
 
         // Create a new user on the main branch
@@ -1198,16 +1207,8 @@ mod tests {
                 "Iron Man".to_string(),
                 "Robert Downey".to_string(),
             ],
-            vec![
-                "2".to_string(),
-                "Spiderman".to_string(),
-                "".to_string(),
-            ],
-            vec![
-                "3".to_string(),
-                "".to_string(),
-                "322.456".to_string(),
-            ],
+            vec!["2".to_string(), "Spiderman".to_string(), "".to_string()],
+            vec!["3".to_string(), "".to_string(), "322.456".to_string()],
             vec![
                 "4".to_string(),
                 "Captain America".to_string(),
