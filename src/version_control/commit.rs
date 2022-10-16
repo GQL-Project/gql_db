@@ -379,12 +379,15 @@ impl CommitFile {
             commits[commits.len() - 1].hash
         );
         // Create a map of table names to a map of "Diff Type" to diff
+        // TODO: It might be better to sort the rows in a diff by pagenum and rownum
+        // We'd be able to do much quicker merges
         let mut map: HashMap<String, HashMap<i32, Diff>> = HashMap::new();
         for commit in commits {
             for diff in &commit.diffs {
                 match diff {
                     Diff::Update(update) => {
                         let mut newrows = update.rows.clone();
+                        // An Insert and an Update just become an Insert
                         if let Some(Diff::Insert(insert)) = get_diff(&map, &update.table_name, 1) {
                             // If an update diff exists on a row, replace the insert diff with the update diff value
                             let rows: Vec<RowInfo> = insert
@@ -393,9 +396,11 @@ impl CommitFile {
                                 .map(|row| {
                                     let mut row = row.clone();
                                     for newrow in &mut newrows {
-                                        if newrow.row == row.row {
-                                            row.pagenum = newrow.pagenum;
-                                            row.rownum = newrow.rownum;
+                                        if row.rownum == newrow.rownum
+                                            && row.pagenum == newrow.pagenum
+                                        {
+                                            // Replace the insert's row with the update's row
+                                            row.row = newrow.row.clone();
                                             return row;
                                         }
                                     }
@@ -420,6 +425,7 @@ impl CommitFile {
                                 update.table_name.clone(),
                             );
                         }
+                        // Two Updates just become one update
                         if let Some(Diff::Update(existing)) = get_diff(&map, &update.table_name, 0)
                         {
                             // Merge the diffs together, removing any rows that are in the new update
@@ -427,13 +433,12 @@ impl CommitFile {
                                 .rows
                                 .iter()
                                 .filter(|x| {
-                                    !update
-                                        .rows
+                                    !newrows
                                         .iter()
                                         .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
                                 })
+                                .chain(newrows.iter())
                                 .cloned()
-                                .chain(newrows.into_iter())
                                 .collect::<Vec<RowInfo>>();
                             // Update the update diff with the new rows
                             add_diff(
@@ -448,8 +453,31 @@ impl CommitFile {
                         } else {
                             add_diff(&mut map, diff.clone(), update.table_name.clone());
                         }
-                    }
+                    } // End of Update
                     Diff::Insert(insert) => {
+                        // A Remove and an Insert just becomes an Insert
+                        if let Some(Diff::Remove(remove)) = get_diff(&map, &insert.table_name, 2) {
+                            let rows = remove
+                                .rows
+                                .iter()
+                                .filter(|x| {
+                                    !insert
+                                        .rows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
+                                .cloned()
+                                .collect::<Vec<RowInfo>>();
+                            add_diff(
+                                &mut map,
+                                Diff::Remove(RemoveDiff {
+                                    table_name: insert.table_name.clone(),
+                                    schema: insert.schema.clone(),
+                                    rows,
+                                }),
+                                insert.table_name.clone(),
+                            );
+                        }
                         if let Some(Diff::Insert(existing)) = get_diff(&map, &insert.table_name, 1)
                         {
                             // Merge the diffs
@@ -471,16 +499,73 @@ impl CommitFile {
                         } else {
                             add_diff(&mut map, diff.clone(), insert.table_name.clone());
                         }
-                    }
+                    } // End of Insert Case
                     Diff::Remove(remove) => {
+                        let mut newrows = remove.rows.clone();
+                        // An Insert and a Remove cancel each other out
+                        if let Some(Diff::Insert(insert)) = get_diff(&map, &remove.table_name, 1) {
+                            // Remove rows from insert that are in remove
+                            let rows = insert
+                                .rows
+                                .iter()
+                                .filter(|x| {
+                                    !newrows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
+                                .cloned()
+                                .collect::<Vec<RowInfo>>();
+                            // Retain the rows that were not removed
+                            newrows.retain(|x| {
+                                !insert
+                                    .rows
+                                    .iter()
+                                    .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                            });
+                            // Update the insert diff with the new rows
+                            add_diff(
+                                &mut map,
+                                Diff::Insert(InsertDiff {
+                                    table_name: remove.table_name.clone(),
+                                    schema: remove.schema.clone(),
+                                    rows,
+                                }),
+                                remove.table_name.clone(),
+                            );
+                        }
+                        // An Update and a Remove just becomes a Remove
+                        if let Some(Diff::Update(update)) = get_diff(&map, &remove.table_name, 0) {
+                            // Remove rows from update that are in remove
+                            let rows = update
+                                .rows
+                                .iter()
+                                .filter(|x| {
+                                    !newrows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
+                                .cloned()
+                                .collect::<Vec<RowInfo>>();
+                            // Update the update diff with the new rows
+                            add_diff(
+                                &mut map,
+                                Diff::Update(UpdateDiff {
+                                    table_name: remove.table_name.clone(),
+                                    schema: remove.schema.clone(),
+                                    rows,
+                                }),
+                                remove.table_name.clone(),
+                            );
+                        }
+                        // Two Remove diffs can be merged
                         if let Some(Diff::Remove(existing)) = get_diff(&map, &remove.table_name, 2)
                         {
                             // Merge the diffs
                             let rows = existing
                                 .rows
                                 .iter()
-                                .chain(remove.rows.iter())
                                 .cloned()
+                                .chain(newrows.into_iter())
                                 .collect::<Vec<RowInfo>>();
                             add_diff(
                                 &mut map,
@@ -494,14 +579,13 @@ impl CommitFile {
                         } else {
                             add_diff(&mut map, diff.clone(), remove.table_name.clone());
                         }
-                    }
+                    } // End of Remove Case
                     Diff::TableCreate(create) => {
                         add_diff(&mut map, diff.clone(), create.table_name.clone());
                     }
                     Diff::TableRemove(remove) => {
                         add_diff(&mut map, diff.clone(), remove.table_name.clone());
                     }
-                    _ => todo!("Combine other diff types"),
                 }
             }
         }
