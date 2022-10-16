@@ -57,6 +57,7 @@ message CellValue {
         double col_double = 16;
         int64 col_i64 = 17;
         bool col_bool = 18;
+        google.protobuf.Empty col_null = 19;
     }
 }
 

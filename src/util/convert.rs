@@ -55,6 +55,9 @@ pub fn to_value(value: Value) -> CellValue {
         Value::Bool(b) => CellValue {
             cell_type: Some(ColBool { 0: b }),
         },
+        Value::Null => CellValue {
+            cell_type: Some(ColNull { 0: () }),
+        },
     }
 }
 
@@ -75,6 +78,7 @@ pub fn from_value(value: CellValue) -> Value {
         ColI64 { 0: i } => Value::I64(i),
         ColDouble { 0: d } => Value::Double(d),
         ColBool { 0: b } => Value::Bool(b),
+        ColNull(()) => Value::Null,
     }
 }
 
