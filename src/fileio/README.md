@@ -43,6 +43,7 @@
 - *Only* null values have an additional byte in the beginning of each cell value, which is set to 1 if the value is null, and 0 otherwise.
 - This is done to ensure that we can have null values for all types, and not just strings.
 - Additionally, this way we avoid the need to have a null value for each type, which would be a waste of space.
+- If a NULL value is used for a string, the string will cast it to an empty string.
 
 ## Concurrency Considerations
 - File reads using positioned-io can be done concurrently, as long as no file writes are done at the same time.

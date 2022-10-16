@@ -229,7 +229,7 @@ impl ToString for Column {
             Column::Bool => "Bool".to_string(),
             Column::Timestamp => "Timestamp".to_string(),
             Column::String(x) => format!("String({})", x),
-            Column::Nullable(x) => format!("Null({})", x.to_string()),
+            Column::Nullable(x) => format!("Nullable({})", x.to_string()),
         }
     }
 }

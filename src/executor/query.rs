@@ -1067,4 +1067,157 @@ mod tests {
         // Delete the test database
         new_db.delete_database().unwrap();
     }
+
+    #[test]
+    #[serial]
+    // Ensures that insert can cast values to the correct type if possible
+    fn test_insert_nulls() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = vec!["T.id".to_string(), "T.name".to_string()];
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::Nullable(Box::new(Column::I32))),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::Nullable(Box::new(Column::Double))),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::Null,
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Null,
+            ],
+            vec![
+                Value::Null,
+                Value::String("Captain America".to_string()),
+                Value::Null,
+            ],
+        ];
+        let new_rows = vec![
+            vec![
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "3.456".to_string(),
+            ],
+            vec![
+                "".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "".to_string(),
+            ],
+            vec![
+                "".to_string(),
+                "Captain America".to_string(),
+                "".to_string(),
+            ],
+        ];
+
+        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 4);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], ("id".to_string(), Column::Nullable(Box::new(Column::I32))));
+        assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::Null);
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::Null);
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert exits if a value is not nullable and is inserted as null
+    fn test_insert_invalid_nulls() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::Nullable(Box::new(Column::Double))),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                "".to_string(), // Nulled
+                "Iron Man".to_string(),
+                "Robert Downey".to_string(),
+            ],
+            vec![
+                "2".to_string(),
+                "Spiderman".to_string(),
+                "".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "".to_string(),
+                "322.456".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "".to_string(),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
 }
