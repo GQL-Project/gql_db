@@ -16,6 +16,8 @@ use crate::{
         row::{Row, RowInfo},
     },
 };
+use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.
@@ -264,7 +266,7 @@ impl CommitFile {
                         Diff::Remove(RemoveDiff {
                             table_name,
                             schema,
-                            rows_removed: rows,
+                            rows,
                         })
                     }
                 }
@@ -339,8 +341,8 @@ impl CommitFile {
                 Diff::Remove(remove) => {
                     self.swrite_type(page, pagenum, offset, 2u32)?;
                     self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
-                    self.swrite_type(page, pagenum, offset, remove.rows_removed.len() as u32)?;
-                    for row in &remove.rows_removed {
+                    self.swrite_type(page, pagenum, offset, remove.rows.len() as u32)?;
+                    for row in &remove.rows {
                         self.swrite_schema(page, pagenum, offset, &remove.schema)?;
                         self.swrite_row(page, pagenum, offset, &row.row, &remove.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
@@ -361,6 +363,93 @@ impl CommitFile {
         }
         write_page(*pagenum, &self.delta_path, page)?;
         Ok(())
+    }
+
+    fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
+        if commits.len() == 0 {
+            return Err("No commits to combine".to_string());
+        } else if commits.len() == 1 {
+            return Ok(commits[0].clone());
+        }
+        let msg = format!("Combined {} commits", commits.len(),);
+        let cmd = format!(
+            "GQL squash {} {}",
+            commits[0].hash,
+            commits[commits.len() - 1].hash
+        );
+        let diffs: Vec<Diff> = commits.into_iter().fold(Vec::new(), |mut acc, commit| {
+            for new_diff in commit.diffs.iter() {
+                let mut found = false;
+                for old_diff in acc.iter_mut() {
+                    match (new_diff, &old_diff) {
+                        /* Trivial Insertions and Updates */
+                        // Add new rows to the old insert
+                        (Diff::Insert(new_insert), Diff::Insert(old_insert)) => {
+                            if new_insert.table_name == old_insert.table_name {
+                                *old_diff = Diff::Insert(InsertDiff {
+                                    table_name: new_insert.table_name.clone(),
+                                    schema: new_insert.schema.clone(),
+                                    rows: new_insert
+                                        .rows
+                                        .iter()
+                                        .chain(old_insert.rows.iter())
+                                        .cloned()
+                                        .collect(),
+                                });
+                                found = true;
+                                break;
+                            }
+                        }
+                        // Add new rows to the old remove
+                        (Diff::Remove(new_remove), Diff::Remove(old_remove)) => {
+                            if new_remove.table_name == old_remove.table_name {
+                                *old_diff = Diff::Remove(RemoveDiff {
+                                    table_name: new_remove.table_name.clone(),
+                                    schema: new_remove.schema.clone(),
+                                    rows: new_remove
+                                        .rows
+                                        .iter()
+                                        .chain(old_remove.rows.iter())
+                                        .cloned()
+                                        .collect(),
+                                });
+                                found = true;
+                                break;
+                            }
+                        }
+                        // Add new rows to the old update, removing old versions of duplicate updates
+                        (Diff::Update(new_update), Diff::Update(old_update)) => {
+                            if new_update.table_name == old_update.table_name {
+                                *old_diff = Diff::Update(UpdateDiff {
+                                    table_name: new_update.table_name.clone(),
+                                    schema: new_update.schema.clone(),
+                                    rows: new_update
+                                        .rows
+                                        .iter()
+                                        .chain(old_update.rows.iter().filter(|old_row| {
+                                            !new_update.rows.iter().any(|new_row| {
+                                                new_row.rownum == old_row.rownum
+                                                    && new_row.pagenum == old_row.pagenum
+                                            })
+                                        }))
+                                        .cloned()
+                                        .collect(),
+                                });
+                                found = true;
+                                break;
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+                // This diff
+                if !found {
+                    acc.push(new_diff.clone());
+                }
+            }
+            acc
+        });
+        self.create_commit(msg, cmd, diffs)
     }
 }
 
@@ -435,7 +524,7 @@ mod tests {
             "test_command".to_string(),
             vec![Diff::Remove(RemoveDiff {
                 table_name: "test_table".to_string(),
-                rows_removed: vec![RowInfo {
+                rows: vec![RowInfo {
                     row: vec![
                         Value::String("test".to_string()),
                         Value::String("122".to_string()),

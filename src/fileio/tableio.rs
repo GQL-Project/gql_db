@@ -345,7 +345,7 @@ impl Table {
                     clear_row(&self.schema, page.as_mut(), rownum)?;
 
                     // Add changes to the diff
-                    diff.rows_removed.push(RowInfo {
+                    diff.rows.push(RowInfo {
                         row: row_read,
                         pagenum: row_location.pagenum,
                         rownum: row_location.rownum,
@@ -672,9 +672,9 @@ mod tests {
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
-        assert_eq!(remove_diff.rows_removed[0].row[0], Value::I32(3));
-        assert_eq!(remove_diff.rows_removed[0].pagenum, 3);
-        assert_eq!(remove_diff.rows_removed[0].rownum, 0);
+        assert_eq!(remove_diff.rows[0].row[0], Value::I32(3));
+        assert_eq!(remove_diff.rows[0].pagenum, 3);
+        assert_eq!(remove_diff.rows[0].rownum, 0);
 
         // Clean up by removing file
         clean_table(&path);

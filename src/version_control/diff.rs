@@ -34,7 +34,7 @@ pub struct InsertDiff {
 pub struct RemoveDiff {
     pub table_name: String, // The name of the table that the rows were removed from
     pub schema: Schema,     // The schema of the table
-    pub rows_removed: Vec<RowInfo>, // The rows that were removed
+    pub rows: Vec<RowInfo>, // The rows that were removed
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,11 +75,11 @@ impl InsertDiff {
 }
 
 impl RemoveDiff {
-    pub fn new(table_name: String, schema: Schema, rows_removed: Vec<RowInfo>) -> Self {
+    pub fn new(table_name: String, schema: Schema, rows: Vec<RowInfo>) -> Self {
         Self {
             table_name,
             schema,
-            rows_removed,
+            rows,
         }
     }
 }
@@ -103,7 +103,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
             Diff::Remove(remove_diff) => {
                 let table = Table::new(table_dir, &remove_diff.table_name, None)?;
                 let mut row_locations_removed: Vec<RowLocation> = Vec::new();
-                for row in remove_diff.rows_removed.clone() {
+                for row in remove_diff.rows.clone() {
                     row_locations_removed.push(row.get_row_location());
                 }
                 table.remove_rows(row_locations_removed)?;
@@ -148,7 +148,7 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
             // Insert instead of remove as we're reverting the change
             Diff::Remove(remove_diff) => {
                 let mut table = Table::new(table_dir, &remove_diff.table_name, None)?;
-                table.write_rows(remove_diff.rows_removed.clone())?;
+                table.write_rows(remove_diff.rows.clone())?;
             }
             Diff::TableCreate(table_create_diff) => {
                 delete_table_in_dir(&table_create_diff.table_name, table_dir)?;
