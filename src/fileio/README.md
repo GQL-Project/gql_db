@@ -38,6 +38,11 @@
 - If a row is removed, the byte is set to 0, allowing for us to use this location for insertion later on, and skip it while performing scans.
 - Strings of length `n` will have space for all `n` characters, even if it is not initally using the entire space.
 
+## Null Values:
+- *Only* null values have an additional byte in the beginning of each cell value, which is set to 1 if the value is null, and 0 otherwise.
+- This is done to ensure that we can have null values for all types, and not just strings.
+- Additionally, this way we avoid the need to have a null value for each type, which would be a waste of space.
+
 ## Concurrency Considerations
 - File reads using positioned-io can be done concurrently, as long as no file writes are done at the same time.
 - In other words, we can have multiple threads reading from the same file, but as one thread writes, all other threads must wait.

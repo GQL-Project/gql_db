@@ -12,6 +12,7 @@ pub enum Value {
     I64(i64),
     Double(f64),
     Bool(bool),
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,6 +162,7 @@ impl ToString for Value {
             Value::Bool(x) => format!("Bool({})", x),
             Value::Timestamp(x) => format!("Timestamp({})", x),
             Value::String(x) => format!("String({})", x),
+            Value::Null => "Null()".to_string(),
         }
     }
 }
