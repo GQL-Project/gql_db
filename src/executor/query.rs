@@ -4,30 +4,11 @@ use crate::fileio::{
     tableio::{self, *},
 };
 use crate::user::userdata::*;
-use crate::util::dbtype::{Column, Value};
+use crate::util::dbtype::Column;
 use crate::util::row::Row;
 use crate::version_control::diff::*;
-use chrono::NaiveDateTime;
 use itertools::Itertools;
-use prost_types::Timestamp;
-use sqlparser::ast::{ColumnDef, DataType, Expr, SetExpr, Statement};
-
-pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
-    let data_col = match data_type.data_type {
-        DataType::SmallInt(_) => Column::I32,
-        DataType::Int(_) => Column::I64,
-        DataType::Float(_) => Column::Float,
-        DataType::Double => Column::Double,
-        DataType::Boolean => Column::Bool,
-        DataType::Timestamp => Column::Timestamp,
-        DataType::Char(Some(size)) => Column::String(size as u16),
-        DataType::Varchar(Some(size)) => Column::String(size as u16),
-        DataType::Char(None) => Column::String(1),
-        DataType::Varchar(None) => Column::String(1),
-        _ => Err("Unsupported data type")?,
-    };
-    Ok(data_col)
-}
+use sqlparser::ast::{Expr, SetExpr, Statement};
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -41,7 +22,7 @@ pub fn execute_query(
     }
     for a in ast.iter() {
         match a {
-            Statement::Query(q) => match *q.body.clone() {
+            Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
                     let mut column_names = Vec::new();
                     for c in s.projection.iter() {
@@ -61,13 +42,9 @@ pub fn execute_query(
                     user.append_command(&command);
                     return select(column_names, table_names, get_db_instance()?, user);
                 }
-                _ => {
-                    print!("Not a select\n");
-                }
+                _ => print!("Not a select\n"),
             },
-            _ => {
-                print!("Not a query\n");
-            }
+            _ => print!("Not a query\n"),
         };
     }
     Err("No query found".to_string())
@@ -81,6 +58,7 @@ pub fn execute_update(
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
+    println!("AST: {:?}", ast);
     let mut results: Vec<String> = Vec::new();
     // Commands: create, insert, select
     for a in ast.iter() {
@@ -90,7 +68,7 @@ pub fn execute_update(
                 let mut schema = Schema::new();
 
                 for c in columns.iter() {
-                    schema.push((c.name.clone().value, parse_col_def(c.clone())?));
+                    schema.push((c.name.value.clone(), Column::from_col_def(c)?));
                 }
                 let _result = create_table(&table_name, &schema, get_db_instance()?, user)?;
                 results.push(format!("Table created: {}", table_name));
@@ -118,6 +96,9 @@ pub fn execute_update(
                                     }
                                     Expr::Value(sqlparser::ast::Value::Boolean(s)) => {
                                         data.push(s.to_string());
+                                    }
+                                    Expr::Value(sqlparser::ast::Value::Null) => {
+                                        data.push("".to_string());
                                     }
                                     _ => print!("Not a string\n"),
                                 }
@@ -321,16 +302,7 @@ pub fn insert(
                     .iter()
                     .zip(table.schema.iter())
                     .map(|(str, (_, col))| {
-                        let res = match col {
-                            Column::I32 => Value::I32(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Float => Value::Float(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::String(_) => Value::String(str.clone()),
-                            Column::Bool => Value::Bool(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Timestamp => Value::Timestamp(parse_time(str)?),
-                            Column::I64 => Value::I64(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Double => Value::Double(str.parse().map_err(|_x| "Could not parse value")?),
-                        };
-                        Ok(res)
+                        col.parse(str).map_err(|e| format!("Error parsing value: {}", e))
                     })
                     .collect::<Result<Row, String>>()?)
             }
@@ -362,18 +334,6 @@ pub fn insert(
     let diff: InsertDiff = table.insert_rows(values)?;
     user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
-}
-
-fn parse_time(str: &String) -> Result<Timestamp, String> {
-    let time = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S");
-    if let Ok(x) = time {
-        Ok(Timestamp {
-            seconds: x.timestamp(),
-            nanos: x.timestamp_subsec_nanos() as i32,
-        })
-    } else {
-        Err(format!("Could not parse time {}", str))
-    }
 }
 
 #[cfg(test)]

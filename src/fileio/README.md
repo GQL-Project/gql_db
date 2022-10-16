@@ -24,8 +24,9 @@
     - To reduce the times needed for this to occur, we double the number of pages in the file after each IO.
 - We then have a `uint8` counting the number of elements in the schema, telling us how many records to scan.
 - Each schema shape is represented as a `uint16` for the type, followed by a 32 character name:
-    - If the first bit is 1, we have a string of size `n ^ (1 << 15)` bytes
-    - If the first bit is 0, for the given values of `n`, we have:
+    - If the first bit is 1, the type is nullable
+    - If the second bit is 1, we have a string of size `n ^ (1 << 14)` bytes (which means the maximum size of a string is 2^14 - 1 bytes)
+    - If the second bit is 0, for the given values of `n`, we have:
         - 0: Int32
         - 1: Int64
         - 2: Float32
