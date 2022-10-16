@@ -58,7 +58,6 @@ pub fn execute_update(
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
     }
-    println!("AST: {:?}", ast);
     let mut results: Vec<String> = Vec::new();
     // Commands: create, insert, select
     for a in ast.iter() {

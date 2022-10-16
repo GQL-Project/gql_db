@@ -200,13 +200,13 @@ impl Column {
 
     pub fn parse(&self, str: &String) -> Result<Value, String> {
         let res = match self {
-            Column::I32 => Value::I32(str.parse().map_err(|_x| "Could not parse value")?),
-            Column::Float => Value::Float(str.parse().map_err(|_x| "Could not parse value")?),
+            Column::I32 => Value::I32(str.parse().map_err(|_x| format!("Could not parse value {str} into type Int32"))?),
+            Column::Float => Value::Float(str.parse().map_err(|_x| format!("Could not parse value {str} into type Float"))?),
             Column::String(_) => Value::String(str.clone()),
-            Column::Bool => Value::Bool(str.parse().map_err(|_x| "Could not parse value")?),
+            Column::Bool => Value::Bool(str.parse().map_err(|_x| format!("Could not parse value {str} into type Bool"))?),
             Column::Timestamp => Value::Timestamp(parse_time(str)?),
-            Column::I64 => Value::I64(str.parse().map_err(|_x| "Could not parse value")?),
-            Column::Double => Value::Double(str.parse().map_err(|_x| "Could not parse value")?),
+            Column::I64 => Value::I64(str.parse().map_err(|_x| format!("Could not parse value {str} into type Int64"))?),
+            Column::Double => Value::Double(str.parse().map_err(|_x| format!("Could not parse value {str} into type Double"))?),
             Column::Nullable(x) => {
                 if str == "" {
                     Value::Null
@@ -257,6 +257,6 @@ fn parse_time(str: &String) -> Result<Timestamp, String> {
             nanos: x.timestamp_subsec_nanos() as i32,
         })
     } else {
-        Err(format!("Could not parse time {}", str))
+        Err(format!("Could not parse value {str} into type time"))
     }
 }
