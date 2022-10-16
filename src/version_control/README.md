@@ -102,6 +102,17 @@ Now that you have the common ancestor, you can merge the branches. The merge str
 2. Repeat step 1 with the target commits.
 3. **NOTE** Use the empty bits in the first byte of the table row to indicate rows that are ready to be deleted/inserted/updated. This way, you can keep track of which rows will cause a merge conflict or not. 
 
+## What Causes a Merge Conflict?
+
+There are a certain set of operations that will cause a merge conflict. These are:
+- A row is deleted in one branch, but updated in the other branch.
+- A row is updated in both branches, but with different values.
+- A row is updated in one branch, but that table is deleeted in the other branch
+- A table is created in one branch, but deleted in the other branch.
+- A table is created in both branches, but with different schemas.
+
+Inserts are not considered merge conflicts because they can be resolved by simply inserting the row in the other branch. If the same row is inserted in both branches, only 1 copy of that row will be inserted in the merged branch.
+
 ## Invariants
 
 1. All commits in a branch have increasing timestamps.

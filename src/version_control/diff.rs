@@ -51,36 +51,200 @@ pub struct TableRemoveDiff {
 }
 
 /***************************************************************************************************/
-/*                                         Constructors                                            */
+/*                                         Member Methods                                          */
 /***************************************************************************************************/
 
+impl Diff {
+    // Checks if there is a merge conflict between this diff and another diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        let conflict: bool = match self {
+            Diff::Update(update_diff) => update_diff.is_merge_conflict(target_diff),
+            Diff::Insert(insert_diff) => insert_diff.is_merge_conflict(target_diff),
+            Diff::Remove(remove_diff) => remove_diff.is_merge_conflict(target_diff),
+            Diff::TableCreate(table_create_diff) => table_create_diff.is_merge_conflict(target_diff),
+            Diff::TableRemove(table_remove_diff) => table_remove_diff.is_merge_conflict(target_diff),
+        };
+
+        conflict
+    }
+}
+
 impl UpdateDiff {
-    pub fn new(table_name: String, schema: Schema, rows: Vec<RowInfo>) -> Self {
-        Self {
-            table_name,
-            schema,
-            rows,
+    // Checks if there is a merge conflict between this update diff and the target diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        match target_diff {
+            // Removing the row in the target diff will cause a merge conflict
+            Diff::Remove(remove_diff_target) => {
+                // Only can be a merge conflict if it is the same table
+                if self.table_name == remove_diff_target.table_name {
+                    // Go through all the rows in both diffs and check if any modify the same rows
+                    for update_row in self.rows.clone() {
+                        for remove_row in remove_diff_target.rows_removed.clone() {
+                            if update_row.get_row_location() == remove_row.get_row_location() {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            },
+            // Updating the same row is a merge conflict if it updates the row differently
+            Diff::Update(update_diff_target) => {
+                // Only can be a merge conflict if it is the same table
+                if self.table_name == update_diff_target.table_name {
+                    // Go through all the rows in both diffs and check if any modify the same rows
+                    for update_row in self.rows.clone() {
+                        for update_row_target in update_diff_target.rows.clone() {
+                            if update_row.get_row_location() == update_row_target.get_row_location() {
+                                // Only a conflict if they update it differently
+                                if update_row.row != update_row_target.row {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            // Removing a table causes a conflict if it's for the same table that was updated
+            Diff::TableRemove(table_remove_diff_target) => { 
+                if self.table_name == table_remove_diff_target.table_name {
+                    return true;
+                }
+            },
+            // Inserting a row is not a merge conflict
+            Diff::Insert(_) => {},
+            // Creating a table is not a merge conflict
+            Diff::TableCreate(_) => {},
         }
+
+        // no merge conflict
+        false
     }
 }
 
 impl InsertDiff {
-    pub fn new(table_name: String, schema: Schema, rows: Vec<RowInfo>) -> Self {
-        Self {
-            table_name,
-            schema,
-            rows,
+    // Checks if there is a merge conflict between this update diff and the target diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        match target_diff {
+            // Removing a table causes a conflict if it's for the same table that was inserted into
+            Diff::TableRemove(table_remove_diff_target) => { 
+                if self.table_name == table_remove_diff_target.table_name {
+                    return true;
+                }
+            },
+            // Inserting a row is not a merge conflict
+            Diff::Insert(_) => {},
+            // Removing a row is not a merge conflict
+            Diff::Remove(_) => {},
+            // Updating a row is not a merge conflict
+            Diff::Update(_) => {},
+            // Creating a table is not a merge conflict
+            Diff::TableCreate(_) => {},
         }
+
+        // no merge conflict
+        false
     }
 }
 
 impl RemoveDiff {
-    pub fn new(table_name: String, schema: Schema, rows_removed: Vec<RowInfo>) -> Self {
-        Self {
-            table_name,
-            schema,
-            rows_removed,
+    // Checks if there is a merge conflict between this update diff and the target diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        match target_diff {
+            // Updating a row will cause a merge conflict if it's the same row
+            Diff::Update(update_diff_target) => {
+                // Only can be a merge conflict if it affects the same table
+                if self.table_name != update_diff_target.table_name {
+                    // Go through all the rows in both diffs and check if any modify the same rows
+                    for remove_row in self.rows_removed.clone() {
+                        for update_row in update_diff_target.rows.clone() {
+                            if remove_row.get_row_location() == update_row.get_row_location() {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            },
+            // Removing the same row is not a merge conflict
+            Diff::Remove(_) => {},
+            // Inserting a row is not a merge conflict
+            Diff::Insert(_) => {},
+            // Creating a table is not a merge conflict
+            Diff::TableCreate(_) => {},
+            // Removing a table is not a merge conflict
+            Diff::TableRemove(_) => {},
         }
+
+        // no merge conflict
+        false
+    }
+}
+
+impl TableCreateDiff {
+    // Checks if there is a merge conflict between this update diff and the target diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        match target_diff {
+            // Removing the same table is a merge conflict
+            Diff::TableRemove(drop_table_diff_target) => {
+                // Only a merge conflict if it is the same table
+                if self.table_name == drop_table_diff_target.table_name {
+                    return true;
+                }
+            },
+            // Creating a table is only a merge conflict if schema is different
+            Diff::TableCreate(create_table_diff_target) => {
+                // Only can be a merge conflict if it affects the same table
+                if self.table_name == create_table_diff_target.table_name {
+                    // Only a conflict if they create different schema
+                    if self.schema != create_table_diff_target.schema {
+                        return true;
+                    }
+                }
+            },
+            // Table creation doesn't have any conflicts with insert
+            Diff::Insert(_) => {},
+            // Table creation doesn't have any conflicts with update
+            Diff::Update(_) => {},
+            // Table creation doesn't have any conflicts with remove
+            Diff::Remove(_) => {},
+        }
+
+        // no merge conflict
+        false
+    }
+}
+
+impl TableRemoveDiff {
+    // Checks if there is a merge conflict between this update diff and the target diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        match target_diff {
+            Diff::TableCreate(create_table_diff_target) => {
+                // Only a merge conflict if it affects the same table
+                if self.table_name == create_table_diff_target.table_name {
+                    return true;
+                }
+            },
+            // Table removal has a conflict with insert if for the same table
+            Diff::Insert(_) => {
+                // Only a merge conflict if it affects the same table
+                if self.table_name == self.table_name {
+                    return true;
+                }
+            },
+            // Table removal has a conflict with update if for the same table
+            Diff::Update(_) => {
+                // Only a merge conflict if it affects the same table
+                if self.table_name == self.table_name {
+                    return true;
+                }
+            },
+            // Table removal does not have any conflicts with remove
+            Diff::Remove(_) => {},
+            // Table removal does not have any conflicts with table removal
+            Diff::TableRemove(_) => {},
+        }
+
+        // no merge conflict
+        false
     }
 }
 

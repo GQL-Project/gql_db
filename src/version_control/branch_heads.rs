@@ -86,6 +86,7 @@ impl BranchHEADs {
     }
 
     /// Takes in a branch name and returns the corresponding branch HEAD.
+    /// If the branch name does not exist, returns an error.
     pub fn get_branch_head(&mut self, branch_name: &String) -> Result<BranchHead, String> {
         let branch_heads: Vec<BranchHead> = self.get_all_branch_heads()?;
 

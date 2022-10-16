@@ -200,8 +200,11 @@ impl Table {
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
         //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
-        let mut diff: UpdateDiff =
-            UpdateDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
+        let mut diff: UpdateDiff = UpdateDiff { 
+            table_name: self.name.clone(), 
+            schema: self.schema.clone(), 
+            rows: Vec::new() 
+        };
 
         if rows.len() < 1 {
             return Ok(diff);
@@ -231,8 +234,11 @@ impl Table {
     /// It returns a diff of the rows that were inserted.
     pub fn insert_rows(&mut self, rows: Vec<Row>) -> Result<InsertDiff, String> {
         // Keep track of how the rows have changed.
-        let mut diff: InsertDiff =
-            InsertDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
+        let mut diff: InsertDiff = InsertDiff {
+            table_name: self.name.clone(), 
+            schema: self.schema.clone(), 
+            rows: Vec::new() 
+        };
 
         // Just return right away if we aren't inserting any rows
         if rows.len() == 0 {
@@ -274,8 +280,11 @@ impl Table {
     /// This is a dangerous operation because it could overwrite existing data.
     pub fn write_rows(&mut self, mut rows: Vec<RowInfo>) -> Result<InsertDiff, String> {
         // Keep track of how the rows have changed.
-        let mut diff: InsertDiff =
-            InsertDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
+        let mut diff: InsertDiff = InsertDiff {
+            table_name: self.name.clone(), 
+            schema: self.schema.clone(), 
+            rows: Vec::new()
+        };
 
         // Just return right away if we aren't inserting any rows
         if rows.len() == 0 {
@@ -320,7 +329,11 @@ impl Table {
     pub fn remove_rows(&self, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
         // Keep track of how the rows have changed.
         let schema = self.schema.clone();
-        let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), schema, Vec::new());
+        let mut diff: RemoveDiff = RemoveDiff {
+            table_name: self.name.clone(), 
+            schema: schema, 
+            rows_removed: Vec::new()
+        };
 
         // Return right away if we aren't removing any rows
         if rows.len() == 0 {
