@@ -210,7 +210,7 @@ impl UpdateDiff {
                                     insert_diff_target.rows.remove(index_target);
                                     add_self_row = false;
                                 },
-                            }
+                            } // End of match merge_algo
                         }
                     }
 
@@ -224,7 +224,7 @@ impl UpdateDiff {
 
                 // Return the update and insert diffs
                 return Ok(vec![Diff::Update(res_update_diff), Diff::Insert(res_insert_diff)]);
-            },
+            }, // End of Diff::Insert
             // Removing the row in the target diff will cause a merge conflict
             Diff::Remove(mut remove_diff_target) => {
                 let mut res_update_diff: UpdateDiff = UpdateDiff {
@@ -262,7 +262,7 @@ impl UpdateDiff {
                                     // Don't take the update row, and don't remove the row from the remove diff
                                     add_self_row = false;
                                 },
-                            }
+                            } // End of match merge_algo
                         }
                     }
 
@@ -276,7 +276,7 @@ impl UpdateDiff {
 
                 // Return the update and remove diffs
                 return Ok(vec![Diff::Update(res_update_diff), Diff::Remove(res_remove_diff)]);
-            },
+            }, // End of Diff::Remove
             // Updating the same row is a merge conflict if it updates the row differently
             Diff::Update(mut update_diff_target) => {
                 let mut res_update_diff: UpdateDiff = UpdateDiff {
@@ -322,7 +322,7 @@ impl UpdateDiff {
                                         update_diff_target.rows.remove(index_target);
                                         add_self_row = false;
                                     },
-                                }
+                                } // End of match merge_algo
                             }
                         }
                     }
@@ -336,7 +336,7 @@ impl UpdateDiff {
 
                 // Return the update diffs
                 return Ok(vec![Diff::Update(res_update_diff)]);
-            },
+            }, // End of Diff::Update
             // Creating a table is a merge conflict under some conditions
             Diff::TableCreate(create_table_diff) => {
                 match merge_algo {
@@ -351,8 +351,8 @@ impl UpdateDiff {
                     MergeConflictResolutionAlgo::UseTarget => {
                         return Ok(vec![Diff::TableCreate(create_table_diff)]);
                     },
-                }
-            },
+                } // End of match merge_algo
+            }, // End of Diff::TableCreate
             // Removing a table causes a conflict if it's for the same table that had an update
             Diff::TableRemove(table_remove_diff_target) => {
                 match merge_algo {
@@ -380,8 +380,8 @@ impl UpdateDiff {
                     MergeConflictResolutionAlgo::UseTarget => {
                         return Ok(vec![]);
                     },
-                }
-            },
+                } // End of match merge_algo
+            }, // End of Diff::TableRemove
         }
     }
 }
