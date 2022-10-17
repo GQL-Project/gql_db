@@ -478,12 +478,19 @@ impl CommitFile {
                                 insert.table_name.clone(),
                             );
                         }
+                        // Two Inserts just become one insert
                         if let Some(Diff::Insert(existing)) = get_diff(&map, &insert.table_name, 1)
                         {
                             // Merge the diffs
                             let rows = existing
                                 .rows
                                 .iter()
+                                .filter(|x| {
+                                    !insert
+                                        .rows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
                                 .chain(insert.rows.iter())
                                 .cloned()
                                 .collect::<Vec<RowInfo>>();
@@ -557,15 +564,20 @@ impl CommitFile {
                                 remove.table_name.clone(),
                             );
                         }
-                        // Two Remove diffs can be merged
+                        // Two Removes just become one Remove
                         if let Some(Diff::Remove(existing)) = get_diff(&map, &remove.table_name, 2)
                         {
                             // Merge the diffs
                             let rows = existing
                                 .rows
                                 .iter()
+                                .filter(|x| {
+                                    !newrows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
+                                .chain(newrows.iter())
                                 .cloned()
-                                .chain(newrows.into_iter())
                                 .collect::<Vec<RowInfo>>();
                             add_diff(
                                 &mut map,

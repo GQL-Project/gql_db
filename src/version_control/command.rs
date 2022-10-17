@@ -1,6 +1,6 @@
 use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
 
-use super::branches::{BranchNode, Branches};
+use super::{branches::{BranchNode, Branches}, commit::Commit};
 
 /// This function implements the GQL log command
 pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
@@ -44,6 +44,13 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
     }
 
     Ok((log_string, log_strings))
+}
+
+/// Takes two commit hashes, and attempts to find a chain of commits 
+/// from the first commit to the second, assuming that the commits are 
+/// from the same branch.
+pub fn squash(hash1: String, hash2: String) -> Result<Commit, String> {
+    todo!()
 }
 
 #[cfg(test)]

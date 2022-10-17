@@ -1,6 +1,6 @@
 use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
-use crate::version_control::log;
+use crate::version_control::command;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -66,13 +66,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         return Err("No changes to commit".to_string());
                     }
 
-                    let (res_node, res_commit) =
-                        get_db_instance().unwrap().create_commit_and_node(
-                            &message.to_string(),
-                            &user.get_commands().join(":"),
-                            user,
-                            None,
-                        )?;
+                    let (res_node, res_commit) = get_db_instance()?.create_commit_and_node(
+                        &message.to_string(),
+                        &user.get_commands().join(":"),
+                        user,
+                        None,
+                    )?;
                     return Ok(format!(
                         "Commit created on branch {} with hash {}",
                         res_node.branch_name, res_commit.hash
@@ -141,10 +140,25 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid VC Command".to_string());
             }
 
-            let log_results = log::log(user)?;
+            let log_results = command::log(user)?;
             let log_string: String = log_results.0;
 
             return Ok(log_string);
+        }
+        "squash" => {
+            // squash (Two Arguments: <hash1> <hash2>)
+            if vec.len() != 4 {
+                // Error message here
+                return Err("Invalid Squash Command, expected two Commit Hashes".to_string());
+            }
+
+            let hash1 = vec[2].to_string();
+            let hash2 = vec[3].to_string();
+            let squash_results = command::squash(hash1, hash2)?;
+            return Ok(format!(
+                "Squash Commit Made at hash: {}",
+                squash_results.hash
+            ));
         }
         "revert" => {
             // revert (Needs an argument)
