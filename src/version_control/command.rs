@@ -1,6 +1,10 @@
-use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
+use crate::{fileio::databaseio::get_db_instance, user::userdata::User, util::row::RowLocation};
 
-use super::{branches::{BranchNode, Branches}, commit::Commit};
+use super::{
+    branch_heads::{self, BranchHead},
+    branches::{BranchNode, Branches},
+    commit::Commit,
+};
 
 /// This function implements the GQL log command
 pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
@@ -15,9 +19,8 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
         return Ok(("No Commits!".to_string(), vec![]));
     }
 
-    let branch_node = branch_heads_instance
-        .get_branch_node_from_head(&branch_name, &branches_from_head)
-        .unwrap();
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&branch_name, &branches_from_head)?;
 
     let mut branch_nodes: Vec<BranchNode> = get_db_instance()?
         .get_branch_file()
@@ -46,11 +49,81 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
     Ok((log_string, log_strings))
 }
 
-/// Takes two commit hashes, and attempts to find a chain of commits 
-/// from the first commit to the second, assuming that the commits are 
+/// Takes two commit hashes, and attempts to find a chain of commits
+/// from the first commit to the second, assuming that the commits are
 /// from the same branch.
-pub fn squash(hash1: String, hash2: String) -> Result<Commit, String> {
-    todo!()
+pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, String> {
+    let branch_name: String = user.get_current_branch_name();
+    let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
+    let head_mngr = get_db_instance()?.get_branch_heads_file_mut();
+
+    if head_mngr.get_all_branch_heads()?.len() == 0 {
+        return Err("No Commits in Current Branch!".to_string());
+    }
+
+    // Branch head
+    let mut current = Some(head_mngr.get_branch_node_from_head(&branch_name, &branches)?);
+
+    // Node ahead of Hash2, if None then Hash2 is the head
+    let mut save_next: Option<BranchNode> = None;
+    // Hash 1's node
+    let mut save_first: Option<BranchNode> = None;
+    let mut commit_hashes: Vec<String> = Vec::new();
+
+    while current != None {
+        let node = current.unwrap();
+        if node.commit_hash == hash2 {
+            current = Some(node.clone());
+            while current != None {
+                let node = current.as_ref().unwrap();
+                if node.commit_hash == hash1 {
+                    save_first = Some(node.clone());
+                    break;
+                }
+                commit_hashes.push(node.commit_hash.clone());
+                current = branches.get_prev_branch_node(&node)?;
+            }
+        }
+        save_next = Some(node.clone());
+        current = branches.get_prev_branch_node(&node)?;
+    }
+
+    if commit_hashes.len() == 0 {
+        return Err("Commits not found in Current Branch".to_string());
+    } else if save_first == None {
+        return Err("Starting Commit not found in the Commit List".to_string());
+    }
+
+    let commits = commit_hashes
+        .into_iter()
+        .map(|hash| get_db_instance()?.get_commit_file_mut().fetch_commit(&hash))
+        .collect::<Result<Vec<Commit>, String>>()?;
+
+    let squash_commit = get_db_instance()?
+        .get_commit_file_mut()
+        .combine_commits(&commits)?;
+
+    // Create new_squash node, and make new_squash commit point to the hash1's previous commit
+    let squash_node = branches.create_branch_node(
+        head_mngr,
+        save_first.as_ref(),
+        &branch_name,
+        &squash_commit.hash,
+    )?;
+
+    // Make save_next point to the new squash commit
+    if let Some(mut node) = save_next {
+        node.prev_rownum = squash_node.curr_rownum;
+        node.prev_pagenum = squash_node.curr_pagenum;
+        branches.update_branch_node(head_mngr, &node)?;
+    } else {
+        // If it doesn't exist, then the squash commit is the head
+        head_mngr.set_branch_head(&branch_name, &RowLocation {
+            pagenum: squash_node.curr_pagenum as u32,
+            rownum: squash_node.curr_rownum as u16,
+        })?;
+    }
+    Ok(squash_commit)
 }
 
 #[cfg(test)]

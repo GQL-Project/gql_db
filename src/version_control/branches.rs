@@ -278,6 +278,36 @@ impl Branches {
             None => return Err("Branch node was not created correctly".to_string()),
         }
     }
+
+    /// Update an existing branch node, using the curr_pagenum and curr_rownum values to find the node.
+    pub fn update_branch_node(
+        &mut self,
+        branch_heads_table: &mut BranchHEADs,
+        node: &BranchNode,
+    ) -> Result<BranchNode, String> {
+        // Create the new branch node
+        let mut new_node: Vec<Value> = Vec::new();
+        new_node.push(Value::String(node.branch_name.clone()));
+        new_node.push(Value::String(node.commit_hash.clone()));
+        new_node.push(Value::I32(node.prev_pagenum));
+        new_node.push(Value::I32(node.prev_rownum));
+        new_node.push(Value::I32(node.curr_pagenum));
+        new_node.push(Value::I32(node.curr_rownum));
+        new_node.push(Value::Bool(node.is_head));
+
+        // Insert the new branch node
+        let update_diff: UpdateDiff = self.branches_table.rewrite_rows(vec![RowInfo {
+            row: new_node,
+            pagenum: node.curr_pagenum as u32,
+            rownum: node.curr_rownum as u16,
+        }])?;
+
+        // Verify that the update was successful
+        match update_diff.rows.get(0) {
+            Some(_) => Ok(node.clone()),
+            None => return Err("Branch node was not updated correctly".to_string()),
+        }
+    }
 }
 
 #[cfg(test)]

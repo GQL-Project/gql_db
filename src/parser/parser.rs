@@ -154,7 +154,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
 
             let hash1 = vec[2].to_string();
             let hash2 = vec[3].to_string();
-            let squash_results = command::squash(hash1, hash2)?;
+            let squash_results = command::squash(user, hash1, hash2)?;
             return Ok(format!(
                 "Squash Commit Made at hash: {}",
                 squash_results.hash

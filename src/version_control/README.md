@@ -115,6 +115,8 @@ Squashing the commits has two main steps:
 2. Restoring Branches: Here, the branches using the old chain of commits will need to use the new squashed commit. There are some important cases to handle:
   - In every case, the branch's HEAD will be updated to point to the new squashed commit.
 
+Also to note, Squash assumes that the commits are in order, and that the current branch contains hash2, as there can be multiple branches that contain hash2.
+
 ## Invariants
 
 1. All commits in a branch have increasing timestamps.

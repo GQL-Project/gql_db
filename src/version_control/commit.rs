@@ -366,7 +366,7 @@ impl CommitFile {
         Ok(())
     }
 
-    fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
+    pub fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
         } else if commits.len() == 1 {
