@@ -70,7 +70,7 @@ impl Diff {
         conflict
     }
 
-    /// Returns the table name of the diff.
+    /// Returns the table name that the diff is for.
     pub fn get_table_name(&self) -> String {
         match self {
             Diff::Update(update_diff) => update_diff.table_name.clone(),
@@ -79,6 +79,17 @@ impl Diff {
             Diff::TableCreate(table_create_diff) => table_create_diff.table_name.clone(),
             Diff::TableRemove(table_remove_diff) => table_remove_diff.table_name.clone(),
         }   
+    }
+
+    /// Returns the schema that the diff is for
+    pub fn get_schema(&self) -> Schema {
+        match self {
+            Diff::Update(update_diff) => update_diff.schema.clone(),
+            Diff::Insert(insert_diff) => insert_diff.schema.clone(),
+            Diff::Remove(remove_diff) => remove_diff.schema.clone(),
+            Diff::TableCreate(table_create_diff) => table_create_diff.schema.clone(),
+            Diff::TableRemove(table_remove_diff) => table_remove_diff.schema.clone(),
+        }
     }
 }
 
@@ -135,10 +146,15 @@ impl UpdateDiff {
 
     /// Merges the update diff with the target diff. It returns the vector of diffs
     /// that would have to be applied to the target_diff to get the merged diff.
-    pub fn merge_diffs_use_self(self, target_diff: Diff) -> Vec<Diff> {
+    /// It uses a specified merge strategy to resolve merge conflicts.
+    pub fn merge_diffs(
+        self, 
+        target_diff: Diff, 
+        merge_algo: MergeConflictResolutionAlgo
+    ) -> Result<Vec<Diff>, String> {
         // If they are for different tables, that is not a merge conflict, so take both diffs
         if self.table_name != target_diff.get_table_name() {
-            return vec![Diff::Update(self), target_diff];
+            return Ok(vec![Diff::Update(self), target_diff]);
         }
 
         match target_diff {
@@ -162,17 +178,39 @@ impl UpdateDiff {
                     for (index_target, insert_row) in insert_diff_rows.iter().enumerate() {
                         // If they conflict, keep the update row, but add the insert row to the insert diff
                         if update_row.get_row_location() == insert_row.get_row_location() {
-                            // Take the update row
-                            res_update_diff.rows.push(update_row.clone());
-                            let new_insert_row: RowInfo = RowInfo {
-                                row: insert_row.row.clone(),
-                                rownum: u16::max_value(),
-                                pagenum: u32::max_value(),
-                            };
-                            res_insert_diff.rows.push(new_insert_row);
-                            // Remove the row from both the update and insert diffs because we took the update row
-                            insert_diff_target.rows.remove(index_target);
-                            add_self_row = false;
+                            match merge_algo {
+                                MergeConflictResolutionAlgo::NoConflicts => {
+                                    return Err("Merge conflict".to_string());
+                                },
+                                // Use the update row and move the insert row to the insert diff
+                                MergeConflictResolutionAlgo::UseSource => {
+                                    // Take the update row
+                                    res_update_diff.rows.push(update_row.clone());
+                                    let new_insert_row: RowInfo = RowInfo {
+                                        row: insert_row.row.clone(),
+                                        rownum: u16::max_value(),
+                                        pagenum: u32::max_value(),
+                                    };
+                                    res_insert_diff.rows.push(new_insert_row);
+                                    // Remove the row from both the update and insert diffs because we took the update row
+                                    insert_diff_target.rows.remove(index_target);
+                                    add_self_row = false;
+                                },
+                                // Use the update row and move the insert row to the insert diff
+                                MergeConflictResolutionAlgo::UseTarget => {
+                                    // Take the update row
+                                    res_update_diff.rows.push(update_row.clone());
+                                    let new_insert_row: RowInfo = RowInfo {
+                                        row: insert_row.row.clone(),
+                                        rownum: u16::max_value(),
+                                        pagenum: u32::max_value(),
+                                    };
+                                    res_insert_diff.rows.push(new_insert_row);
+                                    // Remove the row from both the update and insert diffs because we took the update row
+                                    insert_diff_target.rows.remove(index_target);
+                                    add_self_row = false;
+                                },
+                            }
                         }
                     }
 
@@ -185,7 +223,7 @@ impl UpdateDiff {
                 res_insert_diff.rows.append(&mut insert_diff_target.rows);
 
                 // Return the update and insert diffs
-                return vec![Diff::Update(res_update_diff), Diff::Insert(res_insert_diff)];
+                return Ok(vec![Diff::Update(res_update_diff), Diff::Insert(res_insert_diff)]);
             },
             // Removing the row in the target diff will cause a merge conflict
             Diff::Remove(mut remove_diff_target) => {
@@ -207,11 +245,24 @@ impl UpdateDiff {
                     for (index_target, remove_row) in remove_diff_rows.iter().enumerate() {
                         // If they conflict, use self to resolve the conflict
                         if update_row.get_row_location() == remove_row.get_row_location() {
-                            // Take the update row
-                            res_update_diff.rows.push(update_row.clone());
-                            // Remove the row from both the update and remove diffs because we took the update row
-                            remove_diff_target.rows_removed.remove(index_target);
-                            add_self_row = false;
+                            match merge_algo {
+                                MergeConflictResolutionAlgo::NoConflicts => {
+                                    return Err("Merge conflict".to_string());
+                                },
+                                // Use the update row and move the remove row to the remove diff
+                                MergeConflictResolutionAlgo::UseSource => {
+                                    // Take the update row
+                                    res_update_diff.rows.push(update_row.clone());
+                                    // Remove the row from both the update and remove diffs because we took the update row
+                                    remove_diff_target.rows_removed.remove(index_target);
+                                    add_self_row = false;
+                                },
+                                // Use the remove row and get rid of the update diff
+                                MergeConflictResolutionAlgo::UseTarget => {
+                                    // Don't take the update row, and don't remove the row from the remove diff
+                                    add_self_row = false;
+                                },
+                            }
                         }
                     }
 
@@ -224,7 +275,7 @@ impl UpdateDiff {
                 res_remove_diff.rows_removed.append(&mut remove_diff_target.rows_removed);
 
                 // Return the update and remove diffs
-                return vec![Diff::Update(res_update_diff), Diff::Remove(res_remove_diff)];
+                return Ok(vec![Diff::Update(res_update_diff), Diff::Remove(res_remove_diff)]);
             },
             // Updating the same row is a merge conflict if it updates the row differently
             Diff::Update(mut update_diff_target) => {
@@ -251,11 +302,27 @@ impl UpdateDiff {
                             }
                             // If they update the same row differently
                             else {
-                                // Take the update row
-                                res_update_diff.rows.push(update_row.clone());
-                                // Remove the row from both the update and remove diffs because we took the update row
-                                update_diff_target.rows.remove(index_target);
-                                add_self_row = false;
+                                match merge_algo {
+                                    MergeConflictResolutionAlgo::NoConflicts => {
+                                        return Err("Merge conflict".to_string());
+                                    },
+                                    // Use the update row and move the update row to the update diff
+                                    MergeConflictResolutionAlgo::UseSource => {
+                                        // Take the update row
+                                        res_update_diff.rows.push(update_row.clone());
+                                        // Remove the row from both the update and remove diffs because we took the update row
+                                        update_diff_target.rows.remove(index_target);
+                                        add_self_row = false;
+                                    },
+                                    // Use the update row and move the update row to the update diff
+                                    MergeConflictResolutionAlgo::UseTarget => {
+                                        // Take the target update row
+                                        res_update_diff.rows.push(update_row_target.clone());
+                                        // Remove the row from both the update and remove diffs because we took the update row
+                                        update_diff_target.rows.remove(index_target);
+                                        add_self_row = false;
+                                    },
+                                }
                             }
                         }
                     }
@@ -268,28 +335,52 @@ impl UpdateDiff {
                 res_update_diff.rows.append(&mut update_diff_target.rows);
 
                 // Return the update diffs
-                return vec![Diff::Update(res_update_diff)];
+                return Ok(vec![Diff::Update(res_update_diff)]);
             },
-            // Creating a table is a merge conflict
-            Diff::TableCreate(_) => {
-                return vec![Diff::Update(self)];
+            // Creating a table is a merge conflict under some conditions
+            Diff::TableCreate(create_table_diff) => {
+                match merge_algo {
+                    MergeConflictResolutionAlgo::NoConflicts => {
+                        return Err("Merge conflict".to_string());
+                    },
+                    // Use the update row
+                    MergeConflictResolutionAlgo::UseSource => {
+                        return Ok(vec![Diff::Update(self)]);
+                    },
+                    // Use the create table
+                    MergeConflictResolutionAlgo::UseTarget => {
+                        return Ok(vec![Diff::TableCreate(create_table_diff)]);
+                    },
+                }
             },
             // Removing a table causes a conflict if it's for the same table that had an update
-            Diff::TableRemove(table_remove_diff_target) => { 
-                // Recreate the table
-                let res_table_create_diff: TableCreateDiff = TableCreateDiff {
-                    table_name: table_remove_diff_target.table_name.clone(),
-                    schema: table_remove_diff_target.schema.clone(),
-                };
-                // Insert all the rows that were removed
-                let res_insert_diff: InsertDiff = InsertDiff {
-                    table_name: table_remove_diff_target.table_name.clone(),
-                    schema: table_remove_diff_target.schema.clone(),
-                    rows: self.rows.clone(),
-                };
-
-                // Return the update diffs
-                return vec![Diff::TableCreate(res_table_create_diff), Diff::Insert(res_insert_diff), Diff::Update(self)];
+            Diff::TableRemove(table_remove_diff_target) => {
+                match merge_algo {
+                    MergeConflictResolutionAlgo::NoConflicts => {
+                        return Err("Merge conflict".to_string());
+                    },
+                    // Use the update, so need to recreate the table that was removed on target
+                    MergeConflictResolutionAlgo::UseSource => {
+                        // Recreate the table
+                        let res_table_create_diff: TableCreateDiff = TableCreateDiff {
+                            table_name: table_remove_diff_target.table_name.clone(),
+                            schema: table_remove_diff_target.schema.clone(),
+                        };
+                        // Insert all the rows that were removed
+                        let res_insert_diff: InsertDiff = InsertDiff {
+                            table_name: table_remove_diff_target.table_name.clone(),
+                            schema: table_remove_diff_target.schema.clone(),
+                            rows: self.rows.clone(),
+                        };
+        
+                        // Return the update diffs
+                        return Ok(vec![Diff::TableCreate(res_table_create_diff), Diff::Insert(res_insert_diff), Diff::Update(self)]);
+                    },
+                    // Use the remove table, so don't need to use the update
+                    MergeConflictResolutionAlgo::UseTarget => {
+                        return Ok(vec![]);
+                    },
+                }
             },
         }
     }
