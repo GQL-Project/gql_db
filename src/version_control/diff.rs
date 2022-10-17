@@ -532,6 +532,28 @@ impl TableRemoveDiff {
     }
 }
 
+impl SquashDiffs {
+    /// Creates a new empty squash diff object
+    pub fn new() -> SquashDiffs {
+        SquashDiffs {
+            table_diffs: HashMap::new(),
+        }
+    }
+}
+
+impl TableSquashDiff {
+    /// Creates a new empty table squash diff object
+    pub fn new(table_name: &String, schema: &Schema) -> TableSquashDiff {
+        TableSquashDiff {
+            update_diff: UpdateDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
+            insert_diff: InsertDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
+            remove_diff: RemoveDiff { table_name: table_name.clone(), schema: schema.clone(), rows_removed: Vec::new() },
+            table_create_diff: TableCreateDiff { table_name: table_name.clone(), schema: schema.clone() },
+            table_remove_diff: TableRemoveDiff { table_name: table_name.clone(), schema: schema.clone(), rows_removed: Vec::new() },
+        }
+    }
+}
+
 /// This method takes in a directory along with the diffs that are to be applied to it and applies them.
 /// There are a couple assumptions:
 /// 1. The table_dir exists and is where the table files are/will be stored.

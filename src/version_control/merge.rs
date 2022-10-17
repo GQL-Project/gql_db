@@ -1,4 +1,4 @@
-use crate::{user::userdata::User, fileio::databaseio::get_db_instance, util::row::EmptyRowLocation};
+use crate::{user::userdata::User, fileio::databaseio::get_db_instance, util::row::{EmptyRowLocation, RowInfo}};
 
 use super::diff::*;
 use std::{collections::HashMap, vec};
@@ -10,9 +10,9 @@ pub enum MergeConflictResolutionAlgo {
 }
 
 /// Merges a single diff to merge into the list of diffs to merge into using a merge conflict algorithm
-/// Returns a new list of diffs that would be the result of applying diff_to_merge into target_diffs 
+/// Returns a new list of diffs that would be the result of applying source_diffs into target_diffs 
 pub fn merge_diff_into_list(
-    diff_to_merge: Diff,                              // The source diff to merge into the target diffs
+    source_diffs: &Vec<Diff>,                         // The source diffs to merge into the target diffs
     target_diffs: &Vec<Diff>,                         // The target diffs to merge the source diff into                    
     insert_map: &mut HashMap<(u32, u16), (u32, u16)>, // Maps (pagenum, rownum) in source to (pagenum, rownum) in the target
     user: &User,                                      // The user that is performing the merge (assumed to be on the target branch)
@@ -21,63 +21,202 @@ pub fn merge_diff_into_list(
     // We assume target_diffs_on_the_table only contains one diff of each type for that table
     verify_only_one_type_of_diff_per_table(target_diffs)?;
 
-    // Get all the diffs that affect the same table as diff_to_merge
-    let target_diffs_on_the_table: Vec<Diff> = target_diffs
-        .iter()
-        .filter(|diff| diff.get_table_name() == diff_to_merge.get_table_name())
-        .cloned()
-        .collect();
+    let mut result_diffs: SquashDiffs = SquashDiffs::new();
 
-    let result_diffs: Vec<Diff> = Vec::new();
+    for source_diff in source_diffs {
+        // Get all the diffs that affect the same table as the source_diff
+        let target_diffs_on_the_table: Vec<Diff> = target_diffs
+            .iter()
+            .filter(|diff| diff.get_table_name() == source_diff.get_table_name())
+            .cloned()
+            .collect();
 
-    match diff_to_merge {
-        Diff::Insert(mut insert_diff_to_merge) => {
-            // Get the insert diff from target_diffs_on_the_table if it exists
-            let insert_diff_target_option = target_diffs_on_the_table
-                .iter()
-                .find_map(|diff| match diff {
-                    Diff::Insert(ins_diff) => Some(ins_diff),
-                    _ => None,
-                });
-            
-            // If there is an insert diff in the target, we need to remove any duplicate row insertions.
-            if let Some(insert_diff_target) = insert_diff_target_option {
-                insert_diff_to_merge.rows
-                    .retain(|x| {
-                        !insert_diff_target
-                            .rows
-                            .iter()
-                            .any(|y| 
-                                x.pagenum == y.pagenum && 
-                                x.rownum == y.rownum &&
-                                x.row == y.row)
+        match source_diff.clone() {
+            Diff::Insert(mut insert_source_diff) => {
+                // Get the insert diff from target_diffs_on_the_table if it exists
+                let insert_diff_target_option = target_diffs_on_the_table
+                    .iter()
+                    .find_map(|diff| match diff {
+                        Diff::Insert(ins_diff) => Some(ins_diff),
+                        _ => None,
+                    });
+                
+                // If there is an insert diff in the target, we need to remove any duplicate row insertions.
+                if let Some(insert_diff_target) = insert_diff_target_option {
+                    insert_source_diff.rows
+                        .retain(|x| {
+                            !insert_diff_target
+                                .rows
+                                .iter()
+                                .any(|y| 
+                                    x.pagenum == y.pagenum && 
+                                    x.rownum == y.rownum &&
+                                    x.row == y.row
+                                )
+                        }
+                    );
+                }
+
+                // Now we need to map the rows in insert_source_diff to open rows in the target
+                // Find the open rows in the target
+                let open_rows: Vec<EmptyRowLocation> = get_db_instance()?
+                    .get_open_rows_in_table(
+                        &insert_source_diff.table_name, 
+                        insert_source_diff.rows.len(),
+                        user
+                    )?;
+
+                // Map the rows in insert_source_diff to the open rows
+                for (i, row) in insert_source_diff.rows.iter().enumerate() {
+                    insert_map.insert((row.pagenum, row.rownum), (open_rows[i].location.pagenum, open_rows[i].location.rownum));
+
+                    // Add the new mapped rows to the result_diffs
+                    result_diffs.table_diffs
+                        .entry(insert_source_diff.table_name.clone())
+                        .or_insert_with(|| TableSquashDiff::new(&insert_source_diff.table_name, &insert_source_diff.schema))
+                        .insert_diff.rows.push(RowInfo {
+                            pagenum: open_rows[i].location.pagenum,
+                            rownum: open_rows[i].location.rownum,
+                            row: row.row.clone(),
+                        });
+                }
+            },
+            Diff::Update(mut update_source_diff) => {
+                // Get the update diff from target_diffs_on_the_table if it exists
+                let update_diff_target_option = target_diffs_on_the_table
+                    .iter()
+                    .find_map(|diff| match diff {
+                        Diff::Update(up_diff) => Some(up_diff),
+                        _ => None,
+                    });
+                
+                // If there is an update diff in the target, we need to remove any duplicate row updates.
+                if let Some(update_diff_target) = update_diff_target_option {
+                    update_source_diff.rows
+                        .retain(|x| {
+                            !update_diff_target
+                                .rows
+                                .iter()
+                                .any(|y| 
+                                    x.pagenum == y.pagenum && 
+                                    x.rownum == y.rownum &&
+                                    x.row == y.row
+                                )
+                        }
+                    );
+                }
+
+                // Now we need to map the rows in update_source_diff to the rows in the target
+                for row in update_source_diff.rows.iter_mut() {
+                    // If it is mapped to the target, use the mapped row location
+                    if let Some((target_pagenum, target_rownum)) = insert_map.get(&(row.pagenum, row.rownum)) {
+                        row.pagenum = *target_pagenum;
+                        row.rownum = *target_rownum;
                     }
-                );
-            }
-
-            // Now we need to map the rows in insert_diff_to_merge to open rows in the target
-            // Find the open rows in the target
-            let open_rows: Vec<EmptyRowLocation> = get_db_instance()?
-                .get_open_rows_in_table(
-                    &insert_diff_to_merge.table_name, 
-                    insert_diff_to_merge.rows.len(),
-                    user
-                )?;
-
-            // Map the rows in insert_diff_to_merge to the open rows
-            for (i, row) in insert_diff_to_merge.rows.iter().enumerate() {
-                insert_map.insert((row.pagenum, row.rownum), (open_rows[i].location.pagenum, open_rows[i].location.rownum));
+                    // If it is not mapped to the target, use the normal row location, so nothing needs to be done
+                }
 
                 // Add the new mapped rows to the result_diffs
+                result_diffs.table_diffs
+                    .entry(update_source_diff.table_name.clone())
+                    .or_insert_with(|| TableSquashDiff::new(&update_source_diff.table_name, &update_source_diff.schema))
+                    .update_diff.rows.append(&mut update_source_diff.rows);
+            },
+            Diff::Remove(mut remove_source_diff) => {
+                // Get the remove diff from target_diffs_on_the_table if it exists
+                let remove_diff_target_option = target_diffs_on_the_table
+                    .iter()
+                    .find_map(|diff| match diff {
+                        Diff::Remove(rem_diff) => Some(rem_diff),
+                        _ => None,
+                    });
+                
+                // If there is a remove diff in the target, we need to remove any duplicate row removals.
+                if let Some(remove_diff_target) = remove_diff_target_option {
+                    remove_source_diff.rows_removed
+                        .retain(|x| {
+                            !remove_diff_target
+                                .rows_removed
+                                .iter()
+                                .any(|y| 
+                                    x.pagenum == y.pagenum && 
+                                    x.rownum == y.rownum &&
+                                    x.row == y.row
+                                )
+                        }
+                    );
+                }
 
-            }
-        },
-        Diff::Update(update_diff_to_merge) => {},
-        Diff::Remove(remove_diff_to_merge) => {},
-        Diff::TableCreate(table_create_diff_to_merge) => {},
-        Diff::TableRemove(table_remove_diff_to_merge) => {},
+                // Now we need to map the rows in remove_source_diff to the rows in the target
+                for row in remove_source_diff.rows_removed.iter_mut() {
+                    // If it is mapped to the target, use the mapped row location
+                    if let Some((target_pagenum, target_rownum)) = insert_map.get(&(row.pagenum, row.rownum)) {
+                        row.pagenum = *target_pagenum;
+                        row.rownum = *target_rownum;
+                    }
+                    // If it is not mapped to the target, use the normal row location, so nothing needs to be done
+                }
+
+                // Add the new mapped rows to the result_diffs
+                result_diffs.table_diffs
+                    .entry(remove_source_diff.table_name.clone())
+                    .or_insert_with(|| TableSquashDiff::new(&remove_source_diff.table_name, &remove_source_diff.schema))
+                    .remove_diff.rows_removed.append(&mut remove_source_diff.rows_removed);
+            },
+            Diff::TableCreate(table_create_source_diff) => {
+                // Get the table_create diff from target_diffs_on_the_table if it exists
+                let table_create_diff_target_option = target_diffs_on_the_table
+                    .iter()
+                    .find_map(|diff| match diff {
+                        Diff::TableCreate(table_create_diff) => Some(table_create_diff),
+                        _ => None,
+                    });
+                
+                // If there is a table_create diff in the target, we need to remove any duplicate table creations.
+                if let Some(table_create_diff_target) = table_create_diff_target_option {
+                    // If the schema aren't the same, we need to add the table_create diff to the result_diffs
+                    if table_create_source_diff.schema != table_create_diff_target.schema {
+                        // TODO: Handle merge conflict here
+
+                        // Add the new table creation to the result_diffs
+                        result_diffs.table_diffs
+                            .entry(table_create_source_diff.table_name.clone())
+                            .or_insert_with(|| TableSquashDiff::new(&table_create_source_diff.table_name, &table_create_source_diff.schema))
+                            .table_create_diff = table_create_source_diff.clone();
+                    }
+                }
+            },
+            Diff::TableRemove(table_remove_source_diff) => {
+                // Get the table_remove diff from target_diffs_on_the_table if it exists
+                let table_remove_diff_target_option = target_diffs_on_the_table
+                    .iter()
+                    .find_map(|diff| match diff {
+                        Diff::TableRemove(table_remove_diff) => Some(table_remove_diff),
+                        _ => None,
+                    });
+                
+                // If there is a table_remove diff in the target, we need to remove any duplicate table removals.
+                if let Some(table_remove_diff_target) = table_remove_diff_target_option {
+                    // If the schema aren't the same, we need to add the table_remove diff to the result_diffs
+                    if table_remove_source_diff.schema != table_remove_diff_target.schema {
+                        // TODO: Handle merge conflict here
+                        // What rows should be in the table_remove diff?
+
+                        // Add the new table creation to the result_diffs
+                        result_diffs.table_diffs
+                            .entry(table_remove_source_diff.table_name.clone())
+                            .or_insert_with(|| TableSquashDiff::new(&table_remove_source_diff.table_name, &table_remove_source_diff.schema))
+                            .table_remove_diff = table_remove_source_diff.clone();
+                    }
+                }
+            },
+        }
     }
 
+    // Now the result_diffs contains all the diffs that need to be applied to the target to get the source merged in
+
+    // We need to check for merge conflicts in the result_diffs now
+    
 
 
     Ok(vec![])
