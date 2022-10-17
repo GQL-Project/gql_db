@@ -16,6 +16,48 @@ pub enum Diff {
     TableRemove(TableRemoveDiff),
 }
 
+impl Diff {
+    pub fn get_table_name(&self) -> String {
+        match self {
+            Diff::Update(diff) => diff.table_name.clone(),
+            Diff::Insert(diff) => diff.table_name.clone(),
+            Diff::Remove(diff) => diff.table_name.clone(),
+            Diff::TableCreate(diff) => diff.table_name.clone(),
+            Diff::TableRemove(diff) => diff.table_name.clone(),
+        }
+    }
+
+    pub fn get_schema(&self) -> Schema {
+        match self {
+            Diff::Update(diff) => Ok(diff.schema.clone()),
+            Diff::Insert(diff) => Ok(diff.schema.clone()),
+            Diff::Remove(diff) => Ok(diff.schema.clone()),
+            Diff::TableCreate(diff) => Ok(diff.schema.clone()),
+            Diff::TableRemove(diff) => Ok(diff.schema.clone()),
+        }
+    }
+
+    pub fn get_rows(&self) -> Result<Vec<RowInfo>, String> {
+        match self {
+            Diff::Update(diff) => Ok(diff.rows.clone()),
+            Diff::Insert(diff) => Ok(diff.rows.clone()),
+            Diff::Remove(diff) => Ok(diff.rows.clone()),
+            Diff::TableCreate(_) => Err("Cannot get rows from a TableCreateDiff".to_string()),
+            Diff::TableRemove(_) => Err("Cannot get rows from a TableRemoveDiff".to_string()),
+        }
+    }
+
+    pub fn get_type(&self) -> i32 {
+        match self {
+            Diff::Update(_) => 0,
+            Diff::Insert(_) => 1,
+            Diff::Remove(_) => 2,
+            Diff::TableCreate(_) => 3,
+            Diff::TableRemove(_) => 4,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpdateDiff {
     pub table_name: String, // The name of the table that the rows were updated in

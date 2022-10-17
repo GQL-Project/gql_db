@@ -364,7 +364,7 @@ impl CommitFile {
         Ok(())
     }
 
-    pub fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
+    pub fn squash_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
         } else if commits.len() == 1 {
@@ -504,7 +504,7 @@ impl CommitFile {
                         } else {
                             add_diff(&mut map, diff.clone(), insert.table_name.clone());
                         }
-                    } // End of Insert Case
+                    } // End of Insert
                     Diff::Remove(remove) => {
                         let mut newrows = remove.rows.clone();
                         // An Insert and a Remove cancel each other out
@@ -589,7 +589,70 @@ impl CommitFile {
                         } else {
                             add_diff(&mut map, diff.clone(), remove.table_name.clone());
                         }
-                    } // End of Remove Case
+                    } // End of Remove
+                    Diff::TableCreate(create) => {
+                        add_diff(&mut map, diff.clone(), create.table_name.clone());
+                    }
+                    Diff::TableRemove(remove) => {
+                        add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                    }
+                }
+            }
+        }
+        let diffs: Vec<Diff> = map
+            .into_values()
+            .map(|y| y.into_values())
+            .flatten()
+            .collect();
+        self.create_commit(msg, cmd, diffs)
+    }
+
+    pub fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
+        if commits.len() == 0 {
+            return Err("No commits to combine".to_string());
+        } else if commits.len() == 1 {
+            return Ok(commits[0].clone());
+        }
+        let msg = format!("Combined {} commits", commits.len());
+        let cmd = format!(
+            "GQL squash {} {}",
+            commits[0].hash,
+            commits[commits.len() - 1].hash
+        );
+        // Create a map of table names to a map of "Diff Type" to diff
+        // TODO: It might be better to sort the rows in a diff by pagenum and rownum
+        // We'd be able to do much quicker merges
+        let mut map: HashMap<String, HashMap<i32, Diff>> = HashMap::new();
+        for commit in commits {
+            for diff in &commit.diffs {
+                match diff {
+                    Diff::Update(_) | Diff::Insert(_) | Diff::Remove(_) => {
+                        let table_name = diff.get_table_name();
+                        let diff_type = diff.get_type();
+                        if let Some(existing) = get_diff(&map, &table_name, diff_type) {
+                            let curr_rows = diff.get_rows()?;
+                            let schema = diff.get_schema();
+                            // Merge the diffs together, removing any rows that are in the new update
+                            let rows = existing
+                                .get_rows()?
+                                .iter()
+                                .chain(curr_rows.iter())
+                                .cloned()
+                                .collect::<Vec<RowInfo>>();
+                            // Update the update diff with the new rows
+                            add_diff(
+                                &mut map,
+                                Diff::Update(UpdateDiff {
+                                    table_name: table_name.clone(),
+                                    schema,
+                                    rows,
+                                }),
+                                table_name.clone(),
+                            );
+                        } else {
+                            add_diff(&mut map, diff.clone(), table_name);
+                        }
+                    }
                     Diff::TableCreate(create) => {
                         add_diff(&mut map, diff.clone(), create.table_name.clone());
                     }
@@ -608,6 +671,9 @@ impl CommitFile {
     }
 }
 
+// Here, <'a> means that the lifetime of the returned value is the same as the lifetime of the
+// reference to the HashMap. This is a way to tell the compiler that the returned value will not
+// outlive the HashMap.
 fn get_diff<'a>(
     map: &'a HashMap<String, HashMap<i32, Diff>>,
     table_name: &'a String,
@@ -622,13 +688,7 @@ fn get_diff<'a>(
 }
 
 fn add_diff(map: &mut HashMap<String, HashMap<i32, Diff>>, diff: Diff, table_name: String) {
-    let diff_type = match diff {
-        Diff::Update(_) => 0,
-        Diff::Insert(_) => 1,
-        Diff::Remove(_) => 2,
-        Diff::TableCreate(_) => 3,
-        Diff::TableRemove(_) => 4,
-    };
+    let diff_type = diff.get_type();
     if let Some(table) = map.get_mut(&table_name) {
         if let Some(existing) = table.get_mut(&diff_type) {
             *existing = diff;
