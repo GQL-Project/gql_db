@@ -652,14 +652,47 @@ impl Database {
         self.branch_heads.get_branch_head(&src_branch_name)?;
 
         // Merging two branches follows these steps:
-        // 1. Find a common ancestor
-        // 2. Squash commits of source branch (common ancestor to branch head) into a single commit object
+        // 1. Get the nodes for the destination branch HEAD and the source branch HEAD
+        // 2. Find a common ancestor
+        // 3. Squash commits of source branch (common ancestor to branch head) into a single commit object
         //    with the message merge_cmt_msg and the current timestamp
-        // 3. Collect diffs between common ancestor and destination branch
-        // 4. Based on conflict_res_algo, resolve conflicts
-        // 5. Apply commit object to destination branch
-        // 6. Apply diffs to destination branch (if exists)
-        // 7. Delete source branch (optionally)
+        // 4. Collect diffs between common ancestor and destination branch
+        // 5. Based on conflict_res_algo, resolve conflicts
+        // 6. Apply commit object to destination branch
+        // 7. Apply diffs to destination branch (if exists)
+        // 8. Delete source branch (optionally)
+
+        // 1. Get the nodes for the destination branch and the source branch
+        let dest_branch_node: BranchNode = self
+            .branch_heads
+            .get_branch_node_from_head(&dest_branch_name, &self.branches)?;
+        let src_branch_node: BranchNode = self
+            .branch_heads
+            .get_branch_node_from_head(&src_branch_name, &self.branches)?;
+
+        // 2. Find a common ancestor
+        let common_ancestor: BranchNode =
+            self.find_common_ancestor(&dest_branch_node, &src_branch_node)?;
+
+        // 3. Squash commits of source branch (common ancestor to branch head) into a single commit object
+        //    with the message merge_cmt_msg and the current timestamp
+        let squash_commit: Commit = 
+            Commit::new(
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                Vec::new()
+            ); // TODO: Implement this
+        let src_diffs: Vec<Diff> = squash_commit.diffs;
+
+        // 4. Collect diffs between common ancestor and destination branch
+        let dest_diffs: Vec<Diff> =
+            self.get_diffs_between_nodes(Some(&common_ancestor), &dest_branch_node)?;
+
+        // 5. Based on conflict_res_algo, resolve conflicts
+        
+
 
         Ok(())
     }
