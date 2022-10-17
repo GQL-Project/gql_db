@@ -29,11 +29,11 @@ impl Diff {
 
     pub fn get_schema(&self) -> Schema {
         match self {
-            Diff::Update(diff) => Ok(diff.schema.clone()),
-            Diff::Insert(diff) => Ok(diff.schema.clone()),
-            Diff::Remove(diff) => Ok(diff.schema.clone()),
-            Diff::TableCreate(diff) => Ok(diff.schema.clone()),
-            Diff::TableRemove(diff) => Ok(diff.schema.clone()),
+            Diff::Update(diff) => diff.schema.clone(),
+            Diff::Insert(diff) => diff.schema.clone(),
+            Diff::Remove(diff) => diff.schema.clone(),
+            Diff::TableCreate(diff) => diff.schema.clone(),
+            Diff::TableRemove(diff) => diff.schema.clone(),
         }
     }
 
