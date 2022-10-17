@@ -62,6 +62,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
     }
 
     // Branch head
+    let mut prev: Option<BranchNode> = None;
     let mut current = Some(head_mngr.get_branch_node_from_head(&branch_name, &branches)?);
 
     // Node ahead of Hash2, if None then Hash2 is the head
@@ -70,29 +71,29 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
     let mut save_first: Option<BranchNode> = None;
     let mut commit_hashes: Vec<String> = Vec::new();
 
-    while current != None {
-        let node = current.unwrap();
+    while let Some(node) = current {
         if node.commit_hash == hash2 {
+            save_next = prev.clone();
             current = Some(node.clone());
             while current != None {
                 let node = current.as_ref().unwrap();
+                commit_hashes.push(node.commit_hash.clone());
                 if node.commit_hash == hash1 {
                     save_first = Some(node.clone());
                     break;
                 }
-                commit_hashes.push(node.commit_hash.clone());
                 current = branches.get_prev_branch_node(&node)?;
             }
         }
-        save_next = Some(node.clone());
+        prev = Some(node.clone());
         current = branches.get_prev_branch_node(&node)?;
     }
 
     if commit_hashes.len() == 0 {
         return Err("Commits not found in Current Branch".to_string());
-    } else if save_first == None {
-        return Err("Starting Commit not found in the Commit List".to_string());
     }
+
+    let save_first = save_first.map_or(Err(format!("{} not found in Branch", hash1)), Ok)?;
 
     let commits = commit_hashes
         .into_iter()
@@ -106,7 +107,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
     // Create new_squash node, and make new_squash commit point to the hash1's previous commit
     let squash_node = branches.create_branch_node(
         head_mngr,
-        save_first.as_ref(),
+        branches.get_prev_branch_node(&save_first)?.as_ref(),
         &branch_name,
         &squash_commit.hash,
     )?;
@@ -118,10 +119,13 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
         branches.update_branch_node(head_mngr, &node)?;
     } else {
         // If it doesn't exist, then the squash commit is the head
-        head_mngr.set_branch_head(&branch_name, &RowLocation {
-            pagenum: squash_node.curr_pagenum as u32,
-            rownum: squash_node.curr_rownum as u16,
-        })?;
+        head_mngr.set_branch_head(
+            &branch_name,
+            &RowLocation {
+                pagenum: squash_node.curr_pagenum as u32,
+                rownum: squash_node.curr_rownum as u16,
+            },
+        )?;
     }
     Ok(squash_commit)
 }

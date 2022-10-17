@@ -372,7 +372,7 @@ impl CommitFile {
         } else if commits.len() == 1 {
             return Ok(commits[0].clone());
         }
-        let msg = format!("Combined {} commits", commits.len(),);
+        let msg = format!("Combined {} commits", commits.len());
         let cmd = format!(
             "GQL squash {} {}",
             commits[0].hash,
