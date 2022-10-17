@@ -166,8 +166,8 @@ impl UpdateDiff {
                             res_update_diff.rows.push(update_row.clone());
                             let new_insert_row: RowInfo = RowInfo {
                                 row: insert_row.row.clone(),
-                                rownum: 0,
-                                pagenum: 0,
+                                rownum: u16::max_value(),
+                                pagenum: u32::max_value(),
                             };
                             res_insert_diff.rows.push(new_insert_row);
                             // Remove the row from both the update and insert diffs because we took the update row
@@ -270,7 +270,7 @@ impl UpdateDiff {
                 // Return the update diffs
                 return vec![Diff::Update(res_update_diff)];
             },
-            // Creating a table is not a merge conflict
+            // Creating a table is a merge conflict
             Diff::TableCreate(_) => {
                 return vec![Diff::Update(self)];
             },
