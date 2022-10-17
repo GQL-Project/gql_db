@@ -123,8 +123,6 @@ impl BranchHEADs {
         for row_info in self.branch_heads_table.by_ref().into_iter().clone() {
             let row: Row = row_info.row;
 
-            let branch_name: String;
-
             // Get the branch name
             match row.get(0) {
                 Some(Value::String(br_name)) => branch_names.push(br_name.to_string()),

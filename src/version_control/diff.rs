@@ -142,6 +142,51 @@ impl UpdateDiff {
         }
 
         match target_diff {
+            // Inserting a row is a merge conflict if it's for the same row
+            Diff::Insert(mut insert_diff_target) => {
+                let mut res_update_diff: UpdateDiff = UpdateDiff {
+                    table_name: self.table_name.clone(),
+                    schema: self.schema.clone(),
+                    rows: Vec::new(),
+                };
+                let mut res_insert_diff: InsertDiff = InsertDiff {
+                    table_name: self.table_name.clone(),
+                    schema: self.schema.clone(),
+                    rows: Vec::new(),
+                };
+
+                // Go through all the rows in both diffs and check if any modify the same rows
+                for update_row in self.rows {
+                    let mut add_self_row: bool = true;
+                    let insert_diff_rows: Vec<RowInfo> = insert_diff_target.rows.clone();
+                    for (index_target, insert_row) in insert_diff_rows.iter().enumerate() {
+                        // If they conflict, keep the update row, but add the insert row to the insert diff
+                        if update_row.get_row_location() == insert_row.get_row_location() {
+                            // Take the update row
+                            res_update_diff.rows.push(update_row.clone());
+                            let new_insert_row: RowInfo = RowInfo {
+                                row: insert_row.row.clone(),
+                                rownum: 0,
+                                pagenum: 0,
+                            };
+                            res_insert_diff.rows.push(new_insert_row);
+                            // Remove the row from both the update and insert diffs because we took the update row
+                            insert_diff_target.rows.remove(index_target);
+                            add_self_row = false;
+                        }
+                    }
+
+                    // If the row was not part of a conflict
+                    if add_self_row {
+                        res_update_diff.rows.push(update_row.clone());
+                    }
+                }
+                // Add all the rows in the insert diff that were not updated
+                res_insert_diff.rows.append(&mut insert_diff_target.rows);
+
+                // Return the update and insert diffs
+                return vec![Diff::Update(res_update_diff), Diff::Insert(res_insert_diff)];
+            },
             // Removing the row in the target diff will cause a merge conflict
             Diff::Remove(mut remove_diff_target) => {
                 let mut res_update_diff: UpdateDiff = UpdateDiff {
@@ -225,6 +270,10 @@ impl UpdateDiff {
                 // Return the update diffs
                 return vec![Diff::Update(res_update_diff)];
             },
+            // Creating a table is not a merge conflict
+            Diff::TableCreate(_) => {
+                return vec![Diff::Update(self)];
+            },
             // Removing a table causes a conflict if it's for the same table that had an update
             Diff::TableRemove(table_remove_diff_target) => { 
                 // Recreate the table
@@ -241,55 +290,6 @@ impl UpdateDiff {
 
                 // Return the update diffs
                 return vec![Diff::TableCreate(res_table_create_diff), Diff::Insert(res_insert_diff), Diff::Update(self)];
-            },
-            // Inserting a row is a merge conflict if it's for the same row
-            Diff::Insert(mut insert_diff_target) => {
-                let mut res_update_diff: UpdateDiff = UpdateDiff {
-                    table_name: self.table_name.clone(),
-                    schema: self.schema.clone(),
-                    rows: Vec::new(),
-                };
-                let mut res_insert_diff: InsertDiff = InsertDiff {
-                    table_name: self.table_name.clone(),
-                    schema: self.schema.clone(),
-                    rows: Vec::new(),
-                };
-
-                // Go through all the rows in both diffs and check if any modify the same rows
-                for update_row in self.rows {
-                    let mut add_self_row: bool = true;
-                    let insert_diff_rows: Vec<RowInfo> = insert_diff_target.rows.clone();
-                    for (index_target, insert_row) in insert_diff_rows.iter().enumerate() {
-                        // If they conflict, keep the update row, but add the insert row to the insert diff
-                        if update_row.get_row_location() == insert_row.get_row_location() {
-                            // Take the update row
-                            res_update_diff.rows.push(update_row.clone());
-                            let new_insert_row: RowInfo = RowInfo {
-                                row: insert_row.row.clone(),
-                                rownum: 0,
-                                pagenum: 0,
-                            };
-                            res_insert_diff.rows.push(new_insert_row);
-                            // Remove the row from both the update and insert diffs because we took the update row
-                            insert_diff_target.rows.remove(index_target);
-                            add_self_row = false;
-                        }
-                    }
-
-                    // If the row was not part of a conflict
-                    if add_self_row {
-                        res_update_diff.rows.push(update_row.clone());
-                    }
-                }
-                // Add all the rows in the insert diff that were not updated
-                res_insert_diff.rows.append(&mut insert_diff_target.rows);
-
-                // Return the update and insert diffs
-                return vec![Diff::Update(res_update_diff), Diff::Insert(res_insert_diff)];
-            },
-            // Creating a table is not a merge conflict
-            Diff::TableCreate(_) => {
-                return vec![Diff::Update(self)];
             },
         }
     }
