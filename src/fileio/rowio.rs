@@ -18,6 +18,22 @@ pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Option<Row> {
     Some(row)
 }
 
+/// This checks if a row is present in the page. 
+/// If it is, it returns true.
+/// If it is not, it returns false.
+/// If the rownum is beyond the end of the page, it returns an error.
+pub fn is_row_present(schema: &Schema, page: &Page, rownum: u16) -> Result<bool, String> {
+    let mut offset = (rownum as usize) * schema_size(schema);
+    // Check if rownum is beyond the end of the page
+    check_bounds(offset, schema_size(schema))?;
+    // Check if the row is present
+    let check: u8 = read_type(page, offset)?;
+    if check == 0 {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 // This needs to have an error if the row is too big to fit in the page.
 pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Result<(), String> {
     let mut offset = (rownum as usize) * schema_size(schema);

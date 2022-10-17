@@ -9,6 +9,12 @@ pub struct RowLocation {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct EmptyRowLocation {
+    pub location: RowLocation,
+    pub num_rows_empty: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct RowInfo {
     pub row: Row,
     pub pagenum: u32,

@@ -1,5 +1,6 @@
 use super::tableio::*;
 use crate::user::userdata::*;
+use crate::util::row::EmptyRowLocation;
 use crate::version_control::commit::Commit;
 use crate::version_control::diff::*;
 use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
@@ -633,6 +634,27 @@ impl Database {
         user.set_current_branch_name(&branch_name);
 
         Ok(())
+    }
+
+    /// Gets all open rows in a table into a vector of empty row locations.
+    pub fn get_open_rows_in_table(
+        &self, 
+        table_name: &String, 
+        user: &User
+    ) -> Result<Vec<EmptyRowLocation>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        // Get the path to the table
+        let table_path: String = self.get_table_path(table_name, user)?;
+
+        // Get the table
+        let table: Table = Table::new(&table_path, table_name, None)?;
+
+        // Get the open rows
+        let open_rows: Vec<EmptyRowLocation> = table.get_empty_rows()?;
+
+        Ok(open_rows)
     }
 
     /// Merges two branches together

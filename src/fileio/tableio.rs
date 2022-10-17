@@ -1,5 +1,5 @@
 use super::{header::*, pageio::*, rowio::*};
-use crate::{util::row::*, version_control::diff::*};
+use crate::{util::row::{*, self}, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -386,6 +386,67 @@ impl Table {
             }
             None => Err("Row not found".to_string()),
         }
+    }
+
+    /// Gets a vector of EmptyRowLocations within the table
+    pub fn get_empty_rows(&self) -> Result<Vec<EmptyRowLocation>, String> {
+        let mut empty_rows: Vec<EmptyRowLocation> = Vec::new();
+
+        for pagenum in 1..self.max_pages {
+            let mut empty_rows_on_page: EmptyRowLocation = EmptyRowLocation {
+                location: RowLocation {
+                    pagenum,
+                    rownum: u16::MAX,
+                },
+                num_rows_empty: 0,
+            };
+
+            let page: Page = *read_page(pagenum, &self.path)?;
+            let mut rownum: u16 = 0;
+            loop {
+                match is_row_present(&self.schema, &page, rownum) {
+                    Ok(is_present) => {
+                        if is_present {
+                            // If we have any empty rows, reset the rowlocation
+                            if empty_rows_on_page.num_rows_empty > 0 {
+                                empty_rows.push(empty_rows_on_page);
+                                empty_rows_on_page = EmptyRowLocation {
+                                    location: RowLocation {
+                                        pagenum,
+                                        rownum: u16::MAX,
+                                    },
+                                    num_rows_empty: 0,
+                                };
+                            }
+                        }
+                        else {
+                            // If we have any empty rows, reset the rowlocation
+                            if empty_rows_on_page.num_rows_empty == 0 {
+                                // Start a new empty row location
+                                empty_rows_on_page.location = RowLocation {
+                                    pagenum,
+                                    rownum,
+                                };
+                                empty_rows_on_page.num_rows_empty = 1;
+                            }
+                            else {
+                                empty_rows_on_page.num_rows_empty += 1;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        if empty_rows_on_page.num_rows_empty != 0 {
+                            empty_rows.push(empty_rows_on_page.clone());
+                        }
+                        break;
+                    }
+                }
+
+                // Increment the rownum
+                rownum += 1;
+            }
+        }
+        Ok(empty_rows)
     }
 }
 #[cfg(test)]
@@ -791,6 +852,103 @@ mod tests {
             assert_eq!(row2.row[1], Value::String("Aaron Burr".to_string()));
             assert_eq!(row2.row[2], Value::I32(40));
         }
+
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_empty_rows() {
+        let path: String = "test_get_empty_rows".to_string();
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut table = create_table_in_dir(&path, &schema, &"".to_string())
+            .unwrap()
+            .0;
+
+        // Insert into table
+        table.insert_rows(vec![vec![
+            Value::I32(3),
+            Value::String("Alexander Hamilton".to_string()),
+            Value::I32(60),
+        ]])
+        .unwrap();
+        
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 1);
+        assert_eq!(empty_rows[0].location.pagenum, 1);
+        assert_eq!(empty_rows[0].location.rownum, 1);
+        assert_eq!(empty_rows[0].num_rows_empty, 68);
+
+        // Insert into table again
+        table.insert_rows(vec![vec![
+            Value::I32(2),
+            Value::String("Alexander Hamilton".to_string()),
+            Value::I32(10),
+        ]])
+        .unwrap();
+        
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 1);
+        assert_eq!(empty_rows[0].location.pagenum, 1);
+        assert_eq!(empty_rows[0].location.rownum, 2);
+        assert_eq!(empty_rows[0].num_rows_empty, 67);
+
+        // Insert 70 rows into table
+        let mut rows: Vec<Vec<Value>> = Vec::new();
+        for i in 0..70 {
+            rows.push(vec![
+                Value::I32(i),
+                Value::String("Alexander Hamilton".to_string()),
+                Value::I32(10),
+            ]);
+        }
+        table.insert_rows(rows).unwrap();
+
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 1);
+        assert_eq!(empty_rows[0].location.pagenum, 2);
+        assert_eq!(empty_rows[0].location.rownum, 3);
+        assert_eq!(empty_rows[0].num_rows_empty, 66);
+
+        // Remove some rows from the first page in the table
+        table.remove_rows(
+            vec![
+                RowLocation { pagenum: 1, rownum: 6 },
+                RowLocation { pagenum: 1, rownum: 7 },
+                RowLocation { pagenum: 1, rownum: 8 },
+                RowLocation { pagenum: 1, rownum: 9 },
+                RowLocation { pagenum: 1, rownum: 16 },
+            ]
+        ).unwrap();
+
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 3);
+        assert_eq!(empty_rows[0].location.pagenum, 1);
+        assert_eq!(empty_rows[0].location.rownum, 6);
+        assert_eq!(empty_rows[0].num_rows_empty, 4);
+        assert_eq!(empty_rows[1].location.pagenum, 1);
+        assert_eq!(empty_rows[1].location.rownum, 16);
+        assert_eq!(empty_rows[1].num_rows_empty, 1);
+        assert_eq!(empty_rows[2].location.pagenum, 2);
+        assert_eq!(empty_rows[2].location.rownum, 3);
+        assert_eq!(empty_rows[2].num_rows_empty, 66);
 
         // Clean up by removing file
         clean_table(&path);
