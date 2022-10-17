@@ -17,8 +17,6 @@ use crate::{
     },
 };
 use std::collections::HashMap;
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // Commit Header: A struct with a commit hash, a page number, and a row number.

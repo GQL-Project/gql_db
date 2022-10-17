@@ -240,6 +240,8 @@ impl BranchHEADs {
 
     /// Set branch head object to point to a new branch node within `branches.gql`
     /// This function is used when an existing branch gets a new branch node appended to it.
+    /// Note that the Branch Node itself needs to be updated to ensure it is also 
+    /// marked as a branch head
     pub fn set_branch_head(
         &mut self,
         branch_name: &String,

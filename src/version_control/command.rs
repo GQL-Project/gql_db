@@ -1,7 +1,6 @@
 use crate::{fileio::databaseio::get_db_instance, user::userdata::User, util::row::RowLocation};
 
 use super::{
-    branch_heads::{self, BranchHead},
     branches::{BranchNode, Branches},
     commit::Commit,
 };
@@ -105,20 +104,27 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
         .combine_commits(&commits)?;
 
     // Create new_squash node, and make new_squash commit point to the hash1's previous commit
-    let squash_node = branches.create_branch_node(
-        head_mngr,
-        branches.get_prev_branch_node(&save_first)?.as_ref(),
-        &branch_name,
-        &squash_commit.hash,
-    )?;
+    let mut squash_node = BranchNode {
+        commit_hash: squash_commit.hash.clone(),
+        branch_name: branch_name.clone(),
+        prev_pagenum: save_first.prev_pagenum,
+        prev_rownum: save_first.prev_rownum,
+        curr_pagenum: -1,
+        curr_rownum: -1,
+        is_head: save_next.is_none(),
+    };
+    squash_node = branches.insert_branch_node(head_mngr, &mut squash_node)?;
 
     // Make save_next point to the new squash commit
     if let Some(mut node) = save_next {
         node.prev_rownum = squash_node.curr_rownum;
         node.prev_pagenum = squash_node.curr_pagenum;
-        branches.update_branch_node(head_mngr, &node)?;
+        branches.update_branch_node(&node)?;
     } else {
         // If it doesn't exist, then the squash commit is the head
+        // We also need to update the branch node itself, to be marked as a node
+        squash_node.is_head = true;
+        branches.update_branch_node(&squash_node)?;
         head_mngr.set_branch_head(
             &branch_name,
             &RowLocation {

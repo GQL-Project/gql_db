@@ -248,6 +248,9 @@ impl Branches {
                 // If the previous node was a different branch name, this node needs to be a new HEAD node
                 else if prev_branch_name != branch_name.clone() {
                     // Create a new branch HEAD node
+                    // TODO: For the squash case, this can cause issues when squashing with the first
+                    // commit on a branch, since it will attempt to create a new branch, but the branch
+                    // already exists. This is needs to be fixed.
                     branch_heads_table.create_branch_head(&BranchHead {
                         branch_name: branch_name.clone(),
                         pagenum: row.pagenum as i32,
@@ -279,12 +282,77 @@ impl Branches {
         }
     }
 
-    /// Update an existing branch node, using the curr_pagenum and curr_rownum values to find the node.
-    pub fn update_branch_node(
+    /// Inserts a branch node, without node checks. This is used for squashing commits.
+    /// Only use this if you don't need to update the branch HEADs table,
+    /// or if you are sure that the branch HEADs table is already updated.
+    pub fn insert_branch_node(
         &mut self,
         branch_heads_table: &mut BranchHEADs,
-        node: &BranchNode,
+        node: &mut BranchNode,
     ) -> Result<BranchNode, String> {
+        // Create the new branch node
+        let mut new_node: Vec<Value> = Vec::new();
+        new_node.push(Value::String(node.branch_name.clone()));
+        new_node.push(Value::String(node.commit_hash.clone()));
+        new_node.push(Value::I32(node.prev_pagenum));
+        new_node.push(Value::I32(node.prev_rownum));
+        new_node.push(Value::I32(-1)); // Default value until after we write the row to the table
+        new_node.push(Value::I32(-1)); // Default value until after we write the row to the table
+        new_node.push(Value::Bool(node.is_head));
+
+        // Insert the new branch node
+        let insert_diff: InsertDiff = self.branches_table.insert_rows(vec![new_node])?;
+
+        // Verify that the insert was successful
+        match insert_diff.rows.get(0) {
+            Some(row) => {
+                // If this is set, we need to update the is_head value of this branch node
+                let mut rows_to_rewrite: Vec<RowInfo> = Vec::new();
+
+                if node.is_head {
+                    // Set the new node to be the head using the location where the new node was inserted
+                    branch_heads_table.set_branch_head(
+                        &node.branch_name,
+                        &RowLocation {
+                            pagenum: row.pagenum,
+                            rownum: row.rownum,
+                        },
+                    )?;
+
+                    // We need to update the previous node to no longer be the head in the table
+                    if node.prev_pagenum != -1 && node.prev_rownum != -1 {
+                        let prev_row_location: RowLocation = RowLocation {
+                            pagenum: node.prev_pagenum as u32,
+                            rownum: node.prev_rownum as u16,
+                        };
+                        let mut prev_row: Row = self.branches_table.get_row(&prev_row_location)?;
+                        prev_row[6] = Value::Bool(false);
+                        let prev_row_info: RowInfo = RowInfo {
+                            pagenum: prev_row_location.pagenum as u32,
+                            rownum: prev_row_location.rownum as u16,
+                            row: prev_row,
+                        };
+                        rows_to_rewrite.push(prev_row_info);
+                    }
+                }
+
+                // Write the updated values to the table
+                let mut new_row: RowInfo = row.clone();
+                new_row.row[4] = Value::I32(row.pagenum as i32); // curr_pagenum column
+                new_row.row[5] = Value::I32(row.rownum as i32); // curr_rownum column
+                rows_to_rewrite.push(new_row);
+                self.branches_table.rewrite_rows(rows_to_rewrite)?;
+
+                node.curr_pagenum = row.pagenum as i32;
+                node.curr_rownum = row.rownum as i32;
+                Ok(node.clone())
+            }
+            None => return Err("Branch node was not inserted correctly".to_string()),
+        }
+    }
+
+    /// Update an existing branch node, using the curr_pagenum and curr_rownum values to find the node.
+    pub fn update_branch_node(&mut self, node: &BranchNode) -> Result<BranchNode, String> {
         // Create the new branch node
         let mut new_node: Vec<Value> = Vec::new();
         new_node.push(Value::String(node.branch_name.clone()));
