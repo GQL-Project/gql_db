@@ -23,7 +23,7 @@ pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Option<Row> {
 /// If it is not, it returns false.
 /// If the rownum is beyond the end of the page, it returns an error.
 pub fn is_row_present(schema: &Schema, page: &Page, rownum: u16) -> Result<bool, String> {
-    let mut offset = (rownum as usize) * schema_size(schema);
+    let offset = (rownum as usize) * schema_size(schema);
     // Check if rownum is beyond the end of the page
     check_bounds(offset, schema_size(schema))?;
     // Check if the row is present

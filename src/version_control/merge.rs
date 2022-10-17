@@ -1,4 +1,4 @@
-use crate::{user::userdata::User, fileio::databaseio::get_db_instance};
+use crate::{user::userdata::User, fileio::databaseio::get_db_instance, util::row::EmptyRowLocation};
 
 use super::diff::*;
 use std::{collections::HashMap, vec};
@@ -12,11 +12,11 @@ pub enum MergeConflictResolutionAlgo {
 /// Merges a single diff to merge into the list of diffs to merge into using a merge conflict algorithm
 /// Returns a new list of diffs that would be the result of applying diff_to_merge into target_diffs 
 pub fn merge_diff_into_list(
-    diff_to_merge: Diff,
-    target_diffs: &Vec<Diff>,
-    insert_map: &HashMap<(u32, u16), (u32, u16)>, // Maps (pagenum, rownum) in source to (pagenum, rownum) in the target
-    user: &User,                                  // The user that is performing the merge (assumed to be on the target branch)
-    conflict_res_algo: MergeConflictResolutionAlgo
+    diff_to_merge: Diff,                              // The source diff to merge into the target diffs
+    target_diffs: &Vec<Diff>,                         // The target diffs to merge the source diff into                    
+    insert_map: &mut HashMap<(u32, u16), (u32, u16)>, // Maps (pagenum, rownum) in source to (pagenum, rownum) in the target
+    user: &User,                                      // The user that is performing the merge (assumed to be on the target branch)
+    conflict_res_algo: MergeConflictResolutionAlgo    // The merge conflict resolution algorithm to use
 ) -> Result<Vec<Diff>, String> {
     // We assume target_diffs_on_the_table only contains one diff of each type for that table
     verify_only_one_type_of_diff_per_table(target_diffs)?;
@@ -57,7 +57,20 @@ pub fn merge_diff_into_list(
 
             // Now we need to map the rows in insert_diff_to_merge to open rows in the target
             // Find the open rows in the target
+            let open_rows: Vec<EmptyRowLocation> = get_db_instance()?
+                .get_open_rows_in_table(
+                    &insert_diff_to_merge.table_name, 
+                    insert_diff_to_merge.rows.len(),
+                    user
+                )?;
 
+            // Map the rows in insert_diff_to_merge to the open rows
+            for (i, row) in insert_diff_to_merge.rows.iter().enumerate() {
+                insert_map.insert((row.pagenum, row.rownum), (open_rows[i].location.pagenum, open_rows[i].location.rownum));
+
+                // Add the new mapped rows to the result_diffs
+
+            }
         },
         Diff::Update(update_diff_to_merge) => {},
         Diff::Remove(remove_diff_to_merge) => {},

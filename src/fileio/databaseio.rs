@@ -1,6 +1,8 @@
+use super::header::schema_size;
+use super::pageio::PAGE_SIZE;
 use super::tableio::*;
 use crate::user::userdata::*;
-use crate::util::row::EmptyRowLocation;
+use crate::util::row::{EmptyRowLocation, RowLocation};
 use crate::version_control::commit::Commit;
 use crate::version_control::diff::*;
 use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
@@ -639,7 +641,8 @@ impl Database {
     /// Gets all open rows in a table into a vector of empty row locations.
     pub fn get_open_rows_in_table(
         &self, 
-        table_name: &String, 
+        table_name: &String,
+        num_of_open_rows: usize, // The number of open rows you want returned, set to 0 to get all open rows
         user: &User
     ) -> Result<Vec<EmptyRowLocation>, String> {
         // Make sure to lock the database before doing anything
@@ -652,7 +655,33 @@ impl Database {
         let table: Table = Table::new(&table_path, table_name, None)?;
 
         // Get the open rows
-        let open_rows: Vec<EmptyRowLocation> = table.get_empty_rows()?;
+        let mut open_rows: Vec<EmptyRowLocation> = table.get_empty_rows()?;
+
+        // Find the number of rows found across all empty row locations
+        let mut num_of_rows_found: usize = open_rows.iter().map(|row| row.num_rows_empty as usize).sum();
+
+        if num_of_open_rows > 0 && num_of_rows_found < num_of_open_rows {
+            // Get the number of rows we can fit in the new page
+            let max_rows_in_page: usize = PAGE_SIZE / schema_size(&table.schema);
+
+            // We need to add more pages to the table for new rows
+            while num_of_rows_found < num_of_open_rows {
+                // get the first new page in the table
+                let last_page: u32 = table.max_pages;
+
+                // Add the open rows in the page to the open rows vector
+                open_rows.push(EmptyRowLocation {
+                    location: RowLocation {
+                        pagenum: last_page,
+                        rownum: 0,
+                    },
+                    num_rows_empty: max_rows_in_page as u32,
+                });
+
+                // Update the number of rows found by the number of rows in the new page
+                num_of_rows_found += max_rows_in_page;
+            }
+        }
 
         Ok(open_rows)
     }

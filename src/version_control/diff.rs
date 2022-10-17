@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     fileio::{header::*, tableio::*},
     util::row::*,
@@ -50,6 +52,23 @@ pub struct TableRemoveDiff {
     pub table_name: String, // The name of the table that was removed.
     pub schema: Schema,
     pub rows_removed: Vec<RowInfo>, // The rows that were removed from the table.
+}
+
+/// This represents a set of diffs that would result from squashing a series of diffs together.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SquashDiffs {
+    pub table_diffs: HashMap<String, TableSquashDiff>, // A hashmap that maps a table name to a list of diffs for that table
+}
+
+/// This represents a set of diffs that would result from squashing a series 
+/// of diffs together for a single table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TableSquashDiff {
+    pub update_diff: UpdateDiff,
+    pub insert_diff: InsertDiff,
+    pub remove_diff: RemoveDiff,
+    pub table_create_diff: TableCreateDiff,
+    pub table_remove_diff: TableRemoveDiff,
 }
 
 /***************************************************************************************************/

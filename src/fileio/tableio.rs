@@ -1,5 +1,5 @@
 use super::{header::*, pageio::*, rowio::*};
-use crate::{util::row::{*, self}, version_control::diff::*};
+use crate::{util::row::*, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
