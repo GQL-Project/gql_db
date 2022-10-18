@@ -4,30 +4,11 @@ use crate::fileio::{
     tableio::{self, *},
 };
 use crate::user::userdata::*;
-use crate::util::dbtype::{Column, Value};
+use crate::util::dbtype::Column;
 use crate::util::row::Row;
 use crate::version_control::diff::*;
-use chrono::NaiveDateTime;
 use itertools::Itertools;
-use prost_types::Timestamp;
-use sqlparser::ast::{ColumnDef, DataType, Expr, SetExpr, Statement};
-
-pub fn parse_col_def(data_type: ColumnDef) -> Result<Column, String> {
-    let data_col = match data_type.data_type {
-        DataType::SmallInt(_) => Column::I32,
-        DataType::Int(_) => Column::I64,
-        DataType::Float(_) => Column::Float,
-        DataType::Double => Column::Double,
-        DataType::Boolean => Column::Bool,
-        DataType::Timestamp => Column::Timestamp,
-        DataType::Char(Some(size)) => Column::String(size as u16),
-        DataType::Varchar(Some(size)) => Column::String(size as u16),
-        DataType::Char(None) => Column::String(1),
-        DataType::Varchar(None) => Column::String(1),
-        _ => Err("Unsupported data type")?,
-    };
-    Ok(data_col)
-}
+use sqlparser::ast::{Expr, SetExpr, Statement};
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -41,7 +22,7 @@ pub fn execute_query(
     }
     for a in ast.iter() {
         match a {
-            Statement::Query(q) => match *q.body.clone() {
+            Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
                     let mut column_names = Vec::new();
                     for c in s.projection.iter() {
@@ -61,13 +42,9 @@ pub fn execute_query(
                     user.append_command(&command);
                     return select(column_names, table_names, get_db_instance()?, user);
                 }
-                _ => {
-                    print!("Not a select\n");
-                }
+                _ => print!("Not a select\n"),
             },
-            _ => {
-                print!("Not a query\n");
-            }
+            _ => print!("Not a query\n"),
         };
     }
     Err("No query found".to_string())
@@ -90,7 +67,7 @@ pub fn execute_update(
                 let mut schema = Schema::new();
 
                 for c in columns.iter() {
-                    schema.push((c.name.clone().value, parse_col_def(c.clone())?));
+                    schema.push((c.name.value.clone(), Column::from_col_def(c)?));
                 }
                 let _result = create_table(&table_name, &schema, get_db_instance()?, user)?;
                 results.push(format!("Table created: {}", table_name));
@@ -118,6 +95,9 @@ pub fn execute_update(
                                     }
                                     Expr::Value(sqlparser::ast::Value::Boolean(s)) => {
                                         data.push(s.to_string());
+                                    }
+                                    Expr::Value(sqlparser::ast::Value::Null) => {
+                                        data.push("".to_string());
                                     }
                                     _ => print!("Not a string\n"),
                                 }
@@ -321,16 +301,7 @@ pub fn insert(
                     .iter()
                     .zip(table.schema.iter())
                     .map(|(str, (_, col))| {
-                        let res = match col {
-                            Column::I32 => Value::I32(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Float => Value::Float(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::String(_) => Value::String(str.clone()),
-                            Column::Bool => Value::Bool(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Timestamp => Value::Timestamp(parse_time(str)?),
-                            Column::I64 => Value::I64(str.parse().map_err(|_x| "Could not parse value")?),
-                            Column::Double => Value::Double(str.parse().map_err(|_x| "Could not parse value")?),
-                        };
-                        Ok(res)
+                        col.parse(str).map_err(|e| format!("Error parsing value: {}", e))
                     })
                     .collect::<Result<Row, String>>()?)
             }
@@ -362,18 +333,6 @@ pub fn insert(
     let diff: InsertDiff = table.insert_rows(values)?;
     user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
-}
-
-fn parse_time(str: &String) -> Result<Timestamp, String> {
-    let time = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S");
-    if let Ok(x) = time {
-        Ok(Timestamp {
-            seconds: x.timestamp(),
-            nanos: x.timestamp_subsec_nanos() as i32,
-        })
-    } else {
-        Err(format!("Could not parse time {}", str))
-    }
 }
 
 #[cfg(test)]
@@ -1100,6 +1059,160 @@ mod tests {
                 "4".to_string(),
                 "Captain America".to_string(),
                 "12.456".to_string(),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert can cast values to the correct type if possible
+    fn test_insert_nulls() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = vec!["T.id".to_string(), "T.name".to_string()];
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::Nullable(Box::new(Column::I32))),
+            ("name".to_string(), Column::String(50)),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::Null,
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Null,
+            ],
+            vec![
+                Value::Null,
+                Value::String("Captain America".to_string()),
+                Value::Null,
+            ],
+        ];
+        let new_rows = vec![
+            vec![
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "3.456".to_string(),
+            ],
+            vec![
+                "".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "".to_string(),
+            ],
+            vec![
+                "".to_string(),
+                "Captain America".to_string(),
+                "".to_string(),
+            ],
+        ];
+
+        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 4);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+
+        assert_eq!(
+            result.0[0],
+            ("id".to_string(), Column::Nullable(Box::new(Column::I32)))
+        );
+        assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::Null);
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::Null);
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert exits if a value is not nullable and is inserted as null
+    fn test_insert_invalid_nulls() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                "".to_string(), // Nulled
+                "Iron Man".to_string(),
+                "Robert Downey".to_string(),
+            ],
+            vec!["2".to_string(), "Spiderman".to_string(), "".to_string()],
+            vec!["3".to_string(), "".to_string(), "322.456".to_string()],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "".to_string(),
             ],
         ];
 

@@ -1,6 +1,9 @@
 use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
 
-use super::branches::{BranchNode, Branches};
+use super::{
+    branches::{BranchNode, Branches},
+    commit::Commit,
+};
 
 /// This function implements the GQL log command
 pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
@@ -15,9 +18,8 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
         return Ok(("No Commits!".to_string(), vec![]));
     }
 
-    let branch_node = branch_heads_instance
-        .get_branch_node_from_head(&branch_name, &branches_from_head)
-        .unwrap();
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&branch_name, &branches_from_head)?;
 
     let mut branch_nodes: Vec<BranchNode> = get_db_instance()?
         .get_branch_file()
@@ -44,6 +46,74 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
     }
 
     Ok((log_string, log_strings))
+}
+
+/// Takes two commit hashes, and attempts to find a chain of commits
+/// from the first commit to the second, assuming that the commits are
+/// from the same branch.
+pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, String> {
+    let branch_name: String = user.get_current_branch_name();
+    let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
+    let head_mngr = get_db_instance()?.get_branch_heads_file_mut();
+
+    if head_mngr.get_all_branch_heads()?.len() == 0 {
+        return Err("No Commits in Current Branch!".to_string());
+    }
+
+    // Branch head
+    let mut current = Some(head_mngr.get_branch_node_from_head(&branch_name, &branches)?);
+
+    // Hash 1's node
+    let mut save_first: Option<BranchNode> = None;
+    // Hash 2's node
+    let mut save_last: Option<BranchNode> = None;
+    let mut commit_hashes: Vec<String> = Vec::new();
+
+    while let Some(node) = current {
+        if node.commit_hash == hash2 {
+            save_last = Some(node.clone());
+            current = Some(node.clone());
+            while current != None {
+                let node = current.as_ref().unwrap();
+                commit_hashes.push(node.commit_hash.clone());
+                if node.commit_hash == hash1 {
+                    save_first = Some(node.clone());
+                    break;
+                }
+                current = branches.get_prev_branch_node(&node)?;
+            }
+        }
+        current = branches.get_prev_branch_node(&node)?;
+    }
+
+    if commit_hashes.len() == 0 {
+        return Err("Commits not found in Current Branch".to_string());
+    }
+
+    let save_first = save_first.map_or(Err(format!("{} not found in Branch", hash1)), Ok)?;
+    let save_last = save_last.map_or(Err(format!("{} not found in Branch", hash2)), Ok)?;
+
+    let commits = commit_hashes
+        .into_iter()
+        .map(|hash| get_db_instance()?.get_commit_file_mut().fetch_commit(&hash))
+        .collect::<Result<Vec<Commit>, String>>()?;
+
+    let squash_commit = get_db_instance()?
+        .get_commit_file_mut()
+        .squash_commits(&commits)?;
+
+    // Use the new commit hash, and make the current hash2 point to the commit before hash1.
+    let squash_node = BranchNode {
+        commit_hash: squash_commit.hash.clone(),
+        branch_name: branch_name.clone(),
+        prev_pagenum: save_first.prev_pagenum,
+        prev_rownum: save_first.prev_rownum,
+        curr_pagenum: save_last.curr_pagenum,
+        curr_rownum: save_last.curr_rownum,
+        is_head: save_last.is_head,
+    };
+    branches.update_branch_node(&squash_node)?;
+    Ok(squash_commit)
 }
 
 #[cfg(test)]

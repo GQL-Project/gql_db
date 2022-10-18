@@ -248,6 +248,9 @@ impl Branches {
                 // If the previous node was a different branch name, this node needs to be a new HEAD node
                 else if prev_branch_name != branch_name.clone() {
                     // Create a new branch HEAD node
+                    // TODO: For the squash case, this can cause issues when squashing with the first
+                    // commit on a branch, since it will attempt to create a new branch, but the branch
+                    // already exists. This is needs to be fixed.
                     branch_heads_table.create_branch_head(&BranchHead {
                         branch_name: branch_name.clone(),
                         pagenum: row.pagenum as i32,
@@ -276,6 +279,32 @@ impl Branches {
                 Ok(node)
             }
             None => return Err("Branch node was not created correctly".to_string()),
+        }
+    }
+
+    /// Update an existing branch node, using the curr_pagenum and curr_rownum values to find the node.
+    pub fn update_branch_node(&mut self, node: &BranchNode) -> Result<BranchNode, String> {
+        // Create the new branch node
+        let mut new_node: Vec<Value> = Vec::new();
+        new_node.push(Value::String(node.branch_name.clone()));
+        new_node.push(Value::String(node.commit_hash.clone()));
+        new_node.push(Value::I32(node.prev_pagenum));
+        new_node.push(Value::I32(node.prev_rownum));
+        new_node.push(Value::I32(node.curr_pagenum));
+        new_node.push(Value::I32(node.curr_rownum));
+        new_node.push(Value::Bool(node.is_head));
+
+        // Insert the new branch node
+        let update_diff: UpdateDiff = self.branches_table.rewrite_rows(vec![RowInfo {
+            row: new_node,
+            pagenum: node.curr_pagenum as u32,
+            rownum: node.curr_rownum as u16,
+        }])?;
+
+        // Verify that the update was successful
+        match update_diff.rows.get(0) {
+            Some(_) => Ok(node.clone()),
+            None => return Err("Branch node was not updated correctly".to_string()),
         }
     }
 }

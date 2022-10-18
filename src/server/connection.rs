@@ -66,6 +66,7 @@ impl Connection {
     }
 }
 
+// When we close the Connection (database is exiting), we can clean up the database.
 impl Drop for Connection {
     fn drop(&mut self) {
         let clients = self.get_clients_readonly();

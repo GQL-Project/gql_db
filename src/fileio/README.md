@@ -24,8 +24,9 @@
     - To reduce the times needed for this to occur, we double the number of pages in the file after each IO.
 - We then have a `uint8` counting the number of elements in the schema, telling us how many records to scan.
 - Each schema shape is represented as a `uint16` for the type, followed by a 32 character name:
-    - If the first bit is 1, we have a string of size `n ^ (1 << 15)` bytes
-    - If the first bit is 0, for the given values of `n`, we have:
+    - If the first bit is 1, the type is nullable
+    - If the second bit is 1, we have a string of size `n ^ (1 << 14)` bytes (which means the maximum size of a string is 2^14 - 1 bytes)
+    - If the second bit is 0, for the given values of `n`, we have:
         - 0: Int32
         - 1: Int64
         - 2: Float32
@@ -37,6 +38,12 @@
 - The page format is fairly simple: it contains all of the rows sequentially, with each row having an additional byte in the beginning.
 - If a row is removed, the byte is set to 0, allowing for us to use this location for insertion later on, and skip it while performing scans.
 - Strings of length `n` will have space for all `n` characters, even if it is not initally using the entire space.
+
+## Null Values:
+- *Only* null values have an additional byte in the beginning of each cell value, which is set to 1 if the value is null, and 0 otherwise.
+- This is done to ensure that we can have null values for all types, and not just strings.
+- Additionally, this way we avoid the need to have a null value for each type, which would be a waste of space.
+- If a NULL value is used for a string, the string will cast it to an empty string.
 
 ## Concurrency Considerations
 - File reads using positioned-io can be done concurrently, as long as no file writes are done at the same time.
