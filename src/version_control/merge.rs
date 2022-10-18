@@ -1649,6 +1649,81 @@ mod tests {
         delete_test_db();
     }
 
+    #[test]
+    #[serial]
+    fn test_complex_remove_merge() {
+        // Tests removing rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Remove rows in the source branch
+        let rows: Vec<RowLocation> = vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            },
+            RowLocation {
+                pagenum: 1,
+                rownum: 2,
+            },
+        ];
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let remove_diff: RemoveDiff = src_table1.remove_rows(rows).unwrap();
+        src_diffs.push(Diff::Remove(remove_diff));
+
+        // Remove rows in the target branch
+        let rows: Vec<RowLocation> = vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 0,
+            },
+            RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            },
+        ];
+        let target_table1: Table =
+            Table::new(&target_branch_dir, &table_name1, None).unwrap();
+        let remove_diff: RemoveDiff = target_table1.remove_rows(rows).unwrap();
+        target_diffs.push(Diff::Remove(remove_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Remove(remove_diff) = &merge_diffs[0] {
+            assert_eq!(remove_diff.rows.len(), 1);
+            assert_eq!(remove_diff.rows[0].row.len(), 2);
+            assert_eq!(remove_diff.rows[0].row[0], Value::I32(300));
+            assert_eq!(remove_diff.rows[0].row[1], Value::String("Third".to_string()));
+        } else {
+            panic!("Expected remove diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
     // Sets up the database and creates 2 tables on the main branch for first commit,
     // and inserts some rows into each of them.
     // Also creates a branch off of the first commit on the main branch.
