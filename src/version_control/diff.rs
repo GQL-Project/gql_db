@@ -65,6 +65,19 @@ impl Diff {
             Diff::TableRemove(_) => TABLE_REMOVE_TYPE,
         }
     }
+    
+    /// Checks if there is a merge conflict between this diff and another diff.
+    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
+        let conflict: bool = match self {
+            Diff::Update(update_diff) => update_diff.is_merge_conflict(target_diff),
+            Diff::Insert(insert_diff) => insert_diff.is_merge_conflict(target_diff),
+            Diff::Remove(remove_diff) => remove_diff.is_merge_conflict(target_diff),
+            Diff::TableCreate(table_create_diff) => table_create_diff.is_merge_conflict(target_diff),
+            Diff::TableRemove(table_remove_diff) => table_remove_diff.is_merge_conflict(target_diff),
+        };
+
+        conflict
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,43 +135,6 @@ pub struct TableSquashDiff {
 /*                                         Member Methods                                          */
 /***************************************************************************************************/
 
-impl Diff {
-    /// Checks if there is a merge conflict between this diff and another diff.
-    pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
-        let conflict: bool = match self {
-            Diff::Update(update_diff) => update_diff.is_merge_conflict(target_diff),
-            Diff::Insert(insert_diff) => insert_diff.is_merge_conflict(target_diff),
-            Diff::Remove(remove_diff) => remove_diff.is_merge_conflict(target_diff),
-            Diff::TableCreate(table_create_diff) => table_create_diff.is_merge_conflict(target_diff),
-            Diff::TableRemove(table_remove_diff) => table_remove_diff.is_merge_conflict(target_diff),
-        };
-
-        conflict
-    }
-
-    /// Returns the table name that the diff is for.
-    pub fn get_table_name(&self) -> String {
-        match self {
-            Diff::Update(update_diff) => update_diff.table_name.clone(),
-            Diff::Insert(insert_diff) => insert_diff.table_name.clone(),
-            Diff::Remove(remove_diff) => remove_diff.table_name.clone(),
-            Diff::TableCreate(table_create_diff) => table_create_diff.table_name.clone(),
-            Diff::TableRemove(table_remove_diff) => table_remove_diff.table_name.clone(),
-        }   
-    }
-
-    /// Returns the schema that the diff is for
-    pub fn get_schema(&self) -> Schema {
-        match self {
-            Diff::Update(update_diff) => update_diff.schema.clone(),
-            Diff::Insert(insert_diff) => insert_diff.schema.clone(),
-            Diff::Remove(remove_diff) => remove_diff.schema.clone(),
-            Diff::TableCreate(table_create_diff) => table_create_diff.schema.clone(),
-            Diff::TableRemove(table_remove_diff) => table_remove_diff.schema.clone(),
-        }
-    }
-}
-
 impl UpdateDiff {
     /// Checks if there is a merge conflict between this update diff and the target diff.
     pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
@@ -169,7 +145,7 @@ impl UpdateDiff {
                 if self.table_name == remove_diff_target.table_name {
                     // Go through all the rows in both diffs and check if any modify the same rows
                     for update_row in self.rows.clone() {
-                        for remove_row in remove_diff_target.rows_removed.clone() {
+                        for remove_row in remove_diff_target.rows.clone() {
                             if update_row.get_row_location() == remove_row.get_row_location() {
                                 return true;
                             }
@@ -307,7 +283,7 @@ impl UpdateDiff {
                 // Go through all the rows in both diffs and check if any modify the same rows
                 for update_row in &self.rows {
                     let mut add_self_row: bool = true;
-                    let remove_diff_rows: Vec<RowInfo> = remove_diff_target.rows_removed.clone();
+                    let remove_diff_rows: Vec<RowInfo> = remove_diff_target.rows.clone();
                     for (index_target, remove_row) in remove_diff_rows.iter().enumerate() {
                         // If they conflict, use self to resolve the conflict
                         if update_row.get_row_location() == remove_row.get_row_location() {
@@ -320,7 +296,7 @@ impl UpdateDiff {
                                     // Take the update row
                                     res_update_diff.rows.push(update_row.clone());
                                     // Remove the row from both the update and remove diffs because we took the update row
-                                    remove_diff_target.rows_removed.remove(index_target);
+                                    remove_diff_target.rows.remove(index_target);
                                     add_self_row = false;
                                 },
                                 // Use the remove row and get rid of the update diff
@@ -338,7 +314,7 @@ impl UpdateDiff {
                     }
                 }
                 // Add all the rows in the remove diff that were not updated
-                res_remove_diff.rows_removed.append(&mut remove_diff_target.rows_removed);
+                res_remove_diff.rows.append(&mut remove_diff_target.rows);
 
                 // Return the update and remove diffs
                 return Ok(vec![Diff::Update(res_update_diff), Diff::Remove(res_remove_diff)]);
@@ -486,7 +462,7 @@ impl RemoveDiff {
                 // Only can be a merge conflict if it affects the same table
                 if self.table_name != update_diff_target.table_name {
                     // Go through all the rows in both diffs and check if any modify the same rows
-                    for remove_row in self.rows_removed.clone() {
+                    for remove_row in self.rows.clone() {
                         for update_row in update_diff_target.rows.clone() {
                             if remove_row.get_row_location() == update_row.get_row_location() {
                                 return true;

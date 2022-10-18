@@ -332,7 +332,7 @@ impl Table {
         let mut diff: RemoveDiff = RemoveDiff {
             table_name: self.name.clone(), 
             schema: schema, 
-            rows_removed: Vec::new()
+            rows: Vec::new()
         };
 
         // Return right away if we aren't removing any rows

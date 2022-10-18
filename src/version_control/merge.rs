@@ -127,7 +127,7 @@ pub fn create_merge_diffs(
             },
             Diff::Remove(mut remove_source_diff) => {
                 // We need to map the rows in remove_source_diff to the rows in the target
-                for row in remove_source_diff.rows_removed.iter_mut() {
+                for row in remove_source_diff.rows.iter_mut() {
                     // If it is mapped to the target, use the mapped row location
                     if let Some((target_pagenum, target_rownum)) = insert_map.get(&(row.pagenum, row.rownum)) {
                         row.pagenum = *target_pagenum;
@@ -146,10 +146,10 @@ pub fn create_merge_diffs(
                 
                 // If there is a remove diff in the target, we need to remove any duplicate row removals.
                 if let Some(remove_diff_target) = remove_diff_target_option {
-                    remove_source_diff.rows_removed
+                    remove_source_diff.rows
                         .retain(|x| {
                             !remove_diff_target
-                                .rows_removed
+                                .rows
                                 .iter()
                                 .any(|y| 
                                     x.pagenum == y.pagenum && 
@@ -164,7 +164,7 @@ pub fn create_merge_diffs(
                 result_diffs.table_diffs
                     .entry(remove_source_diff.table_name.clone())
                     .or_insert_with(|| TableSquashDiff::new(&remove_source_diff.table_name, &remove_source_diff.schema))
-                    .remove_diff.rows_removed.append(&mut remove_source_diff.rows_removed);
+                    .remove_diff.rows.append(&mut remove_source_diff.rows);
             },
             Diff::TableCreate(table_create_source_diff) => {
                 // Get the table_create diff from target_diffs_on_the_table if it exists
@@ -337,7 +337,7 @@ pub fn handle_merge_conflicts(
 
             // If the target has a row removed at the same location, we have a merge conflict
             if let Some(target_remove_diff) = target_remove_diff_opt {
-                for target_remove_row in target_remove_diff.rows_removed.iter() {
+                for target_remove_row in target_remove_diff.rows.iter() {
                     // If Merge Conflict
                     if res_insert_row.get_row_location() == target_remove_row.get_row_location() {
                         match conflict_res_algo {
@@ -451,7 +451,7 @@ pub fn handle_merge_conflicts(
 
             // If the target has a row removed at the same location, we have a merge conflict
             if let Some(target_remove_diff) = target_remove_diff_opt {
-                for target_remove_row in target_remove_diff.rows_removed.iter() {
+                for target_remove_row in target_remove_diff.rows.iter() {
                     // If Merge Conflict
                     if res_update_row.get_row_location() == target_remove_row.get_row_location() {
                         match conflict_res_algo {
@@ -482,8 +482,8 @@ pub fn handle_merge_conflicts(
 
         /********** Remove **********/
         let mut idx: usize = 0;
-        'result_remove_loop: while idx < res_table_diff.remove_diff.rows_removed.len() {
-            let res_remove_row: RowInfo = res_table_diff.remove_diff.rows_removed[idx].clone();
+        'result_remove_loop: while idx < res_table_diff.remove_diff.rows.len() {
+            let res_remove_row: RowInfo = res_table_diff.remove_diff.rows[idx].clone();
             
             // Get the target insert diff
             let target_insert_diff_opt = target_table_diff
@@ -511,7 +511,7 @@ pub fn handle_merge_conflicts(
                             },
                             MergeConflictResolutionAlgo::UseTarget => {
                                 // Remove the row from the source by removing it from the res_table_diff.remove_diff
-                                res_table_diff.remove_diff.rows_removed.remove(idx);
+                                res_table_diff.remove_diff.rows.remove(idx);
                                 // continue to next result remove row without incrementing idx because we removed an element
                                 continue 'result_remove_loop;
                             },
@@ -546,7 +546,7 @@ pub fn handle_merge_conflicts(
                             },
                             MergeConflictResolutionAlgo::UseTarget => {
                                 // Remove the row from the source by removing it from the res_table_diff.remove_diff
-                                res_table_diff.remove_diff.rows_removed.remove(idx);
+                                res_table_diff.remove_diff.rows.remove(idx);
                                 // continue to next result remove row without incrementing idx because we removed an element
                                 continue 'result_remove_loop;
                             },
@@ -565,7 +565,7 @@ pub fn handle_merge_conflicts(
 
             // If the target has a row removed at the same location, we have a merge conflict
             if let Some(target_remove_diff) = target_remove_diff_opt {
-                for target_remove_row in target_remove_diff.rows_removed.iter() {
+                for target_remove_row in target_remove_diff.rows.iter() {
                     // If Merge Conflict
                     if res_remove_row.get_row_location() == target_remove_row.get_row_location() {
                         match conflict_res_algo {
@@ -581,7 +581,7 @@ pub fn handle_merge_conflicts(
                             },
                             MergeConflictResolutionAlgo::UseTarget => {
                                 // Remove the row from the source by removing it from the res_table_diff.remove_diff
-                                res_table_diff.remove_diff.rows_removed.remove(idx);
+                                res_table_diff.remove_diff.rows.remove(idx);
                                 // continue to next result remove row without incrementing idx because we removed an element
                                 continue 'result_remove_loop;
                             },
@@ -676,7 +676,7 @@ pub fn handle_merge_conflicts(
                                 let target_rows_remove_diff: Diff = Diff::Remove(RemoveDiff {
                                     table_name: target_insert_diff.table_name.clone(),
                                     schema: target_insert_diff.schema.clone(),
-                                    rows_removed: target_inserted_rows.clone(),
+                                    rows: target_inserted_rows.clone(),
                                 });
 
                                 prereq_diffs.push(target_rows_remove_diff);
@@ -720,7 +720,7 @@ pub fn handle_merge_conflicts(
                                 let target_rows_remove_diff: Diff = Diff::Remove(RemoveDiff {
                                     table_name: target_update_diff.table_name.clone(),
                                     schema: target_update_diff.schema.clone(),
-                                    rows_removed: target_updated_rows.clone(),
+                                    rows: target_updated_rows.clone(),
                                 });
 
                                 prereq_diffs.push(target_rows_remove_diff);
@@ -746,7 +746,7 @@ pub fn handle_merge_conflicts(
 
                 // If the target has a row removed on the same table that the result removed, we have a merge conflict
                 if let Some(target_remove_diff) = target_remove_diff_opt {
-                    let target_removed_rows: &Vec<RowInfo> = &target_remove_diff.rows_removed;
+                    let target_removed_rows: &Vec<RowInfo> = &target_remove_diff.rows;
                     // If Merge Conflict
                     if target_removed_rows.len() > 0 {
                         match conflict_res_algo {
