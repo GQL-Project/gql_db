@@ -643,14 +643,11 @@ impl Database {
     pub fn get_open_rows_in_table(
         &self, 
         table_name: &String,
-        num_of_open_rows: usize, // The number of open rows you want returned, set to 0 to get all open rows
-        user: &User
+        table_dir: &String,      // The directory where the table is located
+        num_of_open_rows: usize // The number of open rows you want returned, set to 0 to get all open rows
     ) -> Result<Vec<EmptyRowLocation>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
-
-        // Get the path to the table
-        let table_dir: String = self.get_current_working_branch_path(user);
 
         // Get the table
         let table: Table = Table::new(&table_dir, table_name, None)?;
@@ -756,7 +753,7 @@ impl Database {
         let merged_diffs: Vec<Diff> = create_merge_diffs(
             &src_diffs, 
             &dest_diffs,
-            user,
+            &self.get_current_working_branch_path(user),
             conflict_res_algo
         )?;
 
