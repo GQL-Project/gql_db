@@ -926,7 +926,8 @@ mod tests {
             header::Schema, tableio::create_table_in_dir,
         },
         util::{dbtype::*, row::Row},
-        version_control::{commit::Commit, diff::Diff}, executor::query::create_table,
+        version_control::diff::Diff, 
+        executor::query::create_table,
     };
 
     use super::*;
@@ -1115,7 +1116,541 @@ mod tests {
         delete_test_db();
     }
 
-    // Sets up the database and creates 2 tables on the main branch for first commit.
+    #[test]
+    #[serial]
+    fn test_complex_table_create_merge() {
+        // Tests creating a table in both the source branch and the target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Create a table in the source branch
+        let src_new_table_name: String = "new_table_123".to_string();
+        let src_new_table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("score".to_string(), Column::Float),
+        ];
+        let (src_new_table, src_table_create_diff) = 
+            create_table_in_dir(
+                &src_new_table_name, 
+                &src_new_table_schema, 
+                &src_branch_dir
+            ).unwrap();
+        src_diffs.push(Diff::TableCreate(src_table_create_diff));
+
+        // Create a table in the target branch
+        let target_new_table_name: String = "new_table_456".to_string();
+        let target_new_table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("score".to_string(), Column::Float),
+        ];
+        let (target_new_table, target_table_create_diff) = 
+            create_table_in_dir(
+                &target_new_table_name, 
+                &target_new_table_schema, 
+                &target_branch_dir
+            ).unwrap();
+        target_diffs.push(Diff::TableCreate(target_table_create_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), src_new_table_name);
+        if let Diff::TableCreate(create_diff) = &merge_diffs[0] {
+            assert_eq!(create_diff.table_name, src_new_table_name);
+            assert_eq!(create_diff.schema, src_new_table_schema);
+        } else {
+            panic!("Expected create diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_complex_create_table_merge_same_table() {
+        // Tests creating the same table in both the source branch and the target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Create a table in the source branch
+        let src_new_table_name: String = "new_table_123".to_string();
+        let src_new_table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("score".to_string(), Column::Float),
+        ];
+        let (src_new_table, src_table_create_diff) = 
+            create_table_in_dir(
+                &src_new_table_name, 
+                &src_new_table_schema, 
+                &src_branch_dir
+            ).unwrap();
+        src_diffs.push(Diff::TableCreate(src_table_create_diff));
+
+        // Create a table in the target branch
+        let target_new_table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (target_new_table, target_table_create_diff) = 
+            create_table_in_dir(
+                &src_new_table_name, 
+                &target_new_table_schema, 
+                &target_branch_dir
+            ).unwrap();
+        target_diffs.push(Diff::TableCreate(target_table_create_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        // Assert that it fails because they are merging same table with different schema
+        assert_eq!(
+            create_merge_diffs(
+                &src_diffs, 
+                &target_diffs, 
+                &target_branch_dir,
+                MergeConflictResolutionAlgo::NoConflicts
+            ).is_err(), 
+            true
+        );
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_complex_create_table_merge_exact_same_table() {
+        // Tests creating a table in both the source branch and the target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Create a table in the source branch
+        let src_new_table_name: String = "new_table_123".to_string();
+        let src_new_table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("score".to_string(), Column::Float),
+        ];
+        let (src_new_table, src_table_create_diff) = 
+            create_table_in_dir(
+                &src_new_table_name, 
+                &src_new_table_schema, 
+                &src_branch_dir
+            ).unwrap();
+        src_diffs.push(Diff::TableCreate(src_table_create_diff));
+
+        // Create the exact same table in the target branch
+        let (target_new_table, target_table_create_diff) = 
+            create_table_in_dir(
+                &src_new_table_name, 
+                &src_new_table_schema, 
+                &target_branch_dir
+            ).unwrap();
+        target_diffs.push(Diff::TableCreate(target_table_create_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 0);
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_basic_update_merge() {
+        // Tests updating rows in the source branch and merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Update rows in the source branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(1), Value::String("JohnUpdated".to_string())]
+            },
+        ];
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = src_table1.rewrite_rows(rows).unwrap();
+        src_diffs.push(Diff::Update(update_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Update(update_diff) = &merge_diffs[0] {
+            assert_eq!(update_diff.rows.len(), 1);
+            assert_eq!(update_diff.rows[0].row.len(), 2);
+            assert_eq!(update_diff.rows[0].row[0], Value::I32(1));
+            assert_eq!(update_diff.rows[0].row[1], Value::String("JohnUpdated".to_string()));
+        } else {
+            panic!("Expected update diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_complex_update_merge() {
+        // Tests updating rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Update rows in the source branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(1), Value::String("JohnUpdated".to_string())]
+            },
+        ];
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = src_table1.rewrite_rows(rows).unwrap();
+        src_diffs.push(Diff::Update(update_diff));
+
+        // Update rows in the target branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 0,
+                row: vec![Value::I32(1), Value::String("FirstUpdatedTarget".to_string())]
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 2,
+                row: vec![Value::I32(1), Value::String("SecondUpdatedTarget".to_string())]
+            },
+        ];
+        let target_table1: Table =
+            Table::new(&target_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = target_table1.rewrite_rows(rows).unwrap();
+        target_diffs.push(Diff::Update(update_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Update(update_diff) = &merge_diffs[0] {
+            assert_eq!(update_diff.rows.len(), 1);
+            assert_eq!(update_diff.rows[0].row.len(), 2);
+            assert_eq!(update_diff.rows[0].row[0], Value::I32(1));
+            assert_eq!(update_diff.rows[0].row[1], Value::String("JohnUpdated".to_string()));
+        } else {
+            panic!("Expected update diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_complex_update_merge_conflict_with_same_row() {
+        // Tests updating rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Update rows in the source branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(1), Value::String("JohnUpdated".to_string())]
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 2,
+                row: vec![Value::I32(33), Value::String("JoeUpdated".to_string())]
+            },
+        ];
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = src_table1.rewrite_rows(rows).unwrap();
+        src_diffs.push(Diff::Update(update_diff));
+
+        // Update rows in the target branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 0,
+                row: vec![Value::I32(1), Value::String("FirstUpdatedTarget".to_string())]
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(1), Value::String("JohnUpdated".to_string())]
+            },
+        ];
+        let target_table1: Table =
+            Table::new(&target_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = target_table1.rewrite_rows(rows).unwrap();
+        target_diffs.push(Diff::Update(update_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Update(update_diff) = &merge_diffs[0] {
+            assert_eq!(update_diff.rows.len(), 1);
+            assert_eq!(update_diff.rows[0].row.len(), 2);
+            assert_eq!(update_diff.rows[0].row[0], Value::I32(33));
+            assert_eq!(update_diff.rows[0].row[1], Value::String("JoeUpdated".to_string()));
+        } else {
+            panic!("Expected update diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_complex_update_merge_conflict() {
+        // Tests updating rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Update rows in the source branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(1), Value::String("JohnUpdatedSrc".to_string())]
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 2,
+                row: vec![Value::I32(33), Value::String("JoeUpdated".to_string())]
+            },
+        ];
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = src_table1.rewrite_rows(rows).unwrap();
+        src_diffs.push(Diff::Update(update_diff));
+
+        // Update rows in the target branch
+        let rows: Vec<RowInfo> = vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 0,
+                row: vec![Value::I32(1), Value::String("FirstUpdatedTarget".to_string())]
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(1), Value::String("JohnUpdatedTarget".to_string())]
+            },
+        ];
+        let target_table1: Table =
+            Table::new(&target_branch_dir, &table_name1, None).unwrap();
+        let update_diff: UpdateDiff = target_table1.rewrite_rows(rows).unwrap();
+        target_diffs.push(Diff::Update(update_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        assert_eq!(
+            create_merge_diffs(
+                &src_diffs, 
+                &target_diffs, 
+                &target_branch_dir,
+                MergeConflictResolutionAlgo::NoConflicts
+            ).is_err(),
+            true
+        );
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_basic_remove_merge() {
+        // Tests removing rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Remove rows in the source branch
+        let rows: Vec<RowLocation> = vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            },
+            RowLocation {
+                pagenum: 1,
+                rownum: 2,
+            },
+        ];
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let remove_diff: RemoveDiff = src_table1.remove_rows(rows).unwrap();
+        src_diffs.push(Diff::Remove(remove_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Remove(remove_diff) = &merge_diffs[0] {
+            assert_eq!(remove_diff.rows.len(), 2);
+            assert_eq!(remove_diff.rows[0].row.len(), 2);
+            assert_eq!(remove_diff.rows[0].row[0], Value::I32(200));
+            assert_eq!(remove_diff.rows[0].row[1], Value::String("Second".to_string()));
+            assert_eq!(remove_diff.rows[1].row.len(), 2);
+            assert_eq!(remove_diff.rows[1].row[0], Value::I32(300));
+            assert_eq!(remove_diff.rows[1].row[1], Value::String("Third".to_string()));
+        } else {
+            panic!("Expected remove diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    // Sets up the database and creates 2 tables on the main branch for first commit,
+    // and inserts some rows into each of them.
     // Also creates a branch off of the first commit on the main branch.
     // Returns the a tuple:
     //   - The user
@@ -1164,7 +1699,7 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let (_, table_create_diff1) = create_table(
+        let (mut table1, table_create_diff1) = create_table(
             &table_name_1,
             &schema,
             get_db_instance().unwrap(),
@@ -1179,7 +1714,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        let (_, table_create_diff2) = create_table(
+        let (mut table2, table_create_diff2) = create_table(
             &table_name_2,
             &schema,
             get_db_instance().unwrap(),
@@ -1187,6 +1722,27 @@ mod tests {
         )
         .unwrap();
         main_branch_diffs.push(Diff::TableCreate(table_create_diff2));
+
+        // Insert some rows into the first table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(100), Value::String("First".to_string())],
+            vec![Value::I32(200), Value::String("Second".to_string())],
+            vec![Value::I32(300), Value::String("Third".to_string())],
+        ];
+        let insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        main_branch_diffs.push(Diff::Insert(insert_diff));
+
+        // Insert some rows into the second table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(100), Value::String("First".to_string()), Value::I32(1)],
+            vec![Value::I32(200), Value::String("Second".to_string()), Value::I32(2)],
+            vec![Value::I32(300), Value::String("Third".to_string()), Value::I32(3)],
+            vec![Value::I32(400), Value::String("Fourth".to_string()), Value::I32(4)],
+            vec![Value::I32(500), Value::String("Fifth".to_string()), Value::I32(5)],
+            vec![Value::I32(600), Value::String("Sixth".to_string()), Value::I32(6)],
+        ];
+        let insert_diff: InsertDiff = table2.insert_rows(rows).unwrap();
+        main_branch_diffs.push(Diff::Insert(insert_diff));
 
         // Create a commit on the main branch
         user.set_diffs(&main_branch_diffs);
