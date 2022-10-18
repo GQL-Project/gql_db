@@ -1,7 +1,7 @@
 use crate::{user::userdata::User, fileio::{databaseio::get_db_instance, tableio::Table}, util::row::{EmptyRowLocation, RowInfo}};
 
 use super::diff::*;
-use std::{collections::HashMap, vec, ops::Rem};
+use std::collections::HashMap;
 
 pub enum MergeConflictResolutionAlgo {
     NoConflicts, // Fails if there are conflicts. This is a 'clean' merge
@@ -11,17 +11,20 @@ pub enum MergeConflictResolutionAlgo {
 
 /// Merges a single diff to merge into the list of diffs to merge into using a merge conflict algorithm
 /// Returns a new list of diffs that would be the result of applying source_diffs into target_diffs 
-pub fn merge_diff_into_list(
+pub fn create_merge_diffs(
     source_diffs: &Vec<Diff>,                         // The source diffs to merge into the target diffs
     target_diffs: &Vec<Diff>,                         // The target diffs to merge the source diff into                    
-    insert_map: &mut HashMap<(u32, u16), (u32, u16)>, // Maps (pagenum, rownum) in source to (pagenum, rownum) in the target
     user: &User,                                      // The user that is performing the merge (assumed to be on the target branch)
     conflict_res_algo: MergeConflictResolutionAlgo    // The merge conflict resolution algorithm to use
 ) -> Result<Vec<Diff>, String> {
     // We assume target_diffs_on_the_table only contains one diff of each type for that table
     verify_only_one_type_of_diff_per_table(target_diffs)?;
 
+    // The result of the merge without any conflicts resolved
     let mut result_diffs: SquashDiffs = SquashDiffs::new();
+
+    // Maps (pagenum, rownum) in source to (pagenum, rownum) in the target
+    let mut insert_map: HashMap<(u32, u16), (u32, u16)> = HashMap::new(); 
 
     for source_diff in source_diffs {
         // Get all the diffs that affect the same table as the source_diff
@@ -819,49 +822,6 @@ pub fn handle_merge_conflicts(
 
     Ok((prereq_diffs, res_diffs))
 }
-
-/// Creates a list of merge diffs that would result from merging the source diffs onto
-/// the target diffs. 
-/// Depending on the conflict resolution algorithm, the merge may fail if there are conflicts.
-/// Otherwise, the merge will succeed, and the result will contain the diffs needed to apply
-/// the source diffs to the target diffs.
-pub fn create_merge_diffs(
-    source_diffs: &Vec<Diff>, 
-    target_diffs: &Vec<Diff>, 
-    conflict_res_algo: MergeConflictResolutionAlgo
-) -> Result<Vec<Diff>, String> {
-    // A hashmap that maps a table name to a list of diffs for that table
-    let mut result: HashMap<String, Vec<Diff>> = HashMap::new();
-
-    match conflict_res_algo {
-        MergeConflictResolutionAlgo::NoConflicts => {
-            // Merge each of the source diffs into the target diffs
-            for src_diff in source_diffs {
-                
-            }
-        },
-        MergeConflictResolutionAlgo::UseTarget => {
-            // Check if there any conflicts between the two diffs
-            for src_diff in source_diffs {
-                for target_diff in target_diffs {
-                    if src_diff.is_merge_conflict(target_diff) {
-                        // There is a conflict, so we need to decompose both diffs down to the row level
-                        // and then merge the rows, using the target's version of any conflicting rows.
-
-                        // We know since they conflicted, they are for the same table, so we don't need to check that
-
-                    }
-                }
-            }
-        },
-        MergeConflictResolutionAlgo::UseSource => {
-
-        },
-    }
-
-    Ok(vec![])
-}
-
 
 /// Verifies that for each table within the diffs, there is at most 1 of each type of diff
 fn verify_only_one_type_of_diff_per_table(diffs: &Vec<Diff>) -> Result<(), String> {
