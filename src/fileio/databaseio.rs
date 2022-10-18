@@ -3,7 +3,7 @@ use super::pageio::PAGE_SIZE;
 use super::tableio::*;
 use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
-use crate::version_control::commit::Commit;
+use crate::version_control::{commit::Commit, merge::*};
 use crate::version_control::diff::*;
 use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
 use glob::glob;
@@ -207,6 +207,7 @@ impl Database {
             commit_msg.to_string(),
             command.to_string(),
             user.get_diffs(),
+            true
         )?;
 
         // Get the branch name for the new branch node
@@ -691,9 +692,10 @@ impl Database {
         &mut self, 
         dest_branch_name: &String, 
         src_branch_name: &String, 
+        user: &User,
         merge_cmt_msg: &String,
-        conflict_res_algo: &String
-    ) -> Result<(), String> {
+        conflict_res_algo: MergeConflictResolutionAlgo,
+    ) -> Result<Vec<Diff>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -702,14 +704,21 @@ impl Database {
         self.branch_heads.get_branch_head(&dest_branch_name)?;
         self.branch_heads.get_branch_head(&src_branch_name)?;
 
+        // Ensure user is on the destination branch
+        if self.get_current_branch_path(user) != *dest_branch_name {
+            return Err("Database::merge_branches() Error: You must be on the destination branch to merge.".to_owned());
+        }
+
         // Merging two branches follows these steps:
+        // 0. Ensure user is on destination branch.
         // 1. Get the nodes for the destination branch HEAD and the source branch HEAD
         // 2. Find a common ancestor
-        // 3. Squash commits of source branch (common ancestor to branch head) into a single commit object
-        //    with the message merge_cmt_msg and the current timestamp
-        // 4. Collect diffs between common ancestor and destination branch
-        // 5. Based on conflict_res_algo, resolve conflicts
-        // 6. Apply commit object to destination branch
+        // 3. Squash commits of source branch (common ancestor to src branch head) into a single commit object
+        //    with the message merge_cmt_msg and the current timestamp without writing commit to file.
+        // 4. Squash commits of destination branch (common ancestor to dest branch head) into a single commit object
+        //    with the message merge_cmt_msg and the current timestamp without writing commit to file.
+        // 5. Merge the two squashes together using the merging algorithm.
+        // 6. Create a new commit on destination branch with the diffs from the merge.
         // 7. Apply diffs to destination branch (if exists)
         // 8. Delete source branch (optionally)
 
@@ -727,25 +736,31 @@ impl Database {
 
         // 3. Squash commits of source branch (common ancestor to branch head) into a single commit object
         //    with the message merge_cmt_msg and the current timestamp
-        let squash_commit: Commit = 
-            Commit::new(
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
-                Vec::new()
-            ); // TODO: Implement this
-        let src_diffs: Vec<Diff> = squash_commit.diffs;
-
-        // 4. Collect diffs between common ancestor and destination branch
-        let dest_diffs: Vec<Diff> =
-            self.get_diffs_between_nodes(Some(&common_ancestor), &dest_branch_node)?;
-
-        // 5. Based on conflict_res_algo, resolve conflicts
+        let src_commits: Vec<Commit> = self.get_commits_between_nodes(
+            Some(&common_ancestor),
+            &src_branch_node,
+        )?;
+        let src_squashed_cmt: Commit = self.commit_file.squash_commits(&src_commits, false)?;
+        let src_diffs: Vec<Diff> = src_squashed_cmt.diffs;
         
+        // 4. Squash commits of destination branch (common ancestor to branch head) into a single commit object
+        //    with the message merge_cmt_msg and the current timestamp
+        let dest_commits: Vec<Commit> = self.get_commits_between_nodes(
+            Some(&common_ancestor),
+            &dest_branch_node,
+        )?;
+        let dest_squashed_cmt: Commit = self.commit_file.squash_commits(&dest_commits, false)?;
+        let dest_diffs: Vec<Diff> = dest_squashed_cmt.diffs;
 
+        // 5. Merge the two squashes together using the merging algorithm.
+        let merged_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &dest_diffs,
+            user,
+            conflict_res_algo
+        )?;
 
-        Ok(())
+        Ok(merged_diffs)
     }
 
     pub fn check_merge_conflict(
@@ -1012,6 +1027,30 @@ impl Database {
 
         let mut diffs: Vec<Vec<Diff>> = Vec::new();
 
+        let commits: Vec<Commit> = self.get_commits_between_nodes(node1, node2)?;
+
+        // Iterate through the commits and get the diffs
+        for commit in commits {
+            let commit_diffs: Vec<Diff> = commit.diffs;
+            diffs.push(commit_diffs);
+        }
+
+        Ok(diffs.into_iter().flatten().collect::<Vec<Diff>>())
+    }
+
+    /// Finds the commits between node1 and node2 where node1 is the older node (closer to the origin).
+    /// If node1 is None, it returns all commits between the origin and node2.
+    /// Returns a vector of commits where the older commits are first
+    fn get_commits_between_nodes(
+        &self, 
+        node1: Option<&BranchNode>,
+        node2: &BranchNode
+    ) -> Result<Vec<Commit>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let mut commits: Vec<Commit> = Vec::new();
+
         // Check if node1 is Some or None
         match node1 {
             // Loop from node2 back to node1
@@ -1024,11 +1063,10 @@ impl Database {
                                 // We have reached node1, so break
                                 break;
                             }
-                            // Append the diffs of the current node to the diffs vector
-                            diffs.push(
+                            // Append the commit of the current node to the commits vector
+                            commits.push(
                                 self.commit_file
-                                    .fetch_commit(&curr_node_value.commit_hash)?
-                                    .diffs,
+                                    .fetch_commit(&curr_node_value.commit_hash)?,
                             );
 
                             curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
@@ -1045,11 +1083,10 @@ impl Database {
                 loop {
                     match curr_node {
                         Some(curr_node_value) => {
-                            // Append the diffs of the current node to the diffs vector
-                            diffs.push(
+                            // Append the commit of the current node to the commits vector
+                            commits.push(
                                 self.commit_file
-                                    .fetch_commit(&curr_node_value.commit_hash)?
-                                    .diffs,
+                                    .fetch_commit(&curr_node_value.commit_hash)?,
                             );
 
                             curr_node = self.branches.get_prev_branch_node(&curr_node_value)?;
@@ -1063,9 +1100,9 @@ impl Database {
         }
 
         // Now diffs contain all the diffs between node1 and node2
-        diffs.reverse();
+        commits.reverse();
 
-        Ok(diffs.into_iter().flatten().collect::<Vec<Diff>>())
+        Ok(commits)
     }
 
     /// Delete branch directories that aren't present in the branches_to_keep.
