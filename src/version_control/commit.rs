@@ -3,6 +3,7 @@ use rand::thread_rng;
 use rand::Rng;
 
 use super::commitfile::*;
+use super::diff;
 use super::diff::*;
 use crate::{
     fileio::{
@@ -593,9 +594,30 @@ impl CommitFile {
                     Diff::TableCreate(create) => {
                         add_diff(&mut map, diff.clone(), create.table_name.clone());
                     }
+                    // Table remove gets rid of previous diffs on that table
                     Diff::TableRemove(remove) => {
-                        add_diff(&mut map, diff.clone(), remove.table_name.clone());
-                    }
+                        // We should check if there were other diffs for this table before the remove table
+                        if map.contains_key(&remove.table_name) {
+                            // It's fine to unwrap here because we just checked that the key exists
+                            let value: &HashMap<i32, Diff> = map.get(&remove.table_name).unwrap();
+                            
+                            // If there is a TableCreate, we can remove all the diffs for that table
+                            // because we have both a TableCreate and a TableRemove for the same table
+                            if value.contains_key(&diff::TABLE_CREATE_TYPE) {
+                                map.remove(&remove.table_name);
+                            } 
+                            // If there is not a TableCreate, we can remove all the diffs for that table,
+                            // but we still need to add the TableRemove
+                            else {
+                                map.remove(&remove.table_name);
+                                add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                            }
+                        }
+                        // Otherwise, just add the diff like normal
+                        else {
+                            add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                        }
+                    } // End of TableRemove
                 }
             }
         }

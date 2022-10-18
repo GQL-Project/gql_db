@@ -3,6 +3,13 @@ use crate::{
     util::row::*,
 };
 
+/* Constants */
+pub const UPDATE_TYPE: i32 = 0;
+pub const INSERT_TYPE: i32 = 1;
+pub const REMOVE_TYPE: i32 = 2;
+pub const TABLE_CREATE_TYPE: i32 = 3;
+pub const TABLE_REMOVE_TYPE: i32 = 4;
+
 /***************************************************************************************************/
 /*                                         Diff Structs                                            */
 /***************************************************************************************************/
@@ -49,11 +56,11 @@ impl Diff {
 
     pub fn get_type(&self) -> i32 {
         match self {
-            Diff::Update(_) => 0,
-            Diff::Insert(_) => 1,
-            Diff::Remove(_) => 2,
-            Diff::TableCreate(_) => 3,
-            Diff::TableRemove(_) => 4,
+            Diff::Update(_) => UPDATE_TYPE,
+            Diff::Insert(_) => INSERT_TYPE,
+            Diff::Remove(_) => REMOVE_TYPE,
+            Diff::TableCreate(_) => TABLE_CREATE_TYPE,
+            Diff::TableRemove(_) => TABLE_REMOVE_TYPE,
         }
     }
 }
