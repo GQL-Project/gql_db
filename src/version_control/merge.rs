@@ -1,4 +1,4 @@
-use crate::{user::userdata::User, fileio::databaseio::get_db_instance, util::row::{EmptyRowLocation, RowInfo}};
+use crate::{user::userdata::User, fileio::{databaseio::get_db_instance, tableio::Table}, util::row::{EmptyRowLocation, RowInfo}};
 
 use super::diff::*;
 use std::{collections::HashMap, vec};
@@ -180,7 +180,7 @@ pub fn merge_diff_into_list(
                         result_diffs.table_diffs
                             .entry(table_create_source_diff.table_name.clone())
                             .or_insert_with(|| TableSquashDiff::new(&table_create_source_diff.table_name, &table_create_source_diff.schema))
-                            .table_create_diff = table_create_source_diff.clone();
+                            .table_create_diff = Some(table_create_source_diff.clone());
                     }
                 }
             },
@@ -203,7 +203,7 @@ pub fn merge_diff_into_list(
                         result_diffs.table_diffs
                             .entry(table_remove_source_diff.table_name.clone())
                             .or_insert_with(|| TableSquashDiff::new(&table_remove_source_diff.table_name, &table_remove_source_diff.schema))
-                            .table_remove_diff = table_remove_source_diff.clone();
+                            .table_remove_diff = Some(table_remove_source_diff.clone());
                     }
                 }
             },
@@ -211,17 +211,25 @@ pub fn merge_diff_into_list(
     }
 
     // Now the result_diffs contains all the diffs that need to be applied to the target to get the source merged in
-    let merge_diffs: Vec<Diff> = handle_merge_conflicts(&mut result_diffs, target_diffs, conflict_res_algo)?;
+    let merge_diffs = handle_merge_conflicts(&mut result_diffs, target_diffs, user, conflict_res_algo)?;
 
 
     Ok(vec![])
 }
 
+/// Handles merge conflicts by applying the conflict resolution algorithm to the diffs.
+/// Returns a tuple:
+///    - The diffs that should be applied to the target as a prerequisite to get the source merged in
+///    - The diffs that should be applied to the target to complete the merge
 pub fn handle_merge_conflicts(
     processed_source_diffs: &mut SquashDiffs,         // The source diffs to merge into the target diffs
     target_diffs: &Vec<Diff>,                         // The target diffs to merge the source diff into
+    user: &User,                                      // The user that is performing the merge (assumed to be on the target branch)
     conflict_res_algo: MergeConflictResolutionAlgo    // The merge conflict resolution algorithm to use
-) -> Result<Vec<Diff>, String> {
+) -> Result<(Vec<Diff>, Vec<Diff>), String> {
+    // Keep track of the diffs that need to be applied to the target before the source diffs can be applied
+    let mut prereq_diffs: Vec<Diff> = Vec::new();
+
     // We need to check for merge conflicts in the processed_source_diffs now for each table
     let result_keys: Vec<String> = processed_source_diffs.table_diffs.keys().cloned().collect();
     for res_table_name in result_keys {
@@ -587,29 +595,66 @@ pub fn handle_merge_conflicts(
                 _ => None,
             });
 
-        // If the target has a table created with different schema, we have a merge conflict
+        // If the target created a table
         if let Some(target_table_create_diff) = target_table_create_diff_opt {
-            if target_table_create_diff.schema != res_table_diff.table_create_diff.schema {
-                match conflict_res_algo {
-                    MergeConflictResolutionAlgo::NoConflicts => {
-                        // We don't want to handle merge conflicts, so just throw error
-                        return Err(format!("Merge Conflict: Table {} created in source, but table was also created in target with different schema", res_table_name));
-                    },
-                    MergeConflictResolutionAlgo::UseSource => {
-                        // Remove the table from the target by keeping the source's table create
-                        // TODO: remove the target table before adding the source table since they are different schemas
-                    },
-                    MergeConflictResolutionAlgo::UseTarget => {
-                        // Remove the table from the source by removing it from the res_table_diff
-                        res_table_diffs.remove(idx);
-                    },
+            // If the result diffs also created a table
+            if let Some(res_table_create_diff) = res_table_diff.table_create_diff.clone() {
+                // If they have different schema, that's a merge conflict
+                if target_table_create_diff.schema != res_table_create_diff.schema {
+                    match conflict_res_algo {
+                        MergeConflictResolutionAlgo::NoConflicts => {
+                            // We don't want to handle merge conflicts, so just throw error
+                            return Err(format!("Merge Conflict: Table {} created in source, but table was also created in target with different schema", res_table_name));
+                        },
+                        MergeConflictResolutionAlgo::UseSource => {
+                            // Remove the table from the target by keeping the source's table create
+                            // and undoing the target's table create with a prerequisite diff
+                            let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
+                            let table: Table = Table::new(&table_dir, &target_table_create_diff.table_name, None)?;
+                            let table_rows: Vec<RowInfo> = table.into_iter().collect();
+
+                            let table_remove_diff: Diff = Diff::TableRemove(TableRemoveDiff {
+                                table_name: target_table_create_diff.table_name.clone(),
+                                schema: target_table_create_diff.schema.clone(),
+                                rows_removed: table_rows,
+                            });
+
+                            prereq_diffs.push(table_remove_diff);
+                        },
+                        MergeConflictResolutionAlgo::UseTarget => {
+                            // Remove the table from the source by removing it from the res_table_diff
+                            res_table_diff.table_create_diff = None;
+                        },
+                    }
                 }
             }
         } // end target_table_create_diff
-        }
         
+
+        /********** TableRemove **********/
+        // Get the target table remove diff
+        let target_table_remove_diff_opt = target_table_diff
+            .iter()
+            .find_map(|diff| match diff {
+                Diff::TableRemove(table_remove_diff) => Some(table_remove_diff),
+                _ => None,
+            });
+
+        // If the target removed a table
+        if let Some(target_table_remove_diff) = target_table_remove_diff_opt {
+            // If the result diffs also removed a table
+            if let Some(res_table_remove_diff) = res_table_diff.table_remove_diff.clone() {
+                // If they have different schema, that's a merge conflict
+                if target_table_remove_diff.schema != res_table_remove_diff.schema {
+                    // This should NEVER EVER happen, so throw an error
+                    // That's because there are 3 scenarios where remove table can happen:
+                    // TODO: Explain the 3 scenarios
+                    return Err(format!("Merge Conflict: Table {} removed in source, but table was also removed in target with different schema", res_table_name));
+                }
+            }
+        } // end target_table_remove_diff
     }
-    Ok(vec![])
+    Ok((prereq_diffs, vec![]))
 }
 
 /// Creates a list of merge diffs that would result from merging the source diffs onto

@@ -649,10 +649,10 @@ impl Database {
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         // Get the path to the table
-        let table_path: String = self.get_table_path(table_name, user)?;
+        let table_dir: String = self.get_current_working_branch_path(user);
 
         // Get the table
-        let table: Table = Table::new(&table_path, table_name, None)?;
+        let table: Table = Table::new(&table_dir, table_name, None)?;
 
         // Get the open rows
         let mut open_rows: Vec<EmptyRowLocation> = table.get_empty_rows()?;

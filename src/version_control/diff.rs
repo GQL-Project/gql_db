@@ -67,8 +67,8 @@ pub struct TableSquashDiff {
     pub update_diff: UpdateDiff,
     pub insert_diff: InsertDiff,
     pub remove_diff: RemoveDiff,
-    pub table_create_diff: TableCreateDiff,
-    pub table_remove_diff: TableRemoveDiff,
+    pub table_create_diff: Option<TableCreateDiff>,
+    pub table_remove_diff: Option<TableRemoveDiff>,
 }
 
 /***************************************************************************************************/
@@ -548,8 +548,8 @@ impl TableSquashDiff {
             update_diff: UpdateDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
             insert_diff: InsertDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
             remove_diff: RemoveDiff { table_name: table_name.clone(), schema: schema.clone(), rows_removed: Vec::new() },
-            table_create_diff: TableCreateDiff { table_name: table_name.clone(), schema: schema.clone() },
-            table_remove_diff: TableRemoveDiff { table_name: table_name.clone(), schema: schema.clone(), rows_removed: Vec::new() },
+            table_create_diff: None,
+            table_remove_diff: None,
         }
     }
 }
