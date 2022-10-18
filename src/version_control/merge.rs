@@ -176,8 +176,6 @@ pub fn merge_diff_into_list(
                 if let Some(table_create_diff_target) = table_create_diff_target_option {
                     // If the schema aren't the same, we need to add the table_create diff to the result_diffs
                     if table_create_source_diff.schema != table_create_diff_target.schema {
-                        // TODO: Handle merge conflict here
-
                         // Add the new table creation to the result_diffs
                         result_diffs.table_diffs
                             .entry(table_create_source_diff.table_name.clone())
@@ -199,8 +197,7 @@ pub fn merge_diff_into_list(
                 if let Some(table_remove_diff_target) = table_remove_diff_target_option {
                     // If the schema aren't the same, we need to add the table_remove diff to the result_diffs
                     if table_remove_source_diff.schema != table_remove_diff_target.schema {
-                        // TODO: Handle merge conflict here
-                        // What rows should be in the table_remove diff?
+                        // TODO: What rows should be in the table_remove diff?
 
                         // Add the new table creation to the result_diffs
                         result_diffs.table_diffs
@@ -214,11 +211,404 @@ pub fn merge_diff_into_list(
     }
 
     // Now the result_diffs contains all the diffs that need to be applied to the target to get the source merged in
-
-    // We need to check for merge conflicts in the result_diffs now
-    
+    let merge_diffs: Vec<Diff> = handle_merge_conflicts(&mut result_diffs, target_diffs, conflict_res_algo)?;
 
 
+    Ok(vec![])
+}
+
+pub fn handle_merge_conflicts(
+    processed_source_diffs: &mut SquashDiffs,         // The source diffs to merge into the target diffs
+    target_diffs: &Vec<Diff>,                         // The target diffs to merge the source diff into
+    conflict_res_algo: MergeConflictResolutionAlgo    // The merge conflict resolution algorithm to use
+) -> Result<Vec<Diff>, String> {
+    // We need to check for merge conflicts in the processed_source_diffs now for each table
+    let result_keys: Vec<String> = processed_source_diffs.table_diffs.keys().cloned().collect();
+    for res_table_name in result_keys {
+        // Get the result and target diffs for the same table name
+        let res_table_diff = processed_source_diffs.table_diffs.get_mut(&res_table_name).unwrap();
+        let target_table_diff: Vec<Diff> = target_diffs
+            .iter()
+            .filter(|diff| diff.get_table_name() == res_table_name)
+            .cloned()
+            .collect();
+
+        
+        /********** Insert **********/
+        // These shouldn't really happen because we should have mapped the rows to the target
+        // But we should check for them anyway
+        let mut idx: usize = 0;
+        'result_insert_loop: while idx < res_table_diff.insert_diff.rows.len() {
+            let res_insert_row: RowInfo = res_table_diff.insert_diff.rows[idx].clone();
+            
+            // Get the target insert diff
+            let target_insert_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Insert(ins_diff) => Some(ins_diff),
+                    _ => None,
+                });
+
+            // If the target has a row inserted at the same location, we have a merge conflict
+            if let Some(target_insert_diff) = target_insert_diff_opt {
+                for target_insert_row in target_insert_diff.rows.iter() {
+                    // If Merge Conflict
+                    if res_insert_row.get_row_location() == target_insert_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, 
+                                                   but row was also inserted at the same location in the target", 
+                                                   res_insert_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Overwrite the target row with the source row by keeping the source row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.insert_diff
+                                res_table_diff.insert_diff.rows.remove(idx);
+                                // continue to next result insert row without incrementing idx because we removed an element
+                                continue 'result_insert_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_insert_diff
+
+            // Get the target update diff
+            let target_update_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Update(upd_diff) => Some(upd_diff),
+                    _ => None,
+                });
+
+            // If the target has a row updated at the same location, we have a merge conflict
+            if let Some(target_update_diff) = target_update_diff_opt {
+                for target_update_row in target_update_diff.rows.iter() {
+                    // If Merge Conflict
+                    if res_insert_row.get_row_location() == target_update_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, 
+                                                   but row was also updated at the same location in the target", 
+                                                   res_insert_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Overwrite the target row with the source row by keeping the source row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.insert_diff
+                                res_table_diff.insert_diff.rows.remove(idx);
+                                // continue to next result insert row without incrementing idx because we removed an element
+                                continue 'result_insert_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_update_diff
+
+            // Get the target remove diff
+            let target_remove_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Remove(del_diff) => Some(del_diff),
+                    _ => None,
+                });
+
+            // If the target has a row removed at the same location, we have a merge conflict
+            if let Some(target_remove_diff) = target_remove_diff_opt {
+                for target_remove_row in target_remove_diff.rows_removed.iter() {
+                    // If Merge Conflict
+                    if res_insert_row.get_row_location() == target_remove_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, 
+                                                   but row was also removed at the same location in the target", 
+                                                   res_insert_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Overwrite the target row with the source row by keeping the source row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.insert_diff
+                                res_table_diff.insert_diff.rows.remove(idx);
+                                // continue to next result insert row without incrementing idx because we removed an element
+                                continue 'result_insert_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_remove_diff
+
+            idx += 1;
+        } // end of result insert loop
+
+        
+        /********** Update **********/
+        let mut idx: usize = 0;
+        'result_update_loop: while idx < res_table_diff.update_diff.rows.len() {
+            let res_update_row: RowInfo = res_table_diff.update_diff.rows[idx].clone();
+            
+            // Get the target insert diff
+            let target_insert_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Insert(ins_diff) => Some(ins_diff),
+                    _ => None,
+                });
+
+            // If the target has a row inserted at the same location, we have a merge conflict
+            if let Some(target_insert_diff) = target_insert_diff_opt {
+                for target_insert_row in target_insert_diff.rows.iter() {
+                    // If Merge Conflict
+                    if res_update_row.get_row_location() == target_insert_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, 
+                                                   but row was also inserted at the same location in the target", 
+                                                   res_update_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Overwrite the target row with the source row by keeping the source row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.update_diff
+                                res_table_diff.update_diff.rows.remove(idx);
+                                // continue to next result update row without incrementing idx because we removed an element
+                                continue 'result_update_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_insert_diff
+
+            // Get the target update diff
+            let target_update_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Update(upd_diff) => Some(upd_diff),
+                    _ => None,
+                });
+
+            // If the target has a row updated at the same location, we have a merge conflict
+            if let Some(target_update_diff) = target_update_diff_opt {
+                for target_update_row in target_update_diff.rows.iter() {
+                    // If Merge Conflict
+                    if res_update_row.get_row_location() == target_update_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, 
+                                                   but row was also updated at the same location in the target", 
+                                                   res_update_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Overwrite the target row with the source row by keeping the source row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.update_diff
+                                res_table_diff.update_diff.rows.remove(idx);
+                                // continue to next result update row without incrementing idx because we removed an element
+                                continue 'result_update_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_update_diff
+
+            // Get the target remove diff
+            let target_remove_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Remove(del_diff) => Some(del_diff),
+                    _ => None,
+                });
+
+            // If the target has a row removed at the same location, we have a merge conflict
+            if let Some(target_remove_diff) = target_remove_diff_opt {
+                for target_remove_row in target_remove_diff.rows_removed.iter() {
+                    // If Merge Conflict
+                    if res_update_row.get_row_location() == target_remove_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, 
+                                                   but row was also removed at the same location in the target", 
+                                                   res_update_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Overwrite the target row with the source row by keeping the source row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.update_diff
+                                res_table_diff.update_diff.rows.remove(idx);
+                                // continue to next result update row without incrementing idx because we removed an element
+                                continue 'result_update_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_remove_diff
+
+            idx += 1;
+        } // end of result update loop
+
+
+        /********** Remove **********/
+        let mut idx: usize = 0;
+        'result_remove_loop: while idx < res_table_diff.remove_diff.rows_removed.len() {
+            let res_remove_row: RowInfo = res_table_diff.remove_diff.rows_removed[idx].clone();
+            
+            // Get the target insert diff
+            let target_insert_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Insert(ins_diff) => Some(ins_diff),
+                    _ => None,
+                });
+
+            // If the target has a row inserted at the same location, we have a merge conflict
+            if let Some(target_insert_diff) = target_insert_diff_opt {
+                for target_insert_row in target_insert_diff.rows.iter() {
+                    // If Merge Conflict
+                    if res_remove_row.get_row_location() == target_insert_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, 
+                                                   but row was also inserted at the same location in the target", 
+                                                   res_remove_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Remove the row from the target by keeping the source's remove row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.remove_diff
+                                res_table_diff.remove_diff.rows_removed.remove(idx);
+                                // continue to next result remove row without incrementing idx because we removed an element
+                                continue 'result_remove_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_insert_diff
+
+            // Get the target update diff
+            let target_update_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Update(upd_diff) => Some(upd_diff),
+                    _ => None,
+                });
+
+            // If the target has a row updated at the same location, we have a merge conflict
+            if let Some(target_update_diff) = target_update_diff_opt {
+                for target_update_row in target_update_diff.rows.iter() {
+                    // If Merge Conflict
+                    if res_remove_row.get_row_location() == target_update_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, 
+                                                   but row was also updated at the same location in the target", 
+                                                   res_remove_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Remove the row from the target by keeping the source's remove row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.remove_diff
+                                res_table_diff.remove_diff.rows_removed.remove(idx);
+                                // continue to next result remove row without incrementing idx because we removed an element
+                                continue 'result_remove_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_update_diff
+
+            // Get the target remove diff
+            let target_remove_diff_opt = target_table_diff
+                .iter()
+                .find_map(|diff| match diff {
+                    Diff::Remove(del_diff) => Some(del_diff),
+                    _ => None,
+                });
+
+            // If the target has a row removed at the same location, we have a merge conflict
+            if let Some(target_remove_diff) = target_remove_diff_opt {
+                for target_remove_row in target_remove_diff.rows_removed.iter() {
+                    // If Merge Conflict
+                    if res_remove_row.get_row_location() == target_remove_row.get_row_location() {
+                        match conflict_res_algo {
+                            MergeConflictResolutionAlgo::NoConflicts => {
+                                // We don't want to handle merge conflicts, so just throw error
+                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, 
+                                                   but row was also removed at the same location in the target", 
+                                                   res_remove_row.get_row_location(),
+                                                   res_table_name));
+                            },
+                            MergeConflictResolutionAlgo::UseSource => {
+                                // Remove the row from the target by keeping the source's remove row
+                            },
+                            MergeConflictResolutionAlgo::UseTarget => {
+                                // Remove the row from the source by removing it from the res_table_diff.remove_diff
+                                res_table_diff.remove_diff.rows_removed.remove(idx);
+                                // continue to next result remove row without incrementing idx because we removed an element
+                                continue 'result_remove_loop;
+                            },
+                        }
+                    }
+                }
+            } // end target_remove_diff
+
+            idx += 1;
+        } // end result_remove_loop
+
+
+        /********** TableCreate **********/
+        // Get the target table create diff
+        let target_table_create_diff_opt = target_table_diff
+            .iter()
+            .find_map(|diff| match diff {
+                Diff::TableCreate(table_create_diff) => Some(table_create_diff),
+                _ => None,
+            });
+
+        // If the target has a table created with different schema, we have a merge conflict
+        if let Some(target_table_create_diff) = target_table_create_diff_opt {
+            if target_table_create_diff.schema != res_table_diff.table_create_diff.schema {
+                match conflict_res_algo {
+                    MergeConflictResolutionAlgo::NoConflicts => {
+                        // We don't want to handle merge conflicts, so just throw error
+                        return Err(format!("Merge Conflict: Table {} created in source, but table was also created in target with different schema", res_table_name));
+                    },
+                    MergeConflictResolutionAlgo::UseSource => {
+                        // Remove the table from the target by keeping the source's table create
+                        // TODO: remove the target table before adding the source table since they are different schemas
+                    },
+                    MergeConflictResolutionAlgo::UseTarget => {
+                        // Remove the table from the source by removing it from the res_table_diff
+                        res_table_diffs.remove(idx);
+                    },
+                }
+            }
+        } // end target_table_create_diff
+        }
+        
+    }
     Ok(vec![])
 }
 
