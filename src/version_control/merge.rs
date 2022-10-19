@@ -923,7 +923,7 @@ mod tests {
     use crate::{
         fileio::{
             databaseio::{create_db_instance, delete_db_instance, get_db_instance, MAIN_BRANCH_NAME},
-            header::Schema, tableio::create_table_in_dir,
+            header::Schema, tableio::{create_table_in_dir, delete_table_in_dir},
         },
         util::{dbtype::*, row::Row},
         version_control::diff::Diff, 
@@ -1724,17 +1724,293 @@ mod tests {
         delete_test_db();
     }
 
-    // Sets up the database and creates 2 tables on the main branch for first commit,
-    // and inserts some rows into each of them.
-    // Also creates a branch off of the first commit on the main branch.
-    // Returns the a tuple:
-    //   - The user
-    //   - The source branch
-    //   - The target branch
-    //   - The source branch directory
-    //   - The target branch directory
-    //   - The name of the first table
-    //   - The name of the second table
+    #[test]
+    #[serial]
+    fn test_simple_table_remove_merge() {
+        // Tests removing rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Remove a table from the source branch
+        let src_table2: Table =
+            Table::new(&src_branch_dir, &table_name2, None).unwrap();
+        let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name2, &src_branch_dir).unwrap();
+        src_diffs.push(Diff::TableRemove(table_remove_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name2);
+        if let Diff::TableRemove(table_remove_diff) = &merge_diffs[0] {
+            assert_eq!(table_remove_diff.table_name, table_name2);
+            assert_eq!(table_remove_diff.schema, src_table2.schema);
+            // Assert that the table remove diff has the correct rows
+            assert_rows_are_correct(
+                table_remove_diff.rows_removed.iter().map(|row| row.row.clone()).collect(),
+                vec![
+                    vec![Value::I32(100), Value::String("First".to_string()), Value::I32(1)],
+                    vec![Value::I32(200), Value::String("Second".to_string()), Value::I32(2)],
+                    vec![Value::I32(300), Value::String("Third".to_string()), Value::I32(3)],
+                    vec![Value::I32(400), Value::String("Fourth".to_string()), Value::I32(4)],
+                    vec![Value::I32(500), Value::String("Fifth".to_string()), Value::I32(5)],
+                    vec![Value::I32(600), Value::String("Sixth".to_string()), Value::I32(6)],
+                ]
+            );
+        } else {
+            panic!("Expected table remove diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_complex_table_remove_merge() {
+        // Tests removing rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Remove a table from the source branch
+        let src_table2: Table =
+            Table::new(&src_branch_dir, &table_name2, None).unwrap();
+        let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name2, &src_branch_dir).unwrap();
+        src_diffs.push(Diff::TableRemove(table_remove_diff));
+
+        // Remove another table from the source branch
+        let src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name1, &src_branch_dir).unwrap();
+        src_diffs.push(Diff::TableRemove(table_remove_diff));
+
+        // Remove a table from the target branch
+        let target_table2: Table =
+            Table::new(&target_branch_dir, &table_name2, None).unwrap();
+        let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name2, &target_branch_dir).unwrap();
+        target_diffs.push(Diff::TableRemove(table_remove_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::TableRemove(table_remove_diff) = &merge_diffs[0] {
+            assert_eq!(table_remove_diff.table_name, table_name1);
+            assert_eq!(table_remove_diff.schema, src_table1.schema);
+            // Assert that the table remove diff has the correct rows
+            assert_rows_are_correct(
+                table_remove_diff.rows_removed.iter().map(|row| row.row.clone()).collect(),
+                vec![
+                    vec![Value::I32(100), Value::String("First".to_string())],
+                    vec![Value::I32(200), Value::String("Second".to_string())],
+                    vec![Value::I32(300), Value::String("Third".to_string())],
+                ]
+            );
+        } else {
+            panic!("Expected table remove diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_inserts_updates_and_removes_merge() {
+        // Tests inserting, updating, and removing rows in both the source branch and target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Insert a row into the source branch
+        let mut src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let insert_diff: InsertDiff = src_table1.insert_rows(
+            vec![
+                vec![Value::I32(400), Value::String("NewRowSrc".to_string())],
+            ]
+        ).unwrap();
+        src_diffs.push(Diff::Insert(insert_diff));
+
+        // Update a row in the source branch
+        let update_diff: UpdateDiff = src_table1.rewrite_rows(
+            vec![
+                RowInfo { 
+                    pagenum: 1,
+                    rownum: 0,
+                    row: vec![Value::I32(150), Value::String("FirstUpdatedSrc".to_string())]
+                },
+            ]
+        ).unwrap();
+        src_diffs.push(Diff::Update(update_diff));
+
+        // Remove a row from the source branch
+        let remove_diff: RemoveDiff = src_table1.remove_rows(
+            vec![
+                RowLocation { 
+                    pagenum: 1,
+                    rownum: 1,
+                },
+            ]
+        ).unwrap();
+        src_diffs.push(Diff::Remove(remove_diff));
+
+        // Remove the second table from the source branch
+        let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name2, &src_branch_dir).unwrap();
+        src_diffs.push(Diff::TableRemove(table_remove_diff));
+
+        // Insert a row into the target branch
+        let mut target_table1: Table =
+            Table::new(&target_branch_dir, &table_name1, None).unwrap();
+        let insert_diff: InsertDiff = target_table1.insert_rows(
+            vec![
+                vec![Value::I32(400), Value::String("NewRowTarget".to_string())],
+            ]
+        ).unwrap();
+        target_diffs.push(Diff::Insert(insert_diff));
+
+        // Update a row in the target branch
+        let update_diff: UpdateDiff = target_table1.rewrite_rows(
+            vec![
+                RowInfo { 
+                    pagenum: 1,
+                    rownum: 2,
+                    row: vec![Value::I32(100), Value::String("ThirdUpdatedSrc".to_string())]
+                },
+            ]
+        ).unwrap();
+        target_diffs.push(Diff::Update(update_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 4);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Insert(insert_diff) = &merge_diffs[0] {
+            assert_eq!(insert_diff.table_name, table_name1);
+            assert_eq!(insert_diff.schema, src_table1.schema);
+            assert_eq!(insert_diff.rows.len(), 1);
+            assert_eq!(insert_diff.rows[0].row[0], Value::I32(400));
+            assert_eq!(insert_diff.rows[0].row[1], Value::String("NewRowSrc".to_string()));
+        } else {
+            panic!("Expected insert diff");
+        }
+        assert_eq!(merge_diffs[1].get_table_name(), table_name1);
+        if let Diff::Update(update_diff) = &merge_diffs[1] {
+            assert_eq!(update_diff.table_name, table_name1);
+            assert_eq!(update_diff.schema, src_table1.schema);
+            assert_eq!(update_diff.rows.len(), 1);
+            assert_eq!(update_diff.rows[0].row[0], Value::I32(150));
+            assert_eq!(update_diff.rows[0].row[1], Value::String("FirstUpdatedSrc".to_string()));
+        } else {
+            panic!("Expected update diff");
+        }
+        assert_eq!(merge_diffs[2].get_table_name(), table_name1);
+        if let Diff::Remove(remove_diff) = &merge_diffs[2] {
+            assert_eq!(remove_diff.table_name, table_name1);
+            assert_eq!(remove_diff.schema, src_table1.schema);
+            assert_eq!(remove_diff.rows.len(), 1);
+            assert_eq!(remove_diff.rows[0].row[0], Value::I32(200));
+            assert_eq!(remove_diff.rows[0].row[1], Value::String("Second".to_string()));
+        } else {
+            panic!("Expected remove diff");
+        }
+        assert_eq!(merge_diffs[3].get_table_name(), table_name2);
+        if let Diff::TableRemove(table_remove_diff) = &merge_diffs[3] {
+            assert_eq!(table_remove_diff.table_name, table_name2);
+        } else {
+            panic!("Expected table remove diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    /// Asserts that the given rows are correct.
+    fn assert_rows_are_correct(rows: Vec<Row>, expected_rows: Vec<Row>) {
+        // Assert we have the correct number of rows
+        assert_eq!(rows.len(), expected_rows.len());
+        for i in 0..rows.len() {
+            // Assert each row is correct
+            assert_row_is_correct(&rows[i], expected_rows[i].clone());
+        }
+    }
+
+    /// Asserts that a single row is correct by matching it to the expected row.
+    fn assert_row_is_correct(row: &Row, expected_row: Row) {
+        // Assert that the row has the correct number of values
+        assert_eq!(row.len(), expected_row.len());
+        for i in 0..row.len() {
+            // Assert the values are correct
+            assert_eq!(row[i], expected_row[i]);
+        }
+    }
+
+    /// Sets up the test database and creates 2 tables on the main branch for first commit,
+    /// and inserts some rows into each of them.
+    /// Also creates a branch off of the first commit on the main branch.
+    /// Returns the a tuple:
+    ///   - The user
+    ///   - The source branch
+    ///   - The target branch
+    ///   - The source branch directory
+    ///   - The target branch directory
+    ///   - The name of the first table
+    ///   - The name of the second table
     fn setup_test_db() -> (User, String, String, String, String, String, String) {
         // delete database if it already exists
         let path = std::env::current_exe().unwrap();
@@ -1841,7 +2117,7 @@ mod tests {
         (user, branch_name, MAIN_BRANCH_NAME.to_string(), new_branch_dir, main_branch_dir, table_name_1, table_name_2)
     }
 
-    // Cleans up the database
+    /// Cleans up the test database
     fn delete_test_db() {
         delete_db_instance().unwrap();
     }
