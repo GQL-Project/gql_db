@@ -226,12 +226,12 @@ mod tests {
 
         // Assert that the result is correct
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0][0], commit.hash);
-        assert_eq!(result[0][1], commit.timestamp);
-        assert_eq!(result[0][2], commit.message);
-        assert_eq!(result[1][0], second_commit.hash);
-        assert_eq!(result[1][1], second_commit.timestamp);
-        assert_eq!(result[1][2], second_commit.message);
+        assert_eq!(result[1][0], commit.hash);
+        assert_eq!(result[1][1], commit.timestamp);
+        assert_eq!(result[1][2], commit.message);
+        assert_eq!(result[0][0], second_commit.hash);
+        assert_eq!(result[0][1], second_commit.timestamp);
+        assert_eq!(result[0][2], second_commit.message);
 
         // Delete the database
         delete_db_instance().unwrap();
