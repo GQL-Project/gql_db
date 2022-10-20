@@ -17,7 +17,21 @@ pub struct BranchNode {
     pub prev_rownum: i32, // The row number of the previous branch node. Will be -1 if this is the first node.
     pub curr_pagenum: i32, // The page number of the current branch node.
     pub curr_rownum: i32, // The row number of the current branch node.
-    pub is_head: bool,    // Whether or not this node is the head of the branch.
+    pub num_kids: i32,    // The number of children this branch node has. (0 if it is the last node in the list)
+}
+
+impl BranchNode {
+    pub fn increment_kids(&mut self) {
+        self.num_kids += 1;
+    }
+
+    pub fn decrement_kids(&mut self) {
+        self.num_kids -= 1;
+    }
+
+    pub fn is_head(&self) -> bool {
+        self.num_kids == 0
+    }
 }
 
 /// This is designed to represent the branches.gql file for a database.
@@ -55,8 +69,8 @@ impl BranchNode {
             Some(Value::I32(i)) => *i,
             _ => return Err("Invalid row number".to_string()),
         };
-        let is_head: bool = match row.get(6) {
-            Some(Value::Bool(i)) => *i,
+        let num_kids = match row.get(6) {
+            Some(Value::I32(i)) => *i,
             _ => return Err("Invalid is_head value".to_string()),
         };
 
@@ -67,7 +81,7 @@ impl BranchNode {
             prev_rownum,
             curr_pagenum,
             curr_rownum,
-            is_head,
+            num_kids,
         })
     }
 }
@@ -105,7 +119,7 @@ impl Branches {
                 ("prev_row_num".to_string(), Column::I32),
                 ("curr_page_num".to_string(), Column::I32),
                 ("curr_row_num".to_string(), Column::I32),
-                ("is_head".to_string(), Column::Bool),
+                ("num_kids".to_string(), Column::I32),
             ];
             let header = Header {
                 num_pages: 2,
@@ -187,13 +201,13 @@ impl Branches {
         // Determine if we are creating the first commit on the database, or if this commit is on an existing branch
         let mut prev_pagenum: i32 = -1; // Default value for first commit
         let mut prev_rownum: i32 = -1; // Default value for first commit
-        let mut prev_is_head: bool = true; // Default value for first commit
+        let mut prev_num_kids: i32 = -1; // Default value for first commit
         let mut prev_branch_name: String = "".to_string(); // Default value for first commit
         match prev_node {
             Some(prev_node_values) => {
                 prev_pagenum = prev_node_values.curr_pagenum;
                 prev_rownum = prev_node_values.curr_rownum;
-                prev_is_head = prev_node_values.is_head;
+                prev_num_kids = prev_node_values.num_kids;
                 prev_branch_name = prev_node_values.branch_name.clone();
             }
             None => { /* Do nothing */ }
@@ -207,7 +221,7 @@ impl Branches {
         new_node.push(Value::I32(prev_rownum));
         new_node.push(Value::I32(-1)); // Default value until after we write the row to the table
         new_node.push(Value::I32(-1)); // Default value until after we write the row to the table
-        new_node.push(Value::Bool(false));
+        new_node.push(Value::I32(0));
 
         // Insert the new branch node
         let insert_diff: InsertDiff = self.branches_table.insert_rows(vec![new_node])?;
@@ -216,11 +230,10 @@ impl Branches {
         match insert_diff.rows.get(0) {
             Some(row) => {
                 // This determines if we are going to update the is_head value of this branch node
-                let mut set_is_head: bool = false;
                 let mut rows_to_rewrite: Vec<RowInfo> = Vec::new();
 
                 // If the previous node was the head, set the new node to be the head only if the branch names match
-                if prev_is_head && prev_branch_name == branch_name.clone() {
+                if prev_num_kids == 0 && prev_branch_name == branch_name.clone() {
                     // Set the new node to be the head using the location where the new node was inserted
                     branch_heads_table.set_branch_head(
                         branch_name,
@@ -229,15 +242,13 @@ impl Branches {
                             rownum: row.rownum,
                         },
                     )?;
-                    set_is_head = true;
-
                     // We need to update the previous node to no longer be the head in the table
                     let prev_row_location: RowLocation = RowLocation {
                         pagenum: prev_pagenum as u32,
                         rownum: prev_rownum as u16,
                     };
                     let mut prev_row: Row = self.branches_table.get_row(&prev_row_location)?;
-                    prev_row[6] = Value::Bool(false);
+                    prev_row[6] = Value::I32(prev_num_kids + 1);
                     let prev_row_info: RowInfo = RowInfo {
                         pagenum: prev_row_location.pagenum as u32,
                         rownum: prev_row_location.rownum as u16,
@@ -256,25 +267,25 @@ impl Branches {
                         pagenum: row.pagenum as i32,
                         rownum: row.rownum as i32,
                     })?;
-                    set_is_head = true;
+                } else {
+                    return Err("Branch is not a HEAD branch".to_string())
                 }
 
                 // Write the updated values to the table
                 let mut new_row: RowInfo = row.clone();
                 new_row.row[4] = Value::I32(row.pagenum as i32); // curr_pagenum column
                 new_row.row[5] = Value::I32(row.rownum as i32); // curr_rownum column
-                new_row.row[6] = Value::Bool(set_is_head); // is_head column
                 rows_to_rewrite.push(new_row);
                 self.branches_table.rewrite_rows(rows_to_rewrite)?;
 
                 let node: BranchNode = BranchNode {
                     branch_name: branch_name.clone(),
                     commit_hash: commit_hash.clone(),
-                    prev_pagenum: prev_pagenum,
+                    prev_pagenum,
                     prev_rownum: prev_rownum,
                     curr_pagenum: row.pagenum as i32,
                     curr_rownum: row.rownum as i32,
-                    is_head: set_is_head,
+                    num_kids: 0,
                 };
                 Ok(node)
             }
@@ -292,7 +303,7 @@ impl Branches {
         new_node.push(Value::I32(node.prev_rownum));
         new_node.push(Value::I32(node.curr_pagenum));
         new_node.push(Value::I32(node.curr_rownum));
-        new_node.push(Value::Bool(node.is_head));
+        new_node.push(Value::I32(node.num_kids));
 
         // Insert the new branch node
         let update_diff: UpdateDiff = self.branches_table.rewrite_rows(vec![RowInfo {
@@ -332,7 +343,7 @@ mod tests {
         assert_eq!(branch_node.commit_hash, commit_hash);
         assert_eq!(branch_node.prev_pagenum, -1);
         assert_eq!(branch_node.prev_rownum, -1);
-        assert_eq!(branch_node.is_head, true);
+        assert_eq!(branch_node.is_head(), true);
 
         // Delete the test files
         std::fs::remove_file(branches_file.filepath()).unwrap();
@@ -357,7 +368,7 @@ mod tests {
         assert_eq!(branch_node.commit_hash, commit_hash1);
         assert_eq!(branch_node.prev_pagenum, -1);
         assert_eq!(branch_node.prev_rownum, -1);
-        assert_eq!(branch_node.is_head, true);
+        assert_eq!(branch_node.is_head(), true);
 
         // Create a second branch node
         let commit_hash2: String = "23456789012345678901234567890123".to_string();
@@ -378,7 +389,7 @@ mod tests {
         assert_eq!(branch_node2.commit_hash, commit_hash2);
         assert_eq!(branch_node2.prev_pagenum, 1);
         assert_eq!(branch_node2.prev_rownum, 0);
-        assert_eq!(branch_node2.is_head, true);
+        assert_eq!(branch_node2.is_head(), true);
 
         // Verify that you can access first branch node from the second
         let branch_node3: BranchNode = branches_file
@@ -389,7 +400,7 @@ mod tests {
         assert_eq!(branch_node3.commit_hash, commit_hash1);
         assert_eq!(branch_node3.prev_pagenum, -1);
         assert_eq!(branch_node3.prev_rownum, -1);
-        assert_eq!(branch_node3.is_head, false);
+        assert_eq!(branch_node3.is_head(), false);
 
         // Delete the test files
         std::fs::remove_file(branches_file.filepath()).unwrap();
@@ -413,7 +424,7 @@ mod tests {
         assert_eq!(branch_node.commit_hash, commit_hash1);
         assert_eq!(branch_node.prev_pagenum, -1);
         assert_eq!(branch_node.prev_rownum, -1);
-        assert_eq!(branch_node.is_head, true);
+        assert_eq!(branch_node.is_head(), true);
 
         // Delete the test files
         std::fs::remove_file(branches_file.filepath()).unwrap();
