@@ -298,7 +298,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, 
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source,
                                                    but row was also inserted at the same location in the target", 
                                                    res_insert_row.get_row_location(),
                                                    res_table_name));
@@ -1974,6 +1974,73 @@ mod tests {
             assert_eq!(table_remove_diff.table_name, table_name2);
         } else {
             panic!("Expected table remove diff");
+        }
+
+        // Clean up the database
+        delete_test_db();
+    }
+
+    #[test]
+    #[serial]
+    fn test_many_inserts_merge() {
+        // Tests inserting rows into both the source branch and the target branch then merging them into the target branch
+
+        // Create the database
+        let (mut user, 
+            src_branch, 
+            target_branch, 
+            src_branch_dir, 
+            target_branch_dir,
+            table_name1,
+            table_name2
+        ) = setup_test_db();
+
+        // Create a vector for the source and target diffs
+        let mut src_diffs: Vec<Diff> = Vec::new();
+        let mut target_diffs: Vec<Diff> = Vec::new();
+
+        // Insert rows into the source branch
+        let src_row: Row = vec![Value::I32(1), Value::String("John".to_string())];
+        let mut src_rows: Vec<Row> = Vec::new();
+        for _ in 0..500 {
+            src_rows.push(src_row.clone());
+        }
+        let mut src_table1: Table =
+            Table::new(&src_branch_dir, &table_name1, None).unwrap();
+        let src_insert_diff: InsertDiff = src_table1.insert_rows(src_rows).unwrap();
+        src_diffs.push(Diff::Insert(src_insert_diff));
+
+        // Insert rows into the target branch
+        let target_row: Row = vec![Value::I32(2), Value::String("Jane".to_string())];
+        let mut target_rows: Vec<Row> = Vec::new();
+        for _ in 0..300 {
+            target_rows.push(target_row.clone());
+        }
+        let mut target_table1: Table =
+            Table::new(&target_branch_dir, &table_name1, None).unwrap();
+        let target_insert_diff: InsertDiff = target_table1.insert_rows(target_rows).unwrap();
+        target_diffs.push(Diff::Insert(target_insert_diff));
+
+        // Merge the source branch's diffs into the target branch's diffs
+        let merge_diffs: Vec<Diff> = create_merge_diffs(
+            &src_diffs, 
+            &target_diffs, 
+            &target_branch_dir,
+            MergeConflictResolutionAlgo::NoConflicts
+        ).unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
+        if let Diff::Insert(insert_diff) = &merge_diffs[0] {
+            assert_eq!(insert_diff.rows.len(), 500);
+            for i in 0..500 {
+                assert_eq!(insert_diff.rows[i].row.len(), 2);
+                assert_eq!(insert_diff.rows[i].row[0], Value::I32(1));
+                assert_eq!(insert_diff.rows[i].row[1], Value::String("John".to_string()));
+            }
+        } else {
+            panic!("Expected insert diff");
         }
 
         // Clean up the database

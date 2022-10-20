@@ -662,11 +662,11 @@ impl Database {
             // Get the number of rows we can fit in the new page
             let max_rows_in_page: usize = PAGE_SIZE / schema_size(&table.schema);
 
+            // get the first new page in the table
+            let mut last_page: u32 = table.max_pages;
+
             // We need to add more pages to the table for new rows
             while num_of_rows_found < num_of_open_rows {
-                // get the first new page in the table
-                let last_page: u32 = table.max_pages;
-
                 // Add the open rows in the page to the open rows vector
                 open_rows.push(EmptyRowLocation {
                     location: RowLocation {
@@ -678,6 +678,7 @@ impl Database {
 
                 // Update the number of rows found by the number of rows in the new page
                 num_of_rows_found += max_rows_in_page;
+                last_page += 1;
             }
         }
 

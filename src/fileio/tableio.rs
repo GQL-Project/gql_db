@@ -259,6 +259,13 @@ impl Table {
                     // Allocate a new page
                     page = Box::new([0; 4096]);
                     self.max_pages += 1;
+
+                    // Update the header
+                    let new_header: Header = Header {
+                        num_pages: self.max_pages,
+                        schema: self.schema.clone(),
+                    };
+                    write_header(&self.path, &new_header)?;
                 }
                 rownum_inserted = insert_row(&self.schema, page.as_mut(), &row)?;
             }
@@ -303,6 +310,13 @@ impl Table {
                 let new_page = Box::new([0; 4096]);
                 self.max_pages += 1;
                 write_page(self.max_pages - 1, &self.path, new_page.as_ref())?;
+
+                // Update the header
+                let new_header: Header = Header {
+                    num_pages: self.max_pages,
+                    schema: self.schema.clone(),
+                };
+                write_header(&self.path, &new_header)?;
             }
             // Read in the page
             page = read_page(rowinfo.pagenum, &self.path)?;
