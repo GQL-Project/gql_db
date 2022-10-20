@@ -1,6 +1,6 @@
-use crate::fileio::databaseio::get_db_instance;
+use crate::fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME};
 use crate::user::userdata::User;
-use crate::version_control::log;
+use crate::version_control::*;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -163,6 +163,53 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid VC Command".to_string());
             }
             return Ok("Valid Status Command".to_string());
+        }
+        "del" => {
+            // GQL del branch or GQL del -f branch 
+            if (vec.len() != 3 && vec[2] != "-f") ||
+                    (vec.len() > 4) || 
+                        (vec.len() == 3 && vec[3] != "-f") {
+                // error message here
+                return Err("Invalid VC Command".to_string());
+            }
+
+            let mut branch_exist = false;
+            let mut flag = false;
+            let mut branch_name = String::new();
+            if vec[2] == "-f" {
+                flag = true;
+                branch_name = vec[3].to_string();
+                branch_exist = get_db_instance()?.get_branch_heads_file_mut().does_branch_exist(branch_name.clone())?;
+            }
+            else {
+                flag = false;
+                branch_name = vec[2].to_string();
+                branch_exist = get_db_instance()?.get_branch_heads_file_mut().does_branch_exist(branch_name.clone())?;
+            }
+            
+            if !branch_exist {
+                return Err("Branch does not exist".to_string());
+            }
+
+            // Check if the branch is the current branch. If so, return an error
+            // user.get_current_branch() is the name
+            if user.get_current_branch_name() == branch_name {
+                return Err("Cannot delete the current branch".to_string());
+            }
+
+            // Check if the branch is the master branch. If so, return an error
+            // MAIN_BRANCH_NAME is the name of the master branch
+            if branch_name == MAIN_BRANCH_NAME {
+                return Err("Cannot delete the master branch".to_string());
+            }
+
+            let del_results = del_branch::del_branch(user, &branch_name.clone(), flag)?;
+
+            if del_results.starts_with("ERROR") {
+                return Err(del_results.to_string());
+            }
+            
+            return Ok(del_results.to_string());
         }
         _ => {
             // error message here

@@ -6,3 +6,4 @@ pub mod commit;
 pub mod commitfile;
 pub mod diff;
 pub mod log;
+pub mod del_branch;
