@@ -358,6 +358,16 @@ impl CommitFile {
         Ok(())
     }
 
+    pub fn get_hashes(&self) -> Result<Vec<String>, String> {
+        let mut hashes: Vec<String> = Vec::new();
+        for row in self.header_table.clone().into_iter() {
+            if let Some(Value::String(hash)) = row.row.get(0) {
+                hashes.push(hash.clone());
+            }
+        }
+        Ok(hashes)
+    }
+
     pub fn squash_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
@@ -377,7 +387,7 @@ impl CommitFile {
         for commit in commits {
             let mut diffs = commit.diffs.clone();
             diffs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal));
-            for diff in &commit.diffs {
+            for diff in &diffs {
                 match diff {
                     Diff::Update(update) => {
                         let mut newrows = update.rows.clone();
@@ -643,72 +653,12 @@ impl CommitFile {
                 }
             }
         }
+
         let diffs: Vec<Diff> = map
             .into_values()
             .map(|y| y.into_values())
             .flatten()
             .filter(|x| !x.is_empty())
-            .collect();
-        self.create_commit(msg, cmd, diffs)
-    }
-
-    pub fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
-        if commits.len() == 0 {
-            return Err("No commits to combine".to_string());
-        }
-        let msg = format!("Combined {} commits", commits.len());
-        let cmd = format!(
-            "GQL squash {} {}",
-            commits[0].hash,
-            commits[commits.len() - 1].hash
-        );
-        // Create a map of table names to a map of "Diff Type" to diff
-        // TODO: It might be better to sort the rows in a diff by pagenum and rownum
-        // We'd be able to do much quicker merges
-        let mut map: HashMap<String, HashMap<i32, Diff>> = HashMap::new();
-        for commit in commits {
-            for diff in &commit.diffs {
-                match diff {
-                    Diff::Update(_) | Diff::Insert(_) | Diff::Remove(_) => {
-                        let table_name = diff.get_table_name();
-                        let diff_type = diff.get_type();
-                        if let Some(existing) = get_diff(&map, &table_name, diff_type) {
-                            let curr_rows = diff.get_rows()?;
-                            let schema = diff.get_schema();
-                            // Merge the diffs together, removing any rows that are in the new update
-                            let rows = existing
-                                .get_rows()?
-                                .iter()
-                                .chain(curr_rows.iter())
-                                .cloned()
-                                .collect::<Vec<RowInfo>>();
-                            // Update the update diff with the new rows
-                            add_diff(
-                                &mut map,
-                                Diff::Update(UpdateDiff {
-                                    table_name: table_name.clone(),
-                                    schema,
-                                    rows,
-                                }),
-                                table_name.clone(),
-                            );
-                        } else {
-                            add_diff(&mut map, diff.clone(), table_name);
-                        }
-                    }
-                    Diff::TableCreate(create) => {
-                        add_diff(&mut map, diff.clone(), create.table_name.clone());
-                    }
-                    Diff::TableRemove(remove) => {
-                        add_diff(&mut map, diff.clone(), remove.table_name.clone());
-                    }
-                }
-            }
-        }
-        let diffs: Vec<Diff> = map
-            .into_values()
-            .map(|y| y.into_values())
-            .flatten()
             .collect();
         self.create_commit(msg, cmd, diffs)
     }

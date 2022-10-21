@@ -53,7 +53,7 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
 /// from the same branch.
 /// Squashes are only permitted when no other branches use the
 /// commits in a squash
-pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, String> {
+pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
     let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
     let head_mngr = get_db_instance()?.get_branch_heads_file_mut();
@@ -72,7 +72,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
     let mut commit_hashes: Vec<String> = Vec::new();
 
     while let Some(node) = current {
-        if node.commit_hash == hash2 {
+        if node.commit_hash == *hash2 {
             save_last = Some(node.clone());
             current = Some(node.clone());
             while current != None {
@@ -84,7 +84,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
                         node.commit_hash
                     ));
                 }
-                if node.commit_hash == hash1 {
+                if node.commit_hash == *hash1 {
                     save_first = Some(node.clone());
                     break;
                 }
@@ -104,6 +104,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
     let commits = commit_hashes
         .into_iter()
         .map(|hash| get_db_instance()?.get_commit_file_mut().fetch_commit(&hash))
+        .rev()
         .collect::<Result<Vec<Commit>, String>>()?;
 
     let squash_commit = get_db_instance()?
@@ -135,7 +136,7 @@ mod tests {
             databaseio::{create_db_instance, delete_db_instance},
             header::Schema,
         },
-        util::dbtype::*,
+        util::{bench::create_demo_db, dbtype::*},
         version_control::{commit::Commit, diff::Diff},
     };
 
@@ -293,6 +294,66 @@ mod tests {
         assert_eq!(result[1][2], second_commit.message);
 
         // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_valid_squash() {
+        let user = create_demo_db("squash_valid");
+        let hashes = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .get_hashes()
+            .unwrap();
+
+        // Commits 0 - 3 should be squashable
+        let result = squash(&hashes[0], &hashes[2], &user).unwrap();
+        // After sqaushing this, all the updates and removes should be gone
+        for diff in result.diffs {
+            match diff {
+                Diff::Update(_) => panic!("Update diff should not exist"),
+                Diff::Remove(_) => panic!("Remove diff should not exist"),
+                Diff::TableRemove(_) => panic!("TableRemoveDiff should not exist"),
+                _ => (),
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_squash_shared() {
+        let mut user = create_demo_db("squash_invalid_shared");
+        let hashes = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .get_hashes()
+            .unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"test_branch1".to_string(), &mut user)
+            .unwrap();
+        // Commits 3 - 5 should not be squasable, since 4 is shared with another branch
+        let _ = squash(&hashes[2], &hashes[4], &user).unwrap_err();
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_squash_branch() {
+        let mut user = create_demo_db("squash_invalid_branch");
+        let hashes = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .get_hashes()
+            .unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"test_branch2".to_string(), &mut user)
+            .unwrap();
+        // Commits 5 - 7 should not be squasable, since user is on another branch
+        let _ = squash(&hashes[4], &hashes[6], &user).unwrap_err();
         delete_db_instance().unwrap();
     }
 }
