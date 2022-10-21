@@ -51,6 +51,8 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
 /// Takes two commit hashes, and attempts to find a chain of commits
 /// from the first commit to the second, assuming that the commits are
 /// from the same branch.
+/// Squashes are only permitted when no other branches use the
+/// commits in a squash
 pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
     let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
@@ -76,6 +78,12 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
             while current != None {
                 let node = current.as_ref().unwrap();
                 commit_hashes.push(node.commit_hash.clone());
+                if !node.can_squash() {
+                    return Err(format!(
+                        "Could not squash, commit {} is shared across branches.",
+                        node.commit_hash
+                    ));
+                }
                 if node.commit_hash == hash1 {
                     save_first = Some(node.clone());
                     break;
@@ -110,6 +118,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
         prev_rownum: save_first.prev_rownum,
         curr_pagenum: save_last.curr_pagenum,
         curr_rownum: save_last.curr_rownum,
+        num_kids: save_last.num_kids,
         is_head: save_last.is_head,
     };
     branches.update_branch_node(&squash_node)?;

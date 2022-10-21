@@ -2128,7 +2128,7 @@ mod tests {
             .unwrap();
         assert_eq!(first_node_val.branch_name, main_branch_node.branch_name);
         assert_eq!(first_node_val.commit_hash, main_branch_node.commit_hash);
-        assert_eq!(first_node_val.is_head, main_branch_node.is_head);
+        assert_eq!(first_node_val.num_kids, main_branch_node.num_kids);
         delete_db_instance().unwrap();
     }
 

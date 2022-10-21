@@ -50,7 +50,8 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
 }
 
 fn from_timestamp(t: &Timestamp) -> String {
-    let time = NaiveDateTime::from_timestamp(t.seconds, t.nanos as u32);
+    let time = NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos as u32)
+        .unwrap_or(NaiveDateTime::MAX);
     time.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 

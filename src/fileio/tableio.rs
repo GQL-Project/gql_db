@@ -269,7 +269,6 @@ impl Table {
                 }
                 rownum_inserted = insert_row(&self.schema, page.as_mut(), &row)?;
             }
-
             // Add the information to the diff
             diff.rows.push(RowInfo {
                 row: row.clone(),
@@ -379,6 +378,7 @@ impl Table {
                     });
                 }
                 None => {
+                    println!("Error: Row not found at pagenum {} rownum {}", pagenum, rownum);
                     return Err(format!("The provided Row doesn't exist!"));
                 }
             }
@@ -461,6 +461,14 @@ impl Table {
             }
         }
         Ok(empty_rows)
+    }
+    
+    pub fn pos_to_loc(&self, index: i32) -> RowLocation {
+        let rows_per_page = PAGE_SIZE as i32 / self.schema_size as i32;
+        RowLocation {
+            pagenum: (index / rows_per_page) as u32 + 1,
+            rownum: (index % rows_per_page) as u16,
+        }
     }
 }
 #[cfg(test)]
@@ -635,6 +643,8 @@ mod tests {
             }
         }
         assert_eq!(count, 5);
+        // Clean up by removing file
+        clean_table(&path);
     }
 
     #[test]

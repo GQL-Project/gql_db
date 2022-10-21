@@ -17,6 +17,7 @@ use crate::{
         row::{Row, RowInfo},
     },
 };
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -236,10 +237,10 @@ impl CommitFile {
         let num_diffs: u32 = self.sread_type(page, pagenum, offset)?;
         let mut diffs: Vec<Diff> = Vec::new();
         for _ in 0..num_diffs {
-            let difftype: u32 = self.sread_type(page, pagenum, offset)?;
+            let difftype: i32 = self.sread_type::<u32>(page, pagenum, offset)? as i32;
             let table_name = self.sdread_string(page, pagenum, offset)?;
             let diff: Diff = match difftype {
-                0 | 1 | 2 => {
+                INSERT_TYPE | UPDATE_TYPE | REMOVE_TYPE => {
                     // Update or Insert or Remove
                     let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
                     let schema: Schema = self.sread_schema(page, pagenum, offset)?;
@@ -253,14 +254,14 @@ impl CommitFile {
                         };
                         rows.push(row_info);
                     }
-                    if difftype == 0 {
-                        Diff::Update(UpdateDiff {
+                    if difftype == INSERT_TYPE {
+                        Diff::Insert(InsertDiff {
                             table_name,
                             schema,
                             rows,
                         })
-                    } else if difftype == 1 {
-                        Diff::Insert(InsertDiff {
+                    } else if difftype == UPDATE_TYPE {
+                        Diff::Update(UpdateDiff {
                             table_name,
                             schema,
                             rows,
@@ -274,12 +275,12 @@ impl CommitFile {
                     }
                 }
 
-                3 => {
+                TABLE_CREATE_TYPE => {
                     // Create Table
                     let schema = self.sread_schema(page, pagenum, offset)?;
                     Diff::TableCreate(TableCreateDiff { table_name, schema })
                 }
-                4 => {
+                TABLE_REMOVE_TYPE => {
                     // Remove Table
                     let schema = self.sread_schema(page, pagenum, offset)?;
                     let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
@@ -318,21 +319,10 @@ impl CommitFile {
         // Parsing the diffs
         self.swrite_type(page, pagenum, offset, commit.diffs.len() as u32)?;
         for diff in &commit.diffs {
+            self.swrite_type(page, pagenum, offset, diff.get_type() as u32)?;
+            self.sdwrite_string(page, pagenum, offset, &diff.get_table_name())?;
             match diff {
-                Diff::Update(update) => {
-                    self.swrite_type(page, pagenum, offset, 0u32)?;
-                    self.sdwrite_string(page, pagenum, offset, &update.table_name)?;
-                    self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
-                    self.swrite_schema(page, pagenum, offset, &update.schema)?;
-                    for row in &update.rows {
-                        self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
-                        self.swrite_type(page, pagenum, offset, row.pagenum)?;
-                        self.swrite_type(page, pagenum, offset, row.rownum)?;
-                    }
-                }
                 Diff::Insert(insert) => {
-                    self.swrite_type(page, pagenum, offset, 1u32)?;
-                    self.sdwrite_string(page, pagenum, offset, &insert.table_name)?;
                     self.swrite_type(page, pagenum, offset, insert.rows.len() as u32)?;
                     self.swrite_schema(page, pagenum, offset, &insert.schema)?;
                     for row in &insert.rows {
@@ -341,25 +331,28 @@ impl CommitFile {
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
                     }
                 }
+                Diff::Update(update) => {
+                    self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
+                    self.swrite_schema(page, pagenum, offset, &update.schema)?;
+                    for row in &update.rows {
+                        self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
+                        self.swrite_type(page, pagenum, offset, row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
+                }
                 Diff::Remove(remove) => {
-                    self.swrite_type(page, pagenum, offset, 2u32)?;
-                    self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
                     self.swrite_type(page, pagenum, offset, remove.rows.len() as u32)?;
+                    self.swrite_schema(page, pagenum, offset, &remove.schema)?;
                     for row in &remove.rows {
-                        self.swrite_schema(page, pagenum, offset, &remove.schema)?;
                         self.swrite_row(page, pagenum, offset, &row.row, &remove.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
                     }
                 }
                 Diff::TableCreate(create) => {
-                    self.swrite_type(page, pagenum, offset, 3u32)?;
-                    self.sdwrite_string(page, pagenum, offset, &create.table_name)?;
                     self.swrite_schema(page, pagenum, offset, &create.schema)?;
                 }
                 Diff::TableRemove(remove) => {
-                    self.swrite_type(page, pagenum, offset, 4u32)?;
-                    self.sdwrite_string(page, pagenum, offset, &remove.table_name)?;
                     self.swrite_schema(page, pagenum, offset, &remove.schema)?;
                 }
             }
@@ -385,12 +378,16 @@ impl CommitFile {
         // We'd be able to do much quicker merges
         let mut map: HashMap<String, HashMap<i32, Diff>> = HashMap::new();
         for commit in commits {
+            let mut diffs = commit.diffs.clone();
+            diffs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal));
             for diff in &commit.diffs {
                 match diff {
                     Diff::Update(update) => {
                         let mut newrows = update.rows.clone();
                         // An Insert and an Update just become an Insert
-                        if let Some(Diff::Insert(insert)) = get_diff(&map, &update.table_name, 1) {
+                        if let Some(Diff::Insert(insert)) =
+                            get_diff(&map, &update.table_name, INSERT_TYPE)
+                        {
                             // If an update diff exists on a row, replace the insert diff with the update diff value
                             let rows: Vec<RowInfo> = insert
                                 .rows
@@ -428,7 +425,8 @@ impl CommitFile {
                             );
                         }
                         // Two Updates just become one update
-                        if let Some(Diff::Update(existing)) = get_diff(&map, &update.table_name, 0)
+                        if let Some(Diff::Update(existing)) =
+                            get_diff(&map, &update.table_name, UPDATE_TYPE)
                         {
                             // Merge the diffs together, removing any rows that are in the new update
                             let rows = existing
@@ -453,12 +451,22 @@ impl CommitFile {
                                 update.table_name.clone(),
                             );
                         } else {
-                            add_diff(&mut map, diff.clone(), update.table_name.clone());
+                            add_diff(
+                                &mut map,
+                                Diff::Update(UpdateDiff {
+                                    table_name: update.table_name.clone(),
+                                    schema: update.schema.clone(),
+                                    rows: newrows,
+                                }),
+                                update.table_name.clone(),
+                            );
                         }
                     } // End of Update
                     Diff::Insert(insert) => {
                         // A Remove and an Insert just becomes an Insert
-                        if let Some(Diff::Remove(remove)) = get_diff(&map, &insert.table_name, 2) {
+                        if let Some(Diff::Remove(remove)) =
+                            get_diff(&map, &insert.table_name, REMOVE_TYPE)
+                        {
                             let rows = remove
                                 .rows
                                 .iter()
@@ -481,7 +489,8 @@ impl CommitFile {
                             );
                         }
                         // Two Inserts just become one insert
-                        if let Some(Diff::Insert(existing)) = get_diff(&map, &insert.table_name, 1)
+                        if let Some(Diff::Insert(existing)) =
+                            get_diff(&map, &insert.table_name, INSERT_TYPE)
                         {
                             // Merge the diffs
                             let rows = existing
@@ -512,7 +521,9 @@ impl CommitFile {
                     Diff::Remove(remove) => {
                         let mut newrows = remove.rows.clone();
                         // An Insert and a Remove cancel each other out
-                        if let Some(Diff::Insert(insert)) = get_diff(&map, &remove.table_name, 1) {
+                        if let Some(Diff::Insert(insert)) =
+                            get_diff(&map, &remove.table_name, INSERT_TYPE)
+                        {
                             // Remove rows from insert that are in remove
                             let rows = insert
                                 .rows
@@ -543,7 +554,9 @@ impl CommitFile {
                             );
                         }
                         // An Update and a Remove just becomes a Remove
-                        if let Some(Diff::Update(update)) = get_diff(&map, &remove.table_name, 0) {
+                        if let Some(Diff::Update(update)) =
+                            get_diff(&map, &remove.table_name, UPDATE_TYPE)
+                        {
                             // Remove rows from update that are in remove
                             let rows = update
                                 .rows
@@ -567,7 +580,8 @@ impl CommitFile {
                             );
                         }
                         // Two Removes just become one Remove
-                        if let Some(Diff::Remove(existing)) = get_diff(&map, &remove.table_name, 2)
+                        if let Some(Diff::Remove(existing)) =
+                            get_diff(&map, &remove.table_name, REMOVE_TYPE)
                         {
                             // Merge the diffs
                             let rows = existing
@@ -591,7 +605,15 @@ impl CommitFile {
                                 remove.table_name.clone(),
                             );
                         } else {
-                            add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                            add_diff(
+                                &mut map,
+                                Diff::Remove(RemoveDiff {
+                                    table_name: remove.table_name.clone(),
+                                    schema: remove.schema.clone(),
+                                    rows: newrows,
+                                }),
+                                remove.table_name.clone(),
+                            );
                         }
                     } // End of Remove
                     Diff::TableCreate(create) => {
@@ -603,12 +625,12 @@ impl CommitFile {
                         if map.contains_key(&remove.table_name) {
                             // It's fine to unwrap here because we just checked that the key exists
                             let value: &HashMap<i32, Diff> = map.get(&remove.table_name).unwrap();
-                            
+
                             // If there is a TableCreate, we can remove all the diffs for that table
                             // because we have both a TableCreate and a TableRemove for the same table
                             if value.contains_key(&diff::TABLE_CREATE_TYPE) {
                                 map.remove(&remove.table_name);
-                            } 
+                            }
                             // If there is not a TableCreate, we can remove all the diffs for that table,
                             // but we still need to add the TableRemove
                             else {
@@ -628,6 +650,7 @@ impl CommitFile {
             .into_values()
             .map(|y| y.into_values())
             .flatten()
+            .filter(|x| !x.is_empty())
             .collect();
         self.create_commit(msg, cmd, diffs, write_commit_to_file)
     }
@@ -635,8 +658,6 @@ impl CommitFile {
     pub fn combine_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
-        } else if commits.len() == 1 {
-            return Ok(commits[0].clone());
         }
         let msg = format!("Combined {} commits", commits.len());
         let cmd = format!(
@@ -731,8 +752,9 @@ fn add_diff(map: &mut HashMap<String, HashMap<i32, Diff>>, diff: Diff, table_nam
 mod tests {
     use crate::{
         executor::query::{create_table, insert},
-        fileio::databaseio::Database,
+        fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance, Database},
         user::userdata::User,
+        util::row::RowLocation,
     };
 
     use super::*;
@@ -1049,5 +1071,187 @@ mod tests {
         // Delete the test database
         std::fs::remove_file(delta.delta_path).unwrap();
         std::fs::remove_file(delta.header_path).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_squash() {
+        // This will test squashing 2 commits together
+        let db_name: String = "test_squash_db".to_string();
+        let table_name1: String = "table1".to_string();
+
+        // Create a new database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create the table on the main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table1_diff) =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        user.append_diff(&Diff::TableCreate(table1_diff));
+
+        // Insert rows into the table on the main branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(1), Value::String("FirstRow".to_string())]);
+        rows.push(vec![Value::I32(2), Value::String("SecondRow".to_string())]);
+        let table1_insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(table1_insert_diff));
+
+        // Create a commit on main branch
+        let (_, commit1) = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on Main Branch".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Insert rows into the table on the main branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(3), Value::String("ThirdRow".to_string())]);
+        rows.push(vec![Value::I32(4), Value::String("FourthRow".to_string())]);
+        rows.push(vec![Value::I32(5), Value::String("FifthRow".to_string())]);
+        rows.push(vec![Value::I32(6), Value::String("SixthRow".to_string())]);
+        rows.push(vec![Value::I32(7), Value::String("SeventhRow".to_string())]);
+        let table1_insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(table1_insert_diff));
+
+        // Update some of those rows
+        let table1_update_diff: UpdateDiff = table1
+            .rewrite_rows(vec![
+                RowInfo {
+                    pagenum: 1,
+                    rownum: 2,
+                    row: vec![Value::I32(3), Value::String("ThirdRowUpdated".to_string())],
+                },
+                RowInfo {
+                    pagenum: 1,
+                    rownum: 3,
+                    row: vec![Value::I32(4), Value::String("FourthRowUpdated".to_string())],
+                },
+            ])
+            .unwrap();
+        user.append_diff(&Diff::Update(table1_update_diff));
+
+        // Remove the fourth row
+        let table1_remove_diff: RemoveDiff = table1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 3,
+            }])
+            .unwrap();
+        user.append_diff(&Diff::Remove(table1_remove_diff));
+
+        // Create a commit on main branch
+        let (_, commit2) = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main Branch".to_string(),
+                &"Insert, Update, and Remove Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        let squash: Commit = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .squash_commits(&vec![commit1, commit2])
+            .unwrap();
+
+        let diffs: Vec<Diff> = squash.diffs;
+
+        // At this point, we've:
+        // 1. Created a table
+        // 2. Inserted 2 rows
+        // 3. Committed
+        // 4. Inserted 5 rows
+        // 5. Updated 2 rows (the 3rd and 4th rows)
+        // 6. Removed 1 row (the 4th row)
+        // 7. Committed
+        // We should only have 2 diffs where there is a table creation, and an insert of 6 rows
+
+        // Assert that the diffs are corrects
+        // Should only contain tablecreate and insert diffs
+        assert_eq!(diffs.len(), 2);
+
+        // Get the tablecreate diff from diffs
+        let tablecreate_diff: &Diff = diffs
+            .iter()
+            .find(|diff| match diff {
+                Diff::TableCreate(_) => true,
+                _ => false,
+            })
+            .unwrap();
+
+        // Assert that the tablecreate diff is correct
+        assert_eq!(tablecreate_diff.get_schema(), table1.schema);
+        assert_eq!(tablecreate_diff.get_table_name(), table1.name);
+
+        // Get the insert diff from diffs
+        let insert_diff: &Diff = diffs
+            .iter()
+            .find(|diff| match diff {
+                Diff::Insert(_) => true,
+                _ => false,
+            })
+            .unwrap();
+        if let Diff::Insert(insert_diff) = insert_diff.clone() {
+            // Assert that the insert diff is correct
+            assert_eq!(insert_diff.table_name, table1.name);
+
+            // Assert there are only 6 rows to insert
+            assert_eq!(insert_diff.rows.len(), 6);
+
+            // Assert that the first row is correct
+            assert_eq!(
+                insert_diff.rows[0].row,
+                vec![Value::I32(1), Value::String("FirstRow".to_string())]
+            );
+
+            // Assert that the second row is correct
+            assert_eq!(
+                insert_diff.rows[1].row,
+                vec![Value::I32(2), Value::String("SecondRow".to_string())]
+            );
+
+            // Assert that the third row is correct
+            assert_eq!(
+                insert_diff.rows[2].row,
+                vec![Value::I32(3), Value::String("ThirdRowUpdated".to_string())]
+            );
+
+            // The fourth row was removed, so it should not be in the insert diff
+
+            // Assert that the fifth row is correct
+            assert_eq!(
+                insert_diff.rows[3].row,
+                vec![Value::I32(5), Value::String("FifthRow".to_string())]
+            );
+
+            // Assert that the sixth row is correct
+            assert_eq!(
+                insert_diff.rows[4].row,
+                vec![Value::I32(6), Value::String("SixthRow".to_string())]
+            );
+
+            // Assert that the seventh row is correct
+            assert_eq!(
+                insert_diff.rows[5].row,
+                vec![Value::I32(7), Value::String("SeventhRow".to_string())]
+            );
+        } else {
+            panic!("Insert diff was not found");
+        }
+
+        // Delete the database
+        delete_db_instance().unwrap();
     }
 }
