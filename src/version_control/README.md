@@ -117,6 +117,17 @@ Squashing the commits has two main steps:
 
 Also to note, Squash assumes that the commits are in order, and that the current branch contains hash2, as there can be multiple branches that contain hash2.
 
+### What Causes a Merge Conflict?
+
+There are a certain set of operations that will cause a merge conflict. These are:
+- A row is deleted in one branch, but updated in the other branch.
+- A row is updated in both branches, but with different values.
+- A row is updated in one branch, but that table is deleeted in the other branch
+- A table is created in one branch, but deleted in the other branch.
+- A table is created in both branches, but with different schemas.
+
+Inserts are not considered merge conflicts because they can be resolved by simply inserting the row in the other branch. If the same row is inserted in both branches, only 1 copy of that row will be inserted in the merged branch.
+
 ## Invariants
 
 1. All commits in a branch have increasing timestamps.

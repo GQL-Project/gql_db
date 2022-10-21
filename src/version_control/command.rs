@@ -129,7 +129,7 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
 
     let squash_commit = get_db_instance()?
         .get_commit_file_mut()
-        .squash_commits(&commits)?;
+        .squash_commits(&commits, true)?;
 
     // Use the new commit hash, and make the current hash2 point to the commit before hash1.
     let squash_node = BranchNode {

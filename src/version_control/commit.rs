@@ -164,6 +164,7 @@ impl CommitFile {
         message: String,
         command: String,
         diffs: Vec<Diff>,
+        write_to_file: bool,
     ) -> Result<Commit, String> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -172,7 +173,9 @@ impl CommitFile {
             .to_string();
         let hash = Commit::create_hash();
         let commit = Commit::new(hash, timestamp, message, command, diffs);
-        self.store_commit(&commit)?;
+        if write_to_file {
+            self.store_commit(&commit)?;
+        }
         Ok(commit)
     }
 
@@ -368,11 +371,9 @@ impl CommitFile {
         Ok(hashes)
     }
 
-    pub fn squash_commits(&mut self, commits: &Vec<Commit>) -> Result<Commit, String> {
+    pub fn squash_commits(&mut self, commits: &Vec<Commit>, write_commit_to_file: bool) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
-        } else if commits.len() == 1 {
-            return Ok(commits[0].clone());
         }
         let msg = format!("Combined {} commits", commits.len());
         let cmd = format!(
@@ -660,7 +661,7 @@ impl CommitFile {
             .flatten()
             .filter(|x| !x.is_empty())
             .collect();
-        self.create_commit(msg, cmd, diffs)
+        self.create_commit(msg, cmd, diffs, write_commit_to_file)
     }
 }
 
@@ -1110,7 +1111,7 @@ mod tests {
         let squash: Commit = get_db_instance()
             .unwrap()
             .get_commit_file_mut()
-            .squash_commits(&vec![commit1, commit2])
+            .squash_commits(&vec![commit1, commit2], true)
             .unwrap();
 
         let diffs: Vec<Diff> = squash.diffs;

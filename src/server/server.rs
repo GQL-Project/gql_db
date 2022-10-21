@@ -122,9 +122,8 @@ impl DatabaseConnection for Connection {
         let in_use_branch_names: Vec<String> = self.get_all_branches_clients_are_connected_to();
         get_db_instance()
             .map_err(|e| Status::internal(e))?
-            .remove_unneeded_branch_directories(&in_use_branch_names);
-        // TODO: Not sure why this above line sometimes throws errors, but it's late at night and I'm too tired to figure it out.
-        // When I figure it out, I'll add the '?' operator back to the end of it.
+            .remove_unneeded_branch_directories(&in_use_branch_names)
+            .map_err(|e| Status::internal(e))?;
 
         /* Creating Result */
         match result {

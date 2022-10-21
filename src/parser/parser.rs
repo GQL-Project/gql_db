@@ -1,6 +1,8 @@
 use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::command;
+use crate::version_control::commit::Commit;
+use crate::version_control::merge::MergeConflictResolutionAlgo;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -27,7 +29,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         return Err("Empty VC Command query".to_string());
     }
     let command = query.split_whitespace();
-    let vec = command.collect::<Vec<&str>>();
+    let mut vec = command.collect::<Vec<&str>>();
 
     // vec[0] = "GQL"
     // vec[1] = <command>
@@ -83,7 +85,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             }
         }
         "branch" => {
-            // branch (CoPilot rec: Possible flags: -d, -m, -l (list branches))
+            // branch (CoPilot rec: Possible flags: -l (list branches), -c (current branch))
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
@@ -94,7 +96,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // using a flag that's not supposed to be used
-                if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
+                if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" && vec[2].to_string() != "-c" {
                     return Err(format!(
                         "Invalid Flag for Branch VC Command: {}",
                         vec[2].to_string()
@@ -107,7 +109,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     let branch_names_str: String = branch_names.join(",");
 
                     return Ok(branch_names_str);
-                } else {
+                } 
+                else if vec[2].to_string() == "-c" {
+                    // We want to return the current branch
+                    return Ok(user.get_current_branch_name())
+                } 
+                else {
                     // vec[2] should be a branch name
                     // create branch
                     get_db_instance()?
@@ -135,6 +142,121 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     .map_err(|e| e.to_string())?;
                 return Ok(format!("Branch switched to {}", &vec[2]));
             }
+        }
+        "merge_branch" => {
+            // merge (One Arguments: <src_branch_name> <dest_branch_name> <message> (optional -d for deleting source branch) (optional -s <strategy> for strategy)) 
+            // merges into the current branch
+
+            // Combine the message into a single string
+            let mut parsed_message: String = String::new();
+            let mut post_msg_vec: Vec<&str> = Vec::new();
+            for i in 4..vec.len() {
+                if vec[i].to_string() == "-d" || vec[i].to_string() == "-s" {
+                    post_msg_vec = vec[i..vec.len()].to_vec();
+                    break;
+                }
+                parsed_message.push_str(&vec[i].replace(&"\"".to_string(), &"".to_string()));
+                parsed_message.push_str(" ");
+            }
+
+           vec.splice(4..vec.len(), vec![parsed_message.trim()]);
+           vec.append(&mut post_msg_vec);
+
+            if vec.len() < 5 || vec.len() > 8 {
+                return Err(
+                    format!(
+                        "Invalid Merge Command, expected at least 3 arguments not {}",
+                        vec.len() - 2
+                    ).to_string()
+                );
+            }
+
+            println!("Merge Command: {:?}", vec);
+
+            let src_branch_name: String = vec[2].to_string();
+            let dest_branch_name: String = vec[3].to_string();
+            let message: String = vec[4].to_string();
+
+            /// Get the strategy from the command string
+            fn get_strategy(strategy: &str) -> Result<MergeConflictResolutionAlgo, String> {
+                match strategy {
+                    "ours" => Ok(MergeConflictResolutionAlgo::UseSource),
+                    "theirs" => Ok(MergeConflictResolutionAlgo::UseTarget),
+                    "clean" => Ok(MergeConflictResolutionAlgo::NoConflicts),
+                    _ => Err("Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'".to_string()),
+                }
+            }
+
+            // Check optional arguments
+            let mut delete_src_branch: bool = false;
+            let mut merge_strategy: MergeConflictResolutionAlgo = MergeConflictResolutionAlgo::NoConflicts;
+            if vec.len() == 6 {
+                if vec[5] == "-d" {
+                    delete_src_branch = true;
+                }
+                else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+            else if vec.len() == 7 {
+                if vec[5] == "-s" {
+                    merge_strategy = get_strategy(vec[5])?;
+                }
+                else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+            else if vec.len() == 8 {
+                if vec[5] == "-d" {
+                    delete_src_branch = true;
+                    if vec[6] == "-s" {
+                        merge_strategy = get_strategy(vec[7])?;
+                    }
+                    else {
+                        return Err("Invalid Merge Command. Invalid flag.".to_string());
+                    }
+                }
+                else if vec[5] == "-s" {
+                    merge_strategy = get_strategy(vec[6])?;
+                    if vec[7] == "-d" {
+                        delete_src_branch = true;
+                    }
+                    else {
+                        return Err("Invalid Merge Command. Invalid flag.".to_string());
+                    }
+                }
+                else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+
+            if src_branch_name == dest_branch_name {
+                return Err("Cannot merge a branch into itself".to_string());
+            }
+
+            // Make sure user does not have any uncommitted changes
+            if user.get_diffs().len() > 0 {
+                return Err("Cannot merge with uncommitted changes".to_string());
+            }
+
+            // Swap user to the destination branch
+            get_db_instance()?
+                .switch_branch(&dest_branch_name, user)
+                .map_err(|e| e.to_string())?;
+            
+            // Merge the source branch into the destination branch
+            let merge_commit: Commit = get_db_instance()?
+                .merge_branches(
+                    &src_branch_name,
+                    user,
+                    &message,
+                    true,
+                    merge_strategy,
+                    delete_src_branch
+                )
+                .map_err(|e| e.to_string())?;
+            
+            return Ok(format!("Merge Successful Made at hash {}", merge_commit.hash).to_string());
         }
         "log" => {
             // log (NO FLAGS OR ARGS)
