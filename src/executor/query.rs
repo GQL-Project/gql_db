@@ -106,14 +106,13 @@ pub fn execute_update(
                         }
                     }
                     _ => {
-                        return Err("Not a values statement".to_string());
+                        return Err("Expected a Values statement".to_string());
                     }
                 }
                 results.push(insert(all_data, table_name, get_db_instance()?, user)?.0);
-                //
             }
             _ => {
-                return Err("Not a create or insert".to_string());
+                return Err(format!("Not a valid command: {0}", a));
             }
         }
     }
