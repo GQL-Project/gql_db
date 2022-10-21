@@ -87,7 +87,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else if !vec[2].to_string().starts_with("-") && vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
@@ -95,7 +95,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             } else {
                 // using a flag that's not supposed to be used
                 if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
-                    return Err("Invalid flag".to_string());
+                    return Err(format!(
+                        "Invalid Flag for Branch VC Command: {}",
+                        vec[2].to_string()
+                    ));
                 }
                 if vec[2].to_string() == "-l" {
                     // We want to return a list of branches
@@ -120,11 +123,11 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                return Err("Invalid Branch Name".to_string());
+                return Err(format!("Invalid Branch Name '{}'", vec.join(" ")));
             } else {
                 // vec[2] should be a branch name
                 get_db_instance()?
@@ -137,7 +140,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // log (NO FLAGS OR ARGS)
             if vec.len() != 2 {
                 // Error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
 
             let log_results = command::log(user)?;
@@ -164,7 +167,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // revert (Needs an argument)
             if vec.len() != 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else {
                 // vec[2] should be a commit hash
                 return Ok("Valid Revert Command".to_string());
@@ -174,13 +177,13 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // status (NO FLAGS OR ARGS)
             if vec.len() != 2 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
             return Ok("Valid Status Command".to_string());
         }
         _ => {
             // error message here
-            return Err("Invalid VC Command".to_string());
+            return Err(format!("Invalid VC Command: {}", vec.join(" ")));
         }
     }
 }
