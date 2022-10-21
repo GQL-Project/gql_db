@@ -381,9 +381,7 @@ impl Table {
                     println!("Error: Row not found at pagenum {} rownum {}", pagenum, rownum);
                     return Err(
                         format!(
-                            "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!",
-                            pagenum, 
-                            rownum
+                            "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!", pagenum, rownum
                         )
                     );
                 }
