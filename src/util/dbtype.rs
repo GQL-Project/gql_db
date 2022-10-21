@@ -168,7 +168,7 @@ impl Column {
             Column::Float => size_of::<f32>(),
             Column::Double => size_of::<f64>(),
             Column::Bool => size_of::<bool>(),
-            Column::Timestamp => size_of::<i32>(),
+            Column::Timestamp => size_of::<Timestamp>(),
             Column::String(x) => (*x as usize) * size_of::<u8>(),
             // Add a single byte overhead for the null flag.
             Column::Nullable(x) => size_of::<u8>() + x.size(),
@@ -262,7 +262,7 @@ impl ToString for Value {
     }
 }
 
-fn parse_time(str: &String) -> Result<Timestamp, String> {
+pub fn parse_time(str: &String) -> Result<Timestamp, String> {
     let time = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S");
     if let Ok(x) = time {
         Ok(Timestamp {
