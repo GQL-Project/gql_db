@@ -96,7 +96,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // using a flag that's not supposed to be used
-                if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" && vec[2].to_string() != "-c" {
+                if vec[2].to_string().starts_with("-")
+                    && vec[2].to_string() != "-l"
+                    && vec[2].to_string() != "-c"
+                {
                     return Err(format!(
                         "Invalid Flag for Branch VC Command: {}",
                         vec[2].to_string()
@@ -109,12 +112,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     let branch_names_str: String = branch_names.join(",");
 
                     return Ok(branch_names_str);
-                } 
-                else if vec[2].to_string() == "-c" {
+                } else if vec[2].to_string() == "-c" {
                     // We want to return the current branch
-                    return Ok(user.get_current_branch_name())
-                } 
-                else {
+                    return Ok(user.get_current_branch_name());
+                } else {
                     // vec[2] should be a branch name
                     // create branch
                     get_db_instance()?
@@ -144,7 +145,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             }
         }
         "merge_branch" => {
-            // merge (One Arguments: <src_branch_name> <dest_branch_name> <message> (optional -d for deleting source branch) (optional -s <strategy> for strategy)) 
+            // merge (One Arguments: <src_branch_name> <dest_branch_name> <message> (optional -d for deleting source branch) (optional -s <strategy> for strategy))
             // merges into the current branch
 
             // Combine the message into a single string
@@ -159,16 +160,15 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 parsed_message.push_str(" ");
             }
 
-           vec.splice(4..vec.len(), vec![parsed_message.trim()]);
-           vec.append(&mut post_msg_vec);
+            vec.splice(4..vec.len(), vec![parsed_message.trim()]);
+            vec.append(&mut post_msg_vec);
 
             if vec.len() < 5 || vec.len() > 8 {
-                return Err(
-                    format!(
-                        "Invalid Merge Command, expected at least 3 arguments not {}",
-                        vec.len() - 2
-                    ).to_string()
-                );
+                return Err(format!(
+                    "Invalid Merge Command, expected at least 3 arguments not {}",
+                    vec.len() - 2
+                )
+                .to_string());
             }
 
             println!("Merge Command: {:?}", vec);
@@ -183,49 +183,44 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     "ours" => Ok(MergeConflictResolutionAlgo::UseSource),
                     "theirs" => Ok(MergeConflictResolutionAlgo::UseTarget),
                     "clean" => Ok(MergeConflictResolutionAlgo::NoConflicts),
-                    _ => Err("Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'".to_string()),
+                    _ => Err(
+                        "Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'".to_string(),
+                    ),
                 }
             }
 
             // Check optional arguments
             let mut delete_src_branch: bool = false;
-            let mut merge_strategy: MergeConflictResolutionAlgo = MergeConflictResolutionAlgo::NoConflicts;
+            let mut merge_strategy: MergeConflictResolutionAlgo =
+                MergeConflictResolutionAlgo::NoConflicts;
             if vec.len() == 6 {
                 if vec[5] == "-d" {
                     delete_src_branch = true;
-                }
-                else {
+                } else {
                     return Err("Invalid Merge Command. Invalid flag.".to_string());
                 }
-            }
-            else if vec.len() == 7 {
+            } else if vec.len() == 7 {
                 if vec[5] == "-s" {
                     merge_strategy = get_strategy(vec[5])?;
-                }
-                else {
+                } else {
                     return Err("Invalid Merge Command. Invalid flag.".to_string());
                 }
-            }
-            else if vec.len() == 8 {
+            } else if vec.len() == 8 {
                 if vec[5] == "-d" {
                     delete_src_branch = true;
                     if vec[6] == "-s" {
                         merge_strategy = get_strategy(vec[7])?;
-                    }
-                    else {
+                    } else {
                         return Err("Invalid Merge Command. Invalid flag.".to_string());
                     }
-                }
-                else if vec[5] == "-s" {
+                } else if vec[5] == "-s" {
                     merge_strategy = get_strategy(vec[6])?;
                     if vec[7] == "-d" {
                         delete_src_branch = true;
-                    }
-                    else {
+                    } else {
                         return Err("Invalid Merge Command. Invalid flag.".to_string());
                     }
-                }
-                else {
+                } else {
                     return Err("Invalid Merge Command. Invalid flag.".to_string());
                 }
             }
@@ -243,7 +238,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             get_db_instance()?
                 .switch_branch(&dest_branch_name, user)
                 .map_err(|e| e.to_string())?;
-            
+
             // Merge the source branch into the destination branch
             let merge_commit: Commit = get_db_instance()?
                 .merge_branches(
@@ -252,10 +247,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     &message,
                     true,
                     merge_strategy,
-                    delete_src_branch
+                    delete_src_branch,
                 )
                 .map_err(|e| e.to_string())?;
-            
+
             return Ok(format!("Merge Successful Made at hash {}", merge_commit.hash).to_string());
         }
         "log" => {

@@ -200,10 +200,10 @@ impl Table {
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
         //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
-        let mut diff: UpdateDiff = UpdateDiff { 
-            table_name: self.name.clone(), 
-            schema: self.schema.clone(), 
-            rows: Vec::new() 
+        let mut diff: UpdateDiff = UpdateDiff {
+            table_name: self.name.clone(),
+            schema: self.schema.clone(),
+            rows: Vec::new(),
         };
 
         if rows.len() < 1 {
@@ -235,9 +235,9 @@ impl Table {
     pub fn insert_rows(&mut self, rows: Vec<Row>) -> Result<InsertDiff, String> {
         // Keep track of how the rows have changed.
         let mut diff: InsertDiff = InsertDiff {
-            table_name: self.name.clone(), 
-            schema: self.schema.clone(), 
-            rows: Vec::new() 
+            table_name: self.name.clone(),
+            schema: self.schema.clone(),
+            rows: Vec::new(),
         };
 
         // Just return right away if we aren't inserting any rows
@@ -287,9 +287,9 @@ impl Table {
     pub fn write_rows(&mut self, mut rows: Vec<RowInfo>) -> Result<InsertDiff, String> {
         // Keep track of how the rows have changed.
         let mut diff: InsertDiff = InsertDiff {
-            table_name: self.name.clone(), 
-            schema: self.schema.clone(), 
-            rows: Vec::new()
+            table_name: self.name.clone(),
+            schema: self.schema.clone(),
+            rows: Vec::new(),
         };
 
         // Just return right away if we aren't inserting any rows
@@ -343,9 +343,9 @@ impl Table {
         // Keep track of how the rows have changed.
         let schema = self.schema.clone();
         let mut diff: RemoveDiff = RemoveDiff {
-            table_name: self.name.clone(), 
-            schema: schema, 
-            rows: Vec::new()
+            table_name: self.name.clone(),
+            schema: schema,
+            rows: Vec::new(),
         };
 
         // Return right away if we aren't removing any rows
@@ -378,7 +378,10 @@ impl Table {
                     });
                 }
                 None => {
-                    println!("Error: Row not found at pagenum {} rownum {}", pagenum, rownum);
+                    println!(
+                        "Error: Row not found at pagenum {} rownum {}",
+                        pagenum, rownum
+                    );
                     return Err(
                         format!(
                             "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!", pagenum, rownum
@@ -439,18 +442,13 @@ impl Table {
                                     num_rows_empty: 0,
                                 };
                             }
-                        }
-                        else {
+                        } else {
                             // If we have any empty rows, reset the rowlocation
                             if empty_rows_on_page.num_rows_empty == 0 {
                                 // Start a new empty row location
-                                empty_rows_on_page.location = RowLocation {
-                                    pagenum,
-                                    rownum,
-                                };
+                                empty_rows_on_page.location = RowLocation { pagenum, rownum };
                                 empty_rows_on_page.num_rows_empty = 1;
-                            }
-                            else {
+                            } else {
                                 empty_rows_on_page.num_rows_empty += 1;
                             }
                         }
@@ -902,13 +900,14 @@ mod tests {
             .0;
 
         // Insert into table
-        table.insert_rows(vec![vec![
-            Value::I32(3),
-            Value::String("Alexander Hamilton".to_string()),
-            Value::I32(60),
-        ]])
-        .unwrap();
-        
+        table
+            .insert_rows(vec![vec![
+                Value::I32(3),
+                Value::String("Alexander Hamilton".to_string()),
+                Value::I32(60),
+            ]])
+            .unwrap();
+
         // Get empty rows
         let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
 
@@ -919,13 +918,14 @@ mod tests {
         assert_eq!(empty_rows[0].num_rows_empty, 68);
 
         // Insert into table again
-        table.insert_rows(vec![vec![
-            Value::I32(2),
-            Value::String("Alexander Hamilton".to_string()),
-            Value::I32(10),
-        ]])
-        .unwrap();
-        
+        table
+            .insert_rows(vec![vec![
+                Value::I32(2),
+                Value::String("Alexander Hamilton".to_string()),
+                Value::I32(10),
+            ]])
+            .unwrap();
+
         // Get empty rows
         let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
 
@@ -956,15 +956,30 @@ mod tests {
         assert_eq!(empty_rows[0].num_rows_empty, 66);
 
         // Remove some rows from the first page in the table
-        table.remove_rows(
-            vec![
-                RowLocation { pagenum: 1, rownum: 6 },
-                RowLocation { pagenum: 1, rownum: 7 },
-                RowLocation { pagenum: 1, rownum: 8 },
-                RowLocation { pagenum: 1, rownum: 9 },
-                RowLocation { pagenum: 1, rownum: 16 },
-            ]
-        ).unwrap();
+        table
+            .remove_rows(vec![
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 6,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 7,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 8,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 9,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 16,
+                },
+            ])
+            .unwrap();
 
         // Get empty rows
         let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();

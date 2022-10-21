@@ -18,7 +18,7 @@ pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Option<Row> {
     Some(row)
 }
 
-/// This checks if a row is present in the page. 
+/// This checks if a row is present in the page.
 /// If it is, it returns true.
 /// If it is not, it returns false.
 /// If the rownum is beyond the end of the page, it returns an error.

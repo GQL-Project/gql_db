@@ -3,9 +3,9 @@ use super::pageio::PAGE_SIZE;
 use super::tableio::*;
 use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
-use crate::version_control::{commit::Commit, merge::*};
 use crate::version_control::diff::*;
 use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
+use crate::version_control::{commit::Commit, merge::*};
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::env;
@@ -207,7 +207,7 @@ impl Database {
             commit_msg.to_string(),
             command.to_string(),
             user.get_diffs(),
-            true
+            true,
         )?;
 
         // Get the branch name for the new branch node
@@ -641,10 +641,10 @@ impl Database {
 
     /// Gets all open rows in a table into a vector of empty row locations.
     pub fn get_open_rows_in_table(
-        &self, 
+        &self,
         table_name: &String,
         table_dir: &String,      // The directory where the table is located
-        num_of_open_rows: usize // The number of open rows you want returned, set to 0 to get all open rows
+        num_of_open_rows: usize, // The number of open rows you want returned, set to 0 to get all open rows
     ) -> Result<Vec<EmptyRowLocation>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -656,7 +656,10 @@ impl Database {
         let mut open_rows: Vec<EmptyRowLocation> = table.get_empty_rows()?;
 
         // Find the number of rows found across all empty row locations
-        let mut num_of_rows_found: usize = open_rows.iter().map(|row| row.num_rows_empty as usize).sum();
+        let mut num_of_rows_found: usize = open_rows
+            .iter()
+            .map(|row| row.num_rows_empty as usize)
+            .sum();
 
         if num_of_open_rows > 0 && num_of_rows_found < num_of_open_rows {
             // Get the number of rows we can fit in the new page
@@ -688,13 +691,13 @@ impl Database {
     /// Merges two branches together.
     /// It uses the user's branch as the destination branch, and the given branch as the source branch.
     pub fn merge_branches(
-        &mut self, 
-        src_branch_name: &String,                       // The source branch to merge from
-        user: &mut User,                                // The user, who's branch will be the destination branch
-        merge_cmt_msg: &String,                         // The commit message of the merge commit
-        do_commit_merge: bool,                          // Whether we write the commit to a file or not
+        &mut self,
+        src_branch_name: &String, // The source branch to merge from
+        user: &mut User,          // The user, who's branch will be the destination branch
+        merge_cmt_msg: &String,   // The commit message of the merge commit
+        do_commit_merge: bool,    // Whether we write the commit to a file or not
         conflict_res_algo: MergeConflictResolutionAlgo, // What type of conflict resolution algorithm to use
-        do_delete_src_branch: bool                      // Whether we delete the source branch after the merge or not
+        do_delete_src_branch: bool, // Whether we delete the source branch after the merge or not
     ) -> Result<Commit, String> {
         let dest_branch_name: String = user.get_current_branch_name();
         let merged_diffs: Vec<Diff>;
@@ -744,47 +747,41 @@ impl Database {
 
             // 3. Squash commits of source branch (common ancestor to branch head) into a single commit object
             //    with the message merge_cmt_msg and the current timestamp
-            let src_commits: Vec<Commit> = self.get_commits_between_nodes(
-                Some(&common_ancestor),
-                &src_branch_node,
-            )?;
+            let src_commits: Vec<Commit> =
+                self.get_commits_between_nodes(Some(&common_ancestor), &src_branch_node)?;
 
             // Only squash the commits if we have some to squash
             let src_diffs: Vec<Diff>;
             if src_commits.len() > 0 {
-                let src_squashed_cmt: Commit = self.commit_file.squash_commits(
-                    &src_commits, 
-                    false
-                )?;
+                let src_squashed_cmt: Commit =
+                    self.commit_file.squash_commits(&src_commits, false)?;
                 src_diffs = src_squashed_cmt.diffs;
+            } else {
+                return Err(
+                    "Merge Branches Error: Must have at least one source commit to merge."
+                        .to_owned(),
+                );
             }
-            else {
-                return Err("Merge Branches Error: Must have at least one source commit to merge.".to_owned());
-            }
-            
+
             // 4. Squash commits of destination branch (common ancestor to branch head) into a single commit object
             //    with the message merge_cmt_msg and the current timestamp
-            let dest_commits: Vec<Commit> = self.get_commits_between_nodes(
-                Some(&common_ancestor),
-                &dest_branch_node,
-            )?;
+            let dest_commits: Vec<Commit> =
+                self.get_commits_between_nodes(Some(&common_ancestor), &dest_branch_node)?;
 
             // Only squash the commits if we have some to squash
             let mut dest_diffs: Vec<Diff> = Vec::new();
             if dest_commits.len() > 0 {
-                let dest_squashed_cmt: Commit = self.commit_file.squash_commits(
-                    &dest_commits, 
-                    false
-                )?;
+                let dest_squashed_cmt: Commit =
+                    self.commit_file.squash_commits(&dest_commits, false)?;
                 dest_diffs = dest_squashed_cmt.diffs;
             }
 
             // 5. Merge the two squashes together using the merging algorithm.
             merged_diffs = create_merge_diffs(
-                &src_diffs, 
+                &src_diffs,
                 &dest_diffs,
                 &self.get_current_working_branch_path(user),
-                conflict_res_algo
+                conflict_res_algo,
             )?;
 
             // If we aren't committing the merge, we can just return here
@@ -794,21 +791,24 @@ impl Database {
                     src_commits.last().unwrap().timestamp.clone(),
                     merge_cmt_msg.clone(),
                     format!("Merged {} into {}", src_branch_name, dest_branch_name),
-                    merged_diffs
+                    merged_diffs,
                 ));
             }
         }
 
         // 6. Apply diffs to destination branch that user is on
         user.set_diffs(&merged_diffs);
-        construct_tables_from_diffs(&self.get_current_working_branch_path(user), &user.get_diffs())?;
+        construct_tables_from_diffs(
+            &self.get_current_working_branch_path(user),
+            &user.get_diffs(),
+        )?;
 
         // 7. Create a new commit on destination branch with the diffs from the merge.
         let (_, commit) = self.create_commit_and_node(
             merge_cmt_msg,
             &format!("Merged {} into {}", src_branch_name, dest_branch_name),
             user,
-            None
+            None,
         )?;
 
         // 8. Delete source branch (optionally)
@@ -816,8 +816,12 @@ impl Database {
             // Delete the branch directory if it exists
             let src_branch_path: String = self.get_branch_path_from_name(&src_branch_name);
             if Path::new(&src_branch_path).exists() {
-                std::fs::remove_dir_all(&src_branch_path)
-                    .map_err(|e| format!("Database::merge_branches() Error: Cannot Remove Branch Directory: {}", e))?;
+                std::fs::remove_dir_all(&src_branch_path).map_err(|e| {
+                    format!(
+                        "Database::merge_branches() Error: Cannot Remove Branch Directory: {}",
+                        e
+                    )
+                })?;
             }
 
             // Delete the branch nodes from the branches file
@@ -834,15 +838,15 @@ impl Database {
     pub fn does_merge_conflict(
         &mut self,
         src_branch_name: &String, // The source branch name
-        user: &mut User           // The user who is on the destination branch
+        user: &mut User,          // The user who is on the destination branch
     ) -> Result<bool, String> {
         let merge_result: Result<Commit, String> = self.merge_branches(
-            src_branch_name, 
-            user, 
-            &"Test Merge Conflict".to_string(), 
-            false, 
+            src_branch_name,
+            user,
+            &"Test Merge Conflict".to_string(),
+            false,
             MergeConflictResolutionAlgo::NoConflicts,
-            false
+            false,
         );
 
         match merge_result {
@@ -1067,9 +1071,9 @@ impl Database {
     /// If node1 is None, it returns all commits between the origin and node2.
     /// Returns a vector of commits where the older commits are first
     fn get_commits_between_nodes(
-        &self, 
+        &self,
         node1: Option<&BranchNode>,
-        node2: &BranchNode
+        node2: &BranchNode,
     ) -> Result<Vec<Commit>, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -1156,14 +1160,12 @@ impl Database {
                 // If directory exists
                 if Path::new(&branch_path).is_dir() {
                     // Delete the branch directory
-                    std::fs::remove_dir_all(branch_path).map_err(
-                        |e| {
-                            "Database::remove_unneeded_branch_directories() ".to_owned()
-                                + &branch_dir.clone()
-                                + &" Error: ".to_string()
-                                + &e.to_string()
-                        },
-                    )?;
+                    std::fs::remove_dir_all(branch_path).map_err(|e| {
+                        "Database::remove_unneeded_branch_directories() ".to_owned()
+                            + &branch_dir.clone()
+                            + &" Error: ".to_string()
+                            + &e.to_string()
+                    })?;
                 }
             }
         }
@@ -3214,13 +3216,7 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        create_table(
-            &table_name1,
-            &schema,
-            get_db_instance().unwrap(),
-            &mut user,
-        )
-        .unwrap();
+        create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
 
         // Create commit on new branch
         get_db_instance()
@@ -3240,13 +3236,7 @@ mod tests {
             .unwrap();
 
         // Create a new table on the main branch
-        create_table(
-            &table_name2,
-            &schema,
-            get_db_instance().unwrap(),
-            &mut user
-        )
-        .unwrap();
+        create_table(&table_name2, &schema, get_db_instance().unwrap(), &mut user).unwrap();
 
         // Create commit on main branch
         get_db_instance()
@@ -3274,13 +3264,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("age".to_string(), Column::I32),
         ];
-        create_table(
-            &table_name1,
-            &schema,
-            get_db_instance().unwrap(),
-            &mut user
-        )
-        .unwrap();
+        create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
 
         // Create commit on main branch
         get_db_instance()

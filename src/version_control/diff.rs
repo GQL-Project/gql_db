@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use crate::{
     fileio::{header::*, tableio::*},
@@ -118,7 +118,7 @@ pub struct SquashDiffs {
     pub table_diffs: HashMap<String, TableSquashDiff>, // A hashmap that maps a table name to a list of diffs for that table
 }
 
-/// This represents a set of diffs that would result from squashing a series 
+/// This represents a set of diffs that would result from squashing a series
 /// of diffs together for a single table.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableSquashDiff {
@@ -181,9 +181,21 @@ impl TableSquashDiff {
     /// Creates a new empty table squash diff object
     pub fn new(table_name: &String, schema: &Schema) -> TableSquashDiff {
         TableSquashDiff {
-            update_diff: UpdateDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
-            insert_diff: InsertDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
-            remove_diff: RemoveDiff { table_name: table_name.clone(), schema: schema.clone(), rows: Vec::new() },
+            update_diff: UpdateDiff {
+                table_name: table_name.clone(),
+                schema: schema.clone(),
+                rows: Vec::new(),
+            },
+            insert_diff: InsertDiff {
+                table_name: table_name.clone(),
+                schema: schema.clone(),
+                rows: Vec::new(),
+            },
+            remove_diff: RemoveDiff {
+                table_name: table_name.clone(),
+                schema: schema.clone(),
+                rows: Vec::new(),
+            },
             table_create_diff: None,
             table_remove_diff: None,
         }

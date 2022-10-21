@@ -371,7 +371,11 @@ impl CommitFile {
         Ok(hashes)
     }
 
-    pub fn squash_commits(&mut self, commits: &Vec<Commit>, write_commit_to_file: bool) -> Result<Commit, String> {
+    pub fn squash_commits(
+        &mut self,
+        commits: &Vec<Commit>,
+        write_commit_to_file: bool,
+    ) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
         }
