@@ -1,11 +1,13 @@
+use std::cmp::Ordering;
+
 use crate::{
     fileio::{header::*, tableio::*},
     util::row::*,
 };
 
 /* Constants */
-pub const UPDATE_TYPE: i32 = 0;
-pub const INSERT_TYPE: i32 = 1;
+pub const INSERT_TYPE: i32 = 0;
+pub const UPDATE_TYPE: i32 = 1;
 pub const REMOVE_TYPE: i32 = 2;
 pub const TABLE_CREATE_TYPE: i32 = 3;
 pub const TABLE_REMOVE_TYPE: i32 = 4;
@@ -14,10 +16,10 @@ pub const TABLE_REMOVE_TYPE: i32 = 4;
 /*                                         Diff Structs                                            */
 /***************************************************************************************************/
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Diff {
-    Update(UpdateDiff),
     Insert(InsertDiff),
+    Update(UpdateDiff),
     Remove(RemoveDiff),
     TableCreate(TableCreateDiff),
     TableRemove(TableRemoveDiff),
@@ -61,6 +63,16 @@ impl Diff {
             Diff::Remove(_) => REMOVE_TYPE,
             Diff::TableCreate(_) => TABLE_CREATE_TYPE,
             Diff::TableRemove(_) => TABLE_REMOVE_TYPE,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Diff::Update(diff) => diff.rows.is_empty(),
+            Diff::Insert(diff) => diff.rows.is_empty(),
+            Diff::Remove(diff) => diff.rows.is_empty(),
+            Diff::TableCreate(_) => false,
+            Diff::TableRemove(_) => false,
         }
     }
 }
@@ -130,6 +142,36 @@ impl RemoveDiff {
             schema,
             rows,
         }
+    }
+}
+
+impl PartialOrd for UpdateDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for InsertDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for RemoveDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for TableCreateDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for TableRemoveDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
     }
 }
 
