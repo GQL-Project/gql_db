@@ -138,7 +138,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         }
         "log" => {
             // log (NO FLAGS OR ARGS)
-            if vec.len() != 2 || vec.len() != 3 {
+            if vec.len() != 2 && vec.len() != 3 {
                 // Error message here
                 return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
@@ -365,6 +365,16 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd15() {
         let query = "GQL commit -m \"\"";
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_vc_cmd16() {
+        let query = "GQL log -json";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
