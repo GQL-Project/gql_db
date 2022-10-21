@@ -1,4 +1,4 @@
-use crate::{user::userdata::User, fileio::{databaseio::get_db_instance, tableio::Table}, util::row::{EmptyRowLocation, RowInfo, RowLocation, self}};
+use crate::{fileio::{databaseio::get_db_instance, tableio::Table}, util::row::{EmptyRowLocation, RowInfo, RowLocation}};
 
 use super::diff::*;
 use std::collections::HashMap;
@@ -926,8 +926,8 @@ mod tests {
             header::Schema, tableio::{create_table_in_dir, delete_table_in_dir},
         },
         util::{dbtype::*, row::Row},
-        version_control::diff::Diff, 
-        executor::query::create_table,
+        version_control::{diff::Diff, commit::Commit}, 
+        executor::query::create_table, user::userdata::User,
     };
 
     use super::*;
@@ -1939,42 +1939,34 @@ mod tests {
 
         // Assert that the merge diffs are correct
         assert_eq!(merge_diffs.len(), 4);
-        assert_eq!(merge_diffs[0].get_table_name(), table_name1);
-        if let Diff::Insert(insert_diff) = &merge_diffs[0] {
-            assert_eq!(insert_diff.table_name, table_name1);
-            assert_eq!(insert_diff.schema, src_table1.schema);
-            assert_eq!(insert_diff.rows.len(), 1);
-            assert_eq!(insert_diff.rows[0].row[0], Value::I32(400));
-            assert_eq!(insert_diff.rows[0].row[1], Value::String("NewRowSrc".to_string()));
-        } else {
-            panic!("Expected insert diff");
-        }
-        assert_eq!(merge_diffs[1].get_table_name(), table_name1);
-        if let Diff::Update(update_diff) = &merge_diffs[1] {
-            assert_eq!(update_diff.table_name, table_name1);
-            assert_eq!(update_diff.schema, src_table1.schema);
-            assert_eq!(update_diff.rows.len(), 1);
-            assert_eq!(update_diff.rows[0].row[0], Value::I32(150));
-            assert_eq!(update_diff.rows[0].row[1], Value::String("FirstUpdatedSrc".to_string()));
-        } else {
-            panic!("Expected update diff");
-        }
-        assert_eq!(merge_diffs[2].get_table_name(), table_name1);
-        if let Diff::Remove(remove_diff) = &merge_diffs[2] {
-            assert_eq!(remove_diff.table_name, table_name1);
-            assert_eq!(remove_diff.schema, src_table1.schema);
-            assert_eq!(remove_diff.rows.len(), 1);
-            assert_eq!(remove_diff.rows[0].row[0], Value::I32(200));
-            assert_eq!(remove_diff.rows[0].row[1], Value::String("Second".to_string()));
-        } else {
-            panic!("Expected remove diff");
-        }
-        assert_eq!(merge_diffs[3].get_table_name(), table_name2);
-        if let Diff::TableRemove(table_remove_diff) = &merge_diffs[3] {
-            assert_eq!(table_remove_diff.table_name, table_name2);
-        } else {
-            panic!("Expected table remove diff");
-        }
+
+        // Assert insert diff is correct
+        let insert_diff: InsertDiff = get_insert_diff(&merge_diffs);
+        assert_eq!(insert_diff.table_name, table_name1);
+        assert_eq!(insert_diff.schema, src_table1.schema);
+        assert_eq!(insert_diff.rows.len(), 1);
+        assert_eq!(insert_diff.rows[0].row[0], Value::I32(400));
+        assert_eq!(insert_diff.rows[0].row[1], Value::String("NewRowSrc".to_string()));
+            
+        // Assert update diff is correct
+        let update_diff: UpdateDiff = get_update_diff(&merge_diffs);
+        assert_eq!(update_diff.table_name, table_name1);
+        assert_eq!(update_diff.schema, src_table1.schema);
+        assert_eq!(update_diff.rows.len(), 1);
+        assert_eq!(update_diff.rows[0].row[0], Value::I32(150));
+        assert_eq!(update_diff.rows[0].row[1], Value::String("FirstUpdatedSrc".to_string()));
+            
+        // Assert remove diff is correct
+        let remove_diff: RemoveDiff = get_remove_diff(&merge_diffs);
+        assert_eq!(remove_diff.table_name, table_name1);
+        assert_eq!(remove_diff.schema, src_table1.schema);
+        assert_eq!(remove_diff.rows.len(), 1);
+        assert_eq!(remove_diff.rows[0].row[0], Value::I32(200));
+        assert_eq!(remove_diff.rows[0].row[1], Value::String("Second".to_string()));
+            
+        // Assert table remove diff is correct
+        let table_remove_diff: TableRemoveDiff = get_table_remove_diff(&merge_diffs);
+        assert_eq!(table_remove_diff.table_name, table_name2);
 
         // Clean up the database
         delete_test_db();
@@ -2047,6 +2039,448 @@ mod tests {
         delete_test_db();
     }
 
+    
+
+    #[test]
+    #[serial]
+    fn test_db_side_basic_merge() {
+        // This will test creating a branch off of main then checking merge conflicts to it
+        let db_name: String = "test_creating_a_branch_of_branch_and_switch".to_string();
+        let branch_name: String = "new_branch_1".to_string();
+        let table_name1: String = "table1".to_string();
+
+        // Create a new database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create the table on the main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table1_diff) = create_table(
+            &table_name1,
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        user.append_diff(&Diff::TableCreate(table1_diff));
+
+        // Insert rows into the table on the main branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(100), Value::String("InitialRow".to_string())]);
+        rows.push(vec![Value::I32(200), Value::String("SecondRow".to_string())]);
+        let table1_insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(table1_insert_diff));
+
+        // Create a commit on main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on Main Branch".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Insert rows into the table on the main branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(1), Value::String("John".to_string())]);
+        rows.push(vec![Value::I32(2), Value::String("Jane".to_string())]);
+        rows.push(vec![Value::I32(3), Value::String("Joe".to_string())]);
+        rows.push(vec![Value::I32(4), Value::String("Bill".to_string())]);
+        rows.push(vec![Value::I32(5), Value::String("Bob".to_string())]);
+        let table1_insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(table1_insert_diff));
+
+        // Update some of those rows
+        let table1_update_diff: UpdateDiff = table1.rewrite_rows(vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 2,
+                row: vec![Value::I32(1), Value::String("JohnUpdated".to_string())],
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 3,
+                row: vec![Value::I32(2), Value::String("JaneUpdated".to_string())],
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Update(table1_update_diff));
+
+        // Remove one of the rows
+        let table1_remove_diff: RemoveDiff = table1.remove_rows(vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 3,
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Remove(table1_remove_diff));
+
+        // Create a commit on main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main Branch".to_string(),
+                &"Insert, Update, and Remove Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Create a new branch
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch_name, &mut user)
+            .unwrap();
+
+        // Get the table on the new branch
+        let new_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let mut new_table1: Table = Table::new(&new_table_dir, &table_name1, None).unwrap();
+
+        // Insert rows into the table on the new branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(-1), Value::String("JohnNewBranch".to_string())]);
+        rows.push(vec![Value::I32(-2), Value::String("JaneNewBranch".to_string())]);
+        rows.push(vec![Value::I32(-3), Value::String("JoeNewBranch".to_string())]);
+        let new_table1_insert_diff: InsertDiff = new_table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(new_table1_insert_diff));
+
+        // Update some of those rows
+        let new_table1_update_diff: UpdateDiff = new_table1.rewrite_rows(vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 7,
+                row: vec![Value::I32(-22), Value::String("JaneNewUpdated".to_string())],
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 8,
+                row: vec![Value::I32(-33), Value::String("JoeNewUpdated".to_string())],
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Update(new_table1_update_diff));
+
+        // Remove one of the rows
+        let new_table1_remove_diff: RemoveDiff = new_table1.remove_rows(vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Remove(new_table1_remove_diff));
+
+
+        // Create a commit on new branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on New Branch".to_string(),
+                &"Insert, Update, and Remove Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Switch to main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+        
+        // Merge the branches
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch_name, 
+                &mut user, 
+                &"Merged Branches".to_string(), 
+                MergeConflictResolutionAlgo::NoConflicts,
+                false)
+            .unwrap();
+
+        // Assert that the merge commit has the correct number of diffs
+        let merge_diffs: Vec<Diff> = merge_commit.diffs;
+        assert_eq!(merge_diffs.len(), 2);
+
+        // Assert that the merge commit has the correct diffs
+        if let Diff::Insert(insert_diff) = &merge_diffs[0] {
+            assert_eq!(insert_diff.table_name, table_name1);
+            assert_eq!(insert_diff.schema, table1.schema);
+            assert_eq!(insert_diff.rows.len(), 3);
+            assert_eq!(insert_diff.rows[0].row.len(), 2);
+            assert_eq!(insert_diff.rows[0].row[0], Value::I32(-1));
+            assert_eq!(insert_diff.rows[0].row[1], Value::String("JohnNewBranch".to_string()));
+            assert_eq!(insert_diff.rows[1].row.len(), 2);
+            assert_eq!(insert_diff.rows[1].row[0], Value::I32(-22));
+            assert_eq!(insert_diff.rows[1].row[1], Value::String("JaneNewUpdated".to_string()));
+            assert_eq!(insert_diff.rows[2].row.len(), 2);
+            assert_eq!(insert_diff.rows[2].row[0], Value::I32(-33));
+            assert_eq!(insert_diff.rows[2].row[1], Value::String("JoeNewUpdated".to_string()));
+        } else {
+            panic!("Expected insert diff");
+        }
+        if let Diff::Remove(remove_diff) = &merge_diffs[1] {
+            assert_eq!(remove_diff.table_name, table_name1);
+            assert_eq!(remove_diff.schema, table1.schema);
+            assert_eq!(remove_diff.rows.len(), 1);
+            assert_eq!(remove_diff.rows[0].row.len(), 2);
+            assert_eq!(remove_diff.rows[0].pagenum, 1);
+            assert_eq!(remove_diff.rows[0].rownum, 1);
+            assert_eq!(remove_diff.rows[0].row[0], Value::I32(200));
+            assert_eq!(remove_diff.rows[0].row[1], Value::String("SecondRow".to_string()));
+        } else {
+            panic!("Expected remove diff");
+        }
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_db_side_complex_merge() {
+        // This will test creating a branch off of main then checking merge conflicts to it
+        let db_name: String = "test_creating_a_branch_of_branch_and_switch".to_string();
+        let branch_name: String = "new_branch_1".to_string();
+        let table_name1: String = "table1".to_string();
+
+        // Create a new database
+        create_db_instance(&db_name).unwrap();
+
+        // Create a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create the table on the main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table1_diff) = create_table(
+            &table_name1,
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        user.append_diff(&Diff::TableCreate(table1_diff));
+
+        // Insert rows into the table on the main branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(100), Value::String("InitialRow".to_string())]);
+        rows.push(vec![Value::I32(200), Value::String("SecondRow".to_string())]);
+        let table1_insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(table1_insert_diff));
+
+        // Create a commit on main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on Main Branch".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Create a new branch
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch_name, &mut user)
+            .unwrap();
+
+        // Switch to back to main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+
+        // Insert rows into the table on the main branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(1), Value::String("John".to_string())]);
+        rows.push(vec![Value::I32(2), Value::String("Jane".to_string())]);
+        rows.push(vec![Value::I32(3), Value::String("Joe".to_string())]);
+        rows.push(vec![Value::I32(4), Value::String("Bill".to_string())]);
+        rows.push(vec![Value::I32(5), Value::String("Bob".to_string())]);
+        let table1_insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(table1_insert_diff));
+
+        // Update some of those rows
+        let table1_update_diff: UpdateDiff = table1.rewrite_rows(vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 2,
+                row: vec![Value::I32(1), Value::String("JohnUpdated".to_string())],
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 3,
+                row: vec![Value::I32(2), Value::String("JaneUpdated".to_string())],
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Update(table1_update_diff));
+
+        // Remove one of the rows
+        let table1_remove_diff: RemoveDiff = table1.remove_rows(vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 3,
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Remove(table1_remove_diff));
+
+        // Create a commit on main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main Branch".to_string(),
+                &"Insert, Update, and Remove Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Switch to the new branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&branch_name, &mut user)
+            .unwrap();
+
+        // Get the table on the new branch
+        let new_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let mut new_table1: Table = Table::new(&new_table_dir, &table_name1, None).unwrap();
+
+        // Insert rows into the table on the new branch
+        let mut rows: Vec<Row> = Vec::new();
+        rows.push(vec![Value::I32(-1), Value::String("JohnNewBranch".to_string())]);
+        rows.push(vec![Value::I32(-2), Value::String("JaneNewBranch".to_string())]);
+        rows.push(vec![Value::I32(-3), Value::String("JoeNewBranch".to_string())]);
+        let new_table1_insert_diff: InsertDiff = new_table1.insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(new_table1_insert_diff));
+
+        // Update some of those rows
+        let new_table1_update_diff: UpdateDiff = new_table1.rewrite_rows(vec![
+            RowInfo {
+                pagenum: 1,
+                rownum: 3,
+                row: vec![Value::I32(-22), Value::String("JaneNewUpdated".to_string())],
+            },
+            RowInfo {
+                pagenum: 1,
+                rownum: 4,
+                row: vec![Value::I32(-33), Value::String("JoeNewUpdated".to_string())],
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Update(new_table1_update_diff));
+
+        // Remove one of the rows
+        let new_table1_remove_diff: RemoveDiff = new_table1.remove_rows(vec![
+            RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            },
+        ])
+        .unwrap();
+        user.append_diff(&Diff::Remove(new_table1_remove_diff));
+
+        // Create a commit on new branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on New Branch".to_string(),
+                &"Insert, Update, and Remove Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Switch to main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+        
+        // Merge the branches
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch_name, 
+                &mut user, 
+                &"Merged Branches".to_string(), 
+                MergeConflictResolutionAlgo::NoConflicts,
+                false)
+            .unwrap();
+        
+        // Here's what we have done so far
+        // Create DB
+        //   Create Table
+        //   Insert 2 rows
+        // Commit on Main
+        // Create new branch
+        // Switch back to Main
+        //   Insert 5 rows
+        //   Update the 2 rows (rows 3 and 4)
+        //   Remove 1 row (row 4)
+        // Commit on Main
+        // Switch to new branch
+        //   Insert 3 rows
+        //   Update 2 rows (rows 4 and 5)
+        //   Remove 1 row (row 2)
+        // Commit on new branch
+
+        // Assert that the merge commit has the correct number of diffs
+        let merge_diffs: Vec<Diff> = merge_commit.diffs;
+        assert_eq!(merge_diffs.len(), 2);
+
+        // Assert that the merge commit has the correct diffs
+        if let Diff::Insert(insert_diff) = &merge_diffs[0] {
+            assert_eq!(insert_diff.table_name, table_name1);
+            assert_eq!(insert_diff.schema, table1.schema);
+            assert_eq!(insert_diff.rows.len(), 3);
+            assert_eq!(insert_diff.rows[0].row.len(), 2);
+            assert_eq!(insert_diff.rows[0].row[0], Value::I32(-1));
+            assert_eq!(insert_diff.rows[0].row[1], Value::String("JohnNewBranch".to_string()));
+            assert_eq!(insert_diff.rows[1].row.len(), 2);
+            assert_eq!(insert_diff.rows[1].row[0], Value::I32(-22));
+            assert_eq!(insert_diff.rows[1].row[1], Value::String("JaneNewUpdated".to_string()));
+            assert_eq!(insert_diff.rows[2].row.len(), 2);
+            assert_eq!(insert_diff.rows[2].row[0], Value::I32(-33));
+            assert_eq!(insert_diff.rows[2].row[1], Value::String("JoeNewUpdated".to_string()));
+        } else {
+            panic!("Expected insert diff");
+        }
+        if let Diff::Remove(remove_diff) = &merge_diffs[1] {
+            assert_eq!(remove_diff.table_name, table_name1);
+            assert_eq!(remove_diff.schema, table1.schema);
+            assert_eq!(remove_diff.rows.len(), 1);
+            assert_eq!(remove_diff.rows[0].row.len(), 2);
+            assert_eq!(remove_diff.rows[0].pagenum, 1);
+            assert_eq!(remove_diff.rows[0].rownum, 1);
+            assert_eq!(remove_diff.rows[0].row[0], Value::I32(200));
+            assert_eq!(remove_diff.rows[0].row[1], Value::String("SecondRow".to_string()));
+        } else {
+            panic!("Expected remove diff");
+        }
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
     /// Asserts that the given rows are correct.
     fn assert_rows_are_correct(rows: Vec<Row>, expected_rows: Vec<Row>) {
         // Assert we have the correct number of rows
@@ -2065,6 +2499,56 @@ mod tests {
             // Assert the values are correct
             assert_eq!(row[i], expected_row[i]);
         }
+    }
+
+    /// Gets the insert Diff from within the vector of Diffs
+    fn get_insert_diff(diffs: &Vec<Diff>) -> InsertDiff {
+        for diff in diffs {
+            if let Diff::Insert(insert_diff) = diff {
+                return insert_diff.clone();
+            }
+        }
+        panic!("Could not find insert diff");
+    }
+
+    /// Gets the update Diff from within the vector of Diffs
+    fn get_update_diff(diffs: &Vec<Diff>) -> UpdateDiff {
+        for diff in diffs {
+            if let Diff::Update(update_diff) = diff {
+                return update_diff.clone();
+            }
+        }
+        panic!("Could not find update diff");
+    }
+
+    /// Gets the remove Diff from within the vector of Diffs
+    fn get_remove_diff(diffs: &Vec<Diff>) -> RemoveDiff {
+        for diff in diffs {
+            if let Diff::Remove(remove_diff) = diff {
+                return remove_diff.clone();
+            }
+        }
+        panic!("Could not find remove diff");
+    }
+
+    /// Gets the create table Diff from within the vector of Diffs
+    fn get_create_table_diff(diffs: &Vec<Diff>) -> TableCreateDiff {
+        for diff in diffs {
+            if let Diff::TableCreate(create_table_diff) = diff {
+                return create_table_diff.clone();
+            }
+        }
+        panic!("Could not find create table diff");
+    }
+
+    /// Gets the table remove Diff from within the vector of Diffs
+    fn get_table_remove_diff(diffs: &Vec<Diff>) -> TableRemoveDiff {
+        for diff in diffs {
+            if let Diff::TableRemove(table_remove_diff) = diff {
+                return table_remove_diff.clone();
+            }
+        }
+        panic!("Could not find table remove diff");
     }
 
     /// Sets up the test database and creates 2 tables on the main branch for first commit,

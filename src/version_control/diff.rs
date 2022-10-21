@@ -148,6 +148,11 @@ pub struct TableSquashDiff {
 /***************************************************************************************************/
 
 impl UpdateDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        UPDATE_TYPE
+    }
+
     /// Checks if there is a merge conflict between this update diff and the target diff.
     pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
         match target_diff {
@@ -441,6 +446,11 @@ impl UpdateDiff {
 }
 
 impl InsertDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        INSERT_TYPE
+    }
+
     /// Checks if there is a merge conflict between this update diff and the target diff.
     pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
         match target_diff {
@@ -466,6 +476,11 @@ impl InsertDiff {
 }
 
 impl RemoveDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        REMOVE_TYPE
+    }
+
     /// Checks if there is a merge conflict between this update diff and the target diff.
     pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
         match target_diff {
@@ -499,6 +514,11 @@ impl RemoveDiff {
 }
 
 impl TableCreateDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        TABLE_CREATE_TYPE
+    }
+
     /// Checks if there is a merge conflict between this update diff and the target diff.
     pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
         match target_diff {
@@ -533,6 +553,11 @@ impl TableCreateDiff {
 }
 
 impl TableRemoveDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        TABLE_REMOVE_TYPE
+    }
+
     /// Checks if there is a merge conflict between this update diff and the target diff.
     pub fn is_merge_conflict(&self, target_diff: &Diff) -> bool {
         match target_diff {

@@ -365,7 +365,7 @@ impl CommitFile {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
         } else if commits.len() == 1 {
-            return Ok(commits[0].clone());
+            //return Ok(commits[0].clone());
         }
         let msg = format!("Combined {} commits", commits.len());
         let cmd = format!(
@@ -1163,7 +1163,7 @@ mod tests {
         let squash: Commit = get_db_instance()
             .unwrap()
             .get_commit_file_mut()
-            .squash_commits(&vec![commit1, commit2])
+            .squash_commits(&vec![commit1, commit2], true)
             .unwrap();
 
         let diffs: Vec<Diff> = squash.diffs;

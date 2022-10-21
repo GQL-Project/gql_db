@@ -379,7 +379,13 @@ impl Table {
                 }
                 None => {
                     println!("Error: Row not found at pagenum {} rownum {}", pagenum, rownum);
-                    return Err(format!("The provided Row doesn't exist!"));
+                    return Err(
+                        format!(
+                            "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!",
+                            pagenum, 
+                            rownum
+                        )
+                    );
                 }
             }
         }
@@ -462,7 +468,7 @@ impl Table {
         }
         Ok(empty_rows)
     }
-    
+
     pub fn pos_to_loc(&self, index: i32) -> RowLocation {
         let rows_per_page = PAGE_SIZE as i32 / self.schema_size as i32;
         RowLocation {
