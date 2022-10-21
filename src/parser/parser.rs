@@ -138,7 +138,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         }
         "log" => {
             // log (NO FLAGS OR ARGS)
-            if vec.len() != 2 {
+            if vec.len() != 2 || vec.len() != 3 {
                 // Error message here
                 return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
@@ -146,6 +146,15 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             let log_results = command::log(user)?;
             let log_string: String = log_results.0;
 
+            if vec.len() == 3 {
+                if vec[2] != "-json" {
+                    // Error message here
+                    return Err("Invalid VC Command".to_string());
+                } else {
+                    // Return the log in JSON format
+                    return Ok(log_results.2);
+                }
+            }
             return Ok(log_string);
         }
         "squash" => {
