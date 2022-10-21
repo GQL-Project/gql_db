@@ -87,7 +87,7 @@ mod tests {
     use crate::{
         fileio::{databaseio::*, header::Schema},
         util::dbtype::Column,
-        util::{dbtype::Value, row::*, bench::fcreate_db_instance},
+        util::{bench::fcreate_db_instance, dbtype::Value, row::*},
         version_control::diff::{Diff, InsertDiff},
     };
     use serial_test::serial;

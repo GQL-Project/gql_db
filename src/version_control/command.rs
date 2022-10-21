@@ -156,7 +156,10 @@ mod tests {
             databaseio::{create_db_instance, delete_db_instance},
             header::Schema,
         },
-        util::{bench::{create_demo_db, fcreate_db_instance}, dbtype::*},
+        util::{
+            bench::{create_demo_db, fcreate_db_instance},
+            dbtype::*,
+        },
         version_control::{commit::Commit, diff::Diff},
     };
 

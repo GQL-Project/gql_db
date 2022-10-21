@@ -1063,8 +1063,9 @@ mod tests {
         executor::query::{create_table, select},
         fileio::header::Schema,
         util::{
+            bench::fcreate_db_instance,
             dbtype::{Column, Value},
-            row::Row, bench::fcreate_db_instance,
+            row::Row,
         },
         version_control,
     };

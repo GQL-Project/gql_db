@@ -701,7 +701,7 @@ mod tests {
         executor::query::{create_table, insert},
         fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance, Database},
         user::userdata::User,
-        util::{row::RowLocation, bench::fcreate_db_instance},
+        util::{bench::fcreate_db_instance, row::RowLocation},
     };
 
     use super::*;

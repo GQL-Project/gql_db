@@ -23,7 +23,7 @@ pub struct BranchNode {
 
 impl BranchNode {
     pub fn can_squash(&self) -> bool {
-        // If this node is the head of the branch, we can't squash it, if it has any children. 
+        // If this node is the head of the branch, we can't squash it, if it has any children.
         // Alternatively, if it has more than one child, we can't squash it.
         (!self.is_head || self.num_kids == 0) && self.num_kids <= 1
     }
