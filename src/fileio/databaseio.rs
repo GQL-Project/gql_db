@@ -1845,8 +1845,8 @@ mod tests {
 
         assert_eq!(first_node_val.branch_name, MAIN_BRANCH_NAME.to_string());
         assert_eq!(first_node_val.commit_hash, first_node_results.1.hash);
-        assert_eq!(first_node_val.is_head(), true);
-        assert_eq!(branch_node.is_head(), true);
+        assert_eq!(first_node_val.is_head, true);
+        assert_eq!(branch_node.is_head, true);
         assert_eq!(branch_node.branch_name, "new branch".to_string());
         let main_branch_node = branch_heads_file
             .get_branch_node_from_head(&MAIN_BRANCH_NAME.to_string(), &branches_file)

@@ -39,6 +39,7 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
         log_string = format!("{}\nCommit: {}", log_string, commit.hash);
         log_string = format!("{}\nMessage: {}", log_string, commit.message);
         log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
+        log_string = format!("{}\nNum Kids: {}", log_string, node.num_kids);
         log_string = format!("{}\n-----------------------\n", log_string);
 
         let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
@@ -78,7 +79,9 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
             while current != None {
                 let node = current.as_ref().unwrap();
                 commit_hashes.push(node.commit_hash.clone());
-                
+                if !node.can_squash() {
+                    return Err("Could not squash between commits as they have child commits in other branches!".to_string());
+                }
                 if node.commit_hash == hash1 {
                     save_first = Some(node.clone());
                     break;
@@ -114,6 +117,7 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
         curr_pagenum: save_last.curr_pagenum,
         curr_rownum: save_last.curr_rownum,
         num_kids: save_last.num_kids,
+        is_head: save_last.is_head,
     };
     branches.update_branch_node(&squash_node)?;
     Ok(squash_commit)
