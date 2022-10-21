@@ -55,15 +55,6 @@ pub fn get_db_instance() -> Result<&'static mut Database, String> {
 
 pub fn create_db_instance(database_name: &String) -> Result<(), String> {
     unsafe {
-        // Get the database directory './databases/<database_name>'
-        let mut db_path: String = Database::get_database_base_path()?;
-        db_path.push(std::path::MAIN_SEPARATOR);
-        db_path.push_str(database_name.as_str());
-        // If the database already exists, delete it
-        if Path::new(&db_path).exists() {
-            std::fs::remove_dir_all(db_path)
-                .map_err(|e| format!("Database::create_db_instance() Error: {}", e))?;
-        }
         DATABASE_INSTANCE = Some(Database::new(database_name.clone())?);
     }
     Ok(())
