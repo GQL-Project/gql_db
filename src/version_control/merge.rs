@@ -938,18 +938,18 @@ mod tests {
         // Tests inserting rows into the source branch and merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
         let mut src_diffs: Vec<Diff> = Vec::new();
-        let mut target_diffs: Vec<Diff> = Vec::new();
+        let target_diffs: Vec<Diff> = Vec::new();
 
         // Insert rows into the source branch
         let rows: Vec<Row> = vec![
@@ -998,13 +998,13 @@ mod tests {
         // Tests inserting rows into both the source branch and the target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1066,18 +1066,18 @@ mod tests {
         // Tests creating a table in the source branch then merging it into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
-            table_name1,
-            table_name2
+            _table_name1,
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
         let mut src_diffs: Vec<Diff> = Vec::new();
-        let mut target_diffs: Vec<Diff> = Vec::new();
+        let target_diffs: Vec<Diff> = Vec::new();
 
         // Create a table in the source branch
         let src_new_table_name: String = "new_table_123".to_string();
@@ -1086,7 +1086,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("score".to_string(), Column::Float),
         ];
-        let (src_new_table, src_table_create_diff) = 
+        let (_src_new_table, src_table_create_diff) = 
             create_table_in_dir(
                 &src_new_table_name, 
                 &src_new_table_schema, 
@@ -1122,13 +1122,13 @@ mod tests {
         // Tests creating a table in both the source branch and the target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
-            table_name1,
-            table_name2
+            _table_name1,
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1142,7 +1142,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("score".to_string(), Column::Float),
         ];
-        let (src_new_table, src_table_create_diff) = 
+        let (_src_new_table, src_table_create_diff) = 
             create_table_in_dir(
                 &src_new_table_name, 
                 &src_new_table_schema, 
@@ -1157,7 +1157,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("score".to_string(), Column::Float),
         ];
-        let (target_new_table, target_table_create_diff) = 
+        let (_target_new_table, target_table_create_diff) = 
             create_table_in_dir(
                 &target_new_table_name, 
                 &target_new_table_schema, 
@@ -1193,13 +1193,13 @@ mod tests {
         // Tests creating the same table in both the source branch and the target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
-            table_name1,
-            table_name2
+            _table_name1,
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1213,7 +1213,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("score".to_string(), Column::Float),
         ];
-        let (src_new_table, src_table_create_diff) = 
+        let (_src_new_table, src_table_create_diff) = 
             create_table_in_dir(
                 &src_new_table_name, 
                 &src_new_table_schema, 
@@ -1226,7 +1226,7 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let (target_new_table, target_table_create_diff) = 
+        let (_target_new_table, target_table_create_diff) = 
             create_table_in_dir(
                 &src_new_table_name, 
                 &target_new_table_schema, 
@@ -1256,13 +1256,13 @@ mod tests {
         // Tests creating a table in both the source branch and the target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
-            table_name1,
-            table_name2
+            _table_name1,
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1276,7 +1276,7 @@ mod tests {
             ("name".to_string(), Column::String(50)),
             ("score".to_string(), Column::Float),
         ];
-        let (src_new_table, src_table_create_diff) = 
+        let (_src_new_table, src_table_create_diff) = 
             create_table_in_dir(
                 &src_new_table_name, 
                 &src_new_table_schema, 
@@ -1285,7 +1285,7 @@ mod tests {
         src_diffs.push(Diff::TableCreate(src_table_create_diff));
 
         // Create the exact same table in the target branch
-        let (target_new_table, target_table_create_diff) = 
+        let (_target_new_table, target_table_create_diff) = 
             create_table_in_dir(
                 &src_new_table_name, 
                 &src_new_table_schema, 
@@ -1314,18 +1314,18 @@ mod tests {
         // Tests updating rows in the source branch and merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
         let mut src_diffs: Vec<Diff> = Vec::new();
-        let mut target_diffs: Vec<Diff> = Vec::new();
+        let target_diffs: Vec<Diff> = Vec::new();
 
         // Update rows in the source branch
         let rows: Vec<RowInfo> = vec![
@@ -1370,13 +1370,13 @@ mod tests {
         // Tests updating rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1444,13 +1444,13 @@ mod tests {
         // Tests updating rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1523,13 +1523,13 @@ mod tests {
         // Tests updating rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1593,18 +1593,18 @@ mod tests {
         // Tests removing rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
         let mut src_diffs: Vec<Diff> = Vec::new();
-        let mut target_diffs: Vec<Diff> = Vec::new();
+        let target_diffs: Vec<Diff> = Vec::new();
 
         // Remove rows in the source branch
         let rows: Vec<RowLocation> = vec![
@@ -1655,13 +1655,13 @@ mod tests {
         // Tests removing rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
@@ -1730,18 +1730,18 @@ mod tests {
         // Tests removing rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
-            table_name1,
+            _table_name1,
             table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
         let mut src_diffs: Vec<Diff> = Vec::new();
-        let mut target_diffs: Vec<Diff> = Vec::new();
+        let target_diffs: Vec<Diff> = Vec::new();
 
         // Remove a table from the source branch
         let src_table2: Table =
@@ -1789,9 +1789,9 @@ mod tests {
         // Tests removing rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
@@ -1803,8 +1803,6 @@ mod tests {
         let mut target_diffs: Vec<Diff> = Vec::new();
 
         // Remove a table from the source branch
-        let src_table2: Table =
-            Table::new(&src_branch_dir, &table_name2, None).unwrap();
         let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name2, &src_branch_dir).unwrap();
         src_diffs.push(Diff::TableRemove(table_remove_diff));
 
@@ -1815,8 +1813,6 @@ mod tests {
         src_diffs.push(Diff::TableRemove(table_remove_diff));
 
         // Remove a table from the target branch
-        let target_table2: Table =
-            Table::new(&target_branch_dir, &table_name2, None).unwrap();
         let table_remove_diff: TableRemoveDiff = delete_table_in_dir(&table_name2, &target_branch_dir).unwrap();
         target_diffs.push(Diff::TableRemove(table_remove_diff));
 
@@ -1857,9 +1853,9 @@ mod tests {
         // Tests inserting, updating, and removing rows in both the source branch and target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
@@ -1978,13 +1974,13 @@ mod tests {
         // Tests inserting rows into both the source branch and the target branch then merging them into the target branch
 
         // Create the database
-        let (mut user, 
-            src_branch, 
-            target_branch, 
+        let (_user, 
+            _src_branch, 
+            _target_branch, 
             src_branch_dir, 
             target_branch_dir,
             table_name1,
-            table_name2
+            _table_name2
         ) = setup_test_db();
 
         // Create a vector for the source and target diffs
