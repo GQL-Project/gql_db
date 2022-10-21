@@ -52,7 +52,7 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
 /// Takes two commit hashes, and attempts to find a chain of commits
 /// from the first commit to the second, assuming that the commits are
 /// from the same branch.
-/// Squashes are only permitted when no other branches use the 
+/// Squashes are only permitted when no other branches use the
 /// commits in a squash
 pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
@@ -80,7 +80,10 @@ pub fn squash(user: &User, hash1: String, hash2: String) -> Result<Commit, Strin
                 let node = current.as_ref().unwrap();
                 commit_hashes.push(node.commit_hash.clone());
                 if !node.can_squash() {
-                    return Err("Could not squash between commits as they have child commits in other branches!".to_string());
+                    return Err(format!(
+                        "Could not squash, commit {} is shared across branches.",
+                        node.commit_hash
+                    ));
                 }
                 if node.commit_hash == hash1 {
                     save_first = Some(node.clone());

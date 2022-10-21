@@ -23,7 +23,9 @@ pub struct BranchNode {
 
 impl BranchNode {
     pub fn can_squash(&self) -> bool {
-        self.num_kids <= 1
+        // If this node is the head of the branch, we can't squash it, if it has any children. 
+        // Alternatively, if it has more than one child, we can't squash it.
+        (!self.is_head || self.num_kids == 0) && self.num_kids <= 1
     }
 }
 
@@ -218,7 +220,6 @@ impl Branches {
                 let mut rows_to_rewrite: Vec<RowInfo> = Vec::new();
 
                 if let Some(prev_node) = prev_node {
-                    
                     let prev_row_location: RowLocation = RowLocation {
                         pagenum: prev_node.curr_pagenum as u32,
                         rownum: prev_node.curr_rownum as u16,
