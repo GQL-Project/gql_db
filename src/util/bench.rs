@@ -14,13 +14,18 @@ use crate::{
 
 use super::dbtype::parse_time;
 
+// Delete instance if it exists (Only for testing)
+pub fn fcreate_db_instance(name: &str) {
+    if let Ok(db) = Database::load_db(name.to_string()) {
+        db.delete_database().unwrap();
+    }
+    create_db_instance(&name.to_string()).unwrap();
+}
+
 /// Creating a big database to run tests on, with enough data and some commits filled in.
 pub fn create_demo_db(name: &str) -> User {
     let name = format!("benchmark_db_{name}");
-    if let Ok(db) = Database::load_db(name.clone()) {
-        db.delete_database().unwrap();
-    }
-    create_db_instance(&name).unwrap();
+    fcreate_db_instance(&name);
     let db = get_db_instance().unwrap();
     let mut user: User = User::new("test_user".to_string());
     let schema1: Schema = vec![
@@ -66,16 +71,18 @@ pub fn create_demo_db(name: &str) -> User {
         )
         .unwrap();
 
-    let diff = table1.insert_rows(vec![
-        create_row1(6, "Alice", "Jones", 32, 5.7, "2020-01-05 01:00:00"),
-        create_row1(7, "Joe", "Smith", 30, -1.0, "2020-01-06 00:00:11"),
-        create_row1(8, "Stephen", "Strange", 28, 5.6, "2020-01-07 12:00:23"),
-        create_row1(9, "Tony", "Stark", 35, 5.9, "2020-01-08 00:00:11"),
-        create_row1(10, "Bruce", "Banner", 32, 5.7, "2021-01-03 12:00:23"),
-        create_row1(11, "Peter", "Parker", 30, -1.0, "2020-01-01 00:00:11"),
-        create_row1(12, "Steve", "Rogers", 28, 5.6, "2020-01-01 12:00:23"),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
+    let diff = table1
+        .insert_rows(vec![
+            create_row1(6, "Alice", "Jones", 32, 5.7, "2020-01-05 01:00:00"),
+            create_row1(7, "Joe", "Smith", 30, -1.0, "2020-01-06 00:00:11"),
+            create_row1(8, "Stephen", "Strange", 28, 5.6, "2020-01-07 12:00:23"),
+            create_row1(9, "Tony", "Stark", 35, 5.9, "2020-01-08 00:00:11"),
+            create_row1(10, "Bruce", "Banner", 32, 5.7, "2021-01-03 12:00:23"),
+            create_row1(11, "Peter", "Parker", 30, -1.0, "2020-01-01 00:00:11"),
+            create_row1(12, "Steve", "Rogers", 28, 5.6, "2020-01-01 12:00:23"),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
     let diff = table1
         .rewrite_rows(vec![
             update_row(
@@ -118,14 +125,16 @@ pub fn create_demo_db(name: &str) -> User {
     user.append_diff(&Diff::Remove(diff));
     user.append_diff(&Diff::TableCreate(diff2));
 
-    let diff = table2.insert_rows(vec![
-        create_row2(1, "Home", true),
-        create_row2(2, "Work", false),
-        create_row2(3, "School", true),
-        create_row2(4, "Gym", false),
-        create_row2(5, "Store", true),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
+    let diff = table2
+        .insert_rows(vec![
+            create_row2(1, "Home", true),
+            create_row2(2, "Work", false),
+            create_row2(3, "School", true),
+            create_row2(4, "Gym", false),
+            create_row2(5, "Store", true),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
     let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
@@ -136,21 +145,25 @@ pub fn create_demo_db(name: &str) -> User {
         )
         .unwrap();
 
-    let diff = table2.insert_rows(vec![
-        create_row2(6, "Restaurant", true),
-        create_row2(7, "Bar", false),
-        create_row2(8, "Park", true),
-        create_row2(9, "Library", false),
-        create_row2(10, "Museum", true),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
-    let diff = table2.rewrite_rows(vec![
-        update_row(table2.pos_to_loc(2), create_row2(3, "University", true)),
-        update_row(table2.pos_to_loc(3), create_row2(4, "Gymnasium", true)),
-        update_row(table2.pos_to_loc(7), create_row2(8, "Garden", false)),
-        update_row(table2.pos_to_loc(9), create_row2(10, "Gallery", false)),
-    ]);
-    user.append_diff(&Diff::Update(diff.unwrap()));
+    let diff = table2
+        .insert_rows(vec![
+            create_row2(6, "Restaurant", true),
+            create_row2(7, "Bar", false),
+            create_row2(8, "Park", true),
+            create_row2(9, "Library", false),
+            create_row2(10, "Museum", true),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
+    let diff = table2
+        .rewrite_rows(vec![
+            update_row(table2.pos_to_loc(2), create_row2(3, "University", true)),
+            update_row(table2.pos_to_loc(3), create_row2(4, "Gymnasium", true)),
+            update_row(table2.pos_to_loc(7), create_row2(8, "Garden", false)),
+            update_row(table2.pos_to_loc(9), create_row2(10, "Gallery", false)),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Update(diff));
     let diff = table2
         .remove_rows(vec![
             table2.pos_to_loc(2),
@@ -231,13 +244,15 @@ pub fn create_demo_db(name: &str) -> User {
         )
         .unwrap();
 
-    let diff = table2.rewrite_rows(vec![
-        update_row(table2.pos_to_loc(2), create_row2(3, "University", true)),
-        update_row(table2.pos_to_loc(3), create_row2(4, "Gymnasium", true)),
-        update_row(table2.pos_to_loc(7), create_row2(8, "Garden", false)),
-        update_row(table2.pos_to_loc(9), create_row2(10, "Gallery", false)),
-    ]);
-    user.append_diff(&Diff::Update(diff.unwrap()));
+    let diff = table2
+        .rewrite_rows(vec![
+            update_row(table2.pos_to_loc(2), create_row2(3, "University", true)),
+            update_row(table2.pos_to_loc(3), create_row2(4, "Gymnasium", true)),
+            update_row(table2.pos_to_loc(7), create_row2(8, "Garden", false)),
+            update_row(table2.pos_to_loc(9), create_row2(10, "Gallery", false)),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Update(diff));
     let diff = table2
         .remove_rows(vec![
             table2.pos_to_loc(2),
@@ -256,23 +271,27 @@ pub fn create_demo_db(name: &str) -> User {
         )
         .unwrap();
 
-    let diff = table1.insert_rows(vec![
-        create_row1(18, "Clint", "Barton", 32, 5.7, "2020-01-07 00:00:00"),
-        create_row1(19, "Dwayne", "Johnson", 30, 5.8, "2020-01-08 00:00:11"),
-        create_row1(20, "Chris", "Hemsworth", 28, -1.0, "2020-01-09 12:00:23"),
-        create_row1(21, "Chris", "Evans", 35, 5.9, "2020-01-20 00:00:11"),
-        create_row1(22, "Mark", "Ruffalo", 32, 5.7, "2020-01-21 00:00:00"),
-        create_row1(23, "Benedict", "Cumberba", 30, 5.8, "2020-01-22 00:00:11"),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
-    let diff = table2.insert_rows(vec![
-        create_row2(16, "Gym", true),
-        create_row2(17, "Garden", false),
-        create_row2(18, "Gallery", false),
-        create_row2(19, "Gymnasium", true),
-        create_row2(20, "University", true),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
+    let diff = table1
+        .insert_rows(vec![
+            create_row1(18, "Clint", "Barton", 32, 5.7, "2020-01-07 00:00:00"),
+            create_row1(19, "Dwayne", "Johnson", 30, 5.8, "2020-01-08 00:00:11"),
+            create_row1(20, "Chris", "Hemsworth", 28, -1.0, "2020-01-09 12:00:23"),
+            create_row1(21, "Chris", "Evans", 35, 5.9, "2020-01-20 00:00:11"),
+            create_row1(22, "Mark", "Ruffalo", 32, 5.7, "2020-01-21 00:00:00"),
+            create_row1(23, "Benedict", "Cumberba", 30, 5.8, "2020-01-22 00:00:11"),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
+    let diff = table2
+        .insert_rows(vec![
+            create_row2(16, "Gym", true),
+            create_row2(17, "Garden", false),
+            create_row2(18, "Gallery", false),
+            create_row2(19, "Gymnasium", true),
+            create_row2(20, "University", true),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
     let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
@@ -312,24 +331,28 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
 
     db.switch_branch(&"main".to_string(), &mut user).unwrap();
-    let diff = table1.insert_rows(vec![
-        create_row1(24, "Tom", "Holland", 28, -1.0, "2020-01-23 12:00:23"),
-        create_row1(25, "Elizabeth", "Olsen", 35, 5.9, "2020-01-24 00:00:11"),
-        create_row1(26, "Scarlett", "Johansson", 32, 5.7, "2020-01-25 00:00:00"),
-        create_row1(27, "Chadwick", "Boseman", 30, 5.8, "2020-01-26 00:00:11"),
-        create_row1(28, "Tom", "Hiddleston", 28, -1.0, "2020-01-27 12:00:23"),
-        create_row1(29, "Paul", "Rudd", 35, 5.9, "2020-01-28 00:00:11"),
-        create_row1(30, "Jeremy", "Renner", 32, 5.7, "2020-01-29 00:00:00"),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
-    let diff = table2.insert_rows(vec![
-        create_row2(21, "Gym", true),
-        create_row2(22, "Garden", false),
-        create_row2(23, "Gallery", false),
-        create_row2(24, "Gymnasium", true),
-        create_row2(25, "University", true),
-    ]);
-    user.append_diff(&Diff::Insert(diff.unwrap()));
+    let diff = table1
+        .insert_rows(vec![
+            create_row1(24, "Tom", "Holland", 28, -1.0, "2020-01-23 12:00:23"),
+            create_row1(25, "Elizabeth", "Olsen", 35, 5.9, "2020-01-24 00:00:11"),
+            create_row1(26, "Scarlett", "Johansson", 32, 5.7, "2020-01-25 00:00:00"),
+            create_row1(27, "Chadwick", "Boseman", 30, 5.8, "2020-01-26 00:00:11"),
+            create_row1(28, "Tom", "Hiddleston", 28, -1.0, "2020-01-27 12:00:23"),
+            create_row1(29, "Paul", "Rudd", 35, 5.9, "2020-01-28 00:00:11"),
+            create_row1(30, "Jeremy", "Renner", 32, 5.7, "2020-01-29 00:00:00"),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
+    let diff = table2
+        .insert_rows(vec![
+            create_row2(21, "Gym", true),
+            create_row2(22, "Garden", false),
+            create_row2(23, "Gallery", false),
+            create_row2(24, "Gymnasium", true),
+            create_row2(25, "University", true),
+        ])
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
     let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
@@ -379,8 +402,9 @@ pub fn create_demo_db(name: &str) -> User {
     db.create_branch(&"test_branch2".to_string(), &mut user)
         .unwrap();
 
-    let diff = delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user));
-    user.append_diff(&Diff::TableRemove(diff.unwrap()));
+    let diff =
+        delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user)).unwrap();
+    user.append_diff(&Diff::TableRemove(diff));
     let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(

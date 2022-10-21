@@ -1320,6 +1320,7 @@ mod tests {
         executor::query::{create_table, select},
         fileio::header::Schema,
         util::{
+            bench::fcreate_db_instance,
             dbtype::{Column, Value},
             row::Row,
         },
@@ -1546,7 +1547,7 @@ mod tests {
             + db_name.clone().as_str();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Make sure database does exist now
         assert_eq!(Path::new(&db_base_path).exists(), true);
@@ -1665,7 +1666,7 @@ mod tests {
             + &db_branch_name.clone();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Make a user
         let mut user: User = User::new("test_user".to_string());
@@ -1788,7 +1789,7 @@ mod tests {
             + &db_branch_name.clone();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Make a user
         let mut user: User = User::new("test_user".to_string());
@@ -1962,7 +1963,7 @@ mod tests {
         let db_name = "test_create_new_branch".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -2026,7 +2027,7 @@ mod tests {
         let db_name = "test_create_multiple_branches".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -2122,7 +2123,7 @@ mod tests {
         let branch_name: String = "new branch".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -2283,7 +2284,7 @@ mod tests {
         let branch2_name: String = "new_branch2".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -2313,7 +2314,7 @@ mod tests {
         let branch2_name: String = "new_branch2".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Get the directories for all the branches
         let main_branch_table_dir: String = get_db_instance()
@@ -2611,7 +2612,7 @@ mod tests {
         let branch_name: String = "new_branch".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Get the directories for all the branches
         let main_branch_table_dir: String = get_db_instance()
@@ -2740,7 +2741,7 @@ mod tests {
         let branch_name_1: String = "new_branch_1".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Get the directories for all the branches
         let main_branch_table_dir: String = get_db_instance()
@@ -2965,7 +2966,7 @@ mod tests {
         let branch_name_1: String = "new_branch_1".to_string();
 
         // Create the database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Get the directories for all the branches
         let main_branch_table_dir: String = get_db_instance()

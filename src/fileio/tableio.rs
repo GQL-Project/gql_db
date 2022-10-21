@@ -373,8 +373,8 @@ impl Table {
                     // Add changes to the diff
                     diff.rows.push(RowInfo {
                         row: row_read,
-                        pagenum: row_location.pagenum,
-                        rownum: row_location.rownum,
+                        pagenum,
+                        rownum,
                     });
                 }
                 None => {
@@ -404,7 +404,10 @@ impl Table {
             Some(row) => {
                 return Ok(row);
             }
-            None => Err("Row not found".to_string()),
+            None => Err(format!(
+                "Row not found at {} {}",
+                row_location.pagenum, row_location.rownum
+            )),
         }
     }
 

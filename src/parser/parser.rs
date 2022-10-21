@@ -89,7 +89,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else if !vec[2].to_string().starts_with("-") && vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
@@ -97,7 +97,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             } else {
                 // using a flag that's not supposed to be used
                 if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" && vec[2].to_string() != "-c" {
-                    return Err("Invalid flag".to_string());
+                    return Err(format!(
+                        "Invalid Flag for Branch VC Command: {}",
+                        vec[2].to_string()
+                    ));
                 }
                 if vec[2].to_string() == "-l" {
                     // We want to return a list of branches
@@ -127,11 +130,11 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                return Err("Invalid Branch Name".to_string());
+                return Err(format!("Invalid Branch Name '{}'", vec.join(" ")));
             } else {
                 // vec[2] should be a branch name
                 get_db_instance()?
@@ -257,6 +260,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         }
         "log" => {
             // log (NO FLAGS OR ARGS)
+            if vec.len() != 2 && vec.len() != 3 {
+                // Error message here
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
+            }
 
             let log_results = command::log(user)?;
             let log_string: String = log_results.0;
@@ -281,7 +288,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
 
             let hash1 = vec[2].to_string();
             let hash2 = vec[3].to_string();
-            let squash_results = command::squash(user, hash1, hash2)?;
+            let squash_results = command::squash(&hash1, &hash2, user)?;
             return Ok(format!(
                 "Squash Commit Made at hash: {}",
                 squash_results.hash
@@ -291,7 +298,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // revert (Needs an argument)
             if vec.len() != 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else {
                 // vec[2] should be a commit hash
                 return Ok("Valid Revert Command".to_string());
@@ -301,13 +308,13 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // status (NO FLAGS OR ARGS)
             if vec.len() != 2 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
             return Ok("Valid Status Command".to_string());
         }
         _ => {
             // error message here
-            return Err("Invalid VC Command".to_string());
+            return Err(format!("Invalid VC Command: {}", vec.join(" ")));
         }
     }
 }
@@ -316,7 +323,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
 mod tests {
     use serial_test::serial;
 
-    use crate::fileio::databaseio::{create_db_instance, delete_db_instance};
+    use crate::{fileio::databaseio::delete_db_instance, util::bench::fcreate_db_instance};
 
     use super::*;
 
@@ -325,7 +332,7 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance_ 1".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_1");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
@@ -358,7 +365,7 @@ mod tests {
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance_2".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_2");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
@@ -381,7 +388,7 @@ mod tests {
         let query0 = "GQL branch branch_name";
         let query = "GQL switch_branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"TEST_DB".to_string()).unwrap();
+        fcreate_db_instance("TEST_DB");
         let mut user: User = User::new("test_user".to_string());
         parse_vc_cmd(query0, &mut user).unwrap();
         let result = parse_vc_cmd(query, &mut user);
@@ -394,7 +401,7 @@ mod tests {
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
         // Create a new user on the main branch
-        create_db_instance(&"TEST_DB".to_string()).unwrap();
+        fcreate_db_instance("TEST_DB");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
@@ -405,7 +412,7 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
-        create_db_instance(&"gql_log_db_instance_3".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_3");
 
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -480,6 +487,16 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd15() {
         let query = "GQL commit -m \"\"";
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_vc_cmd16() {
+        let query = "GQL log -json";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
