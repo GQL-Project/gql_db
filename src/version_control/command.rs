@@ -39,7 +39,6 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>), String> {
         log_string = format!("{}\nCommit: {}", log_string, commit.hash);
         log_string = format!("{}\nMessage: {}", log_string, commit.message);
         log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
-        log_string = format!("{}\nNum Kids: {}", log_string, node.num_kids);
         log_string = format!("{}\n-----------------------\n", log_string);
 
         let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];

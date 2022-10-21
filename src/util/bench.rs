@@ -56,7 +56,7 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let (_, commit1) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 1 on Main Branch".to_string(),
@@ -97,7 +97,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Update(diff));
-    let (_, commit2) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 2 on Main Branch".to_string(),
@@ -126,7 +126,7 @@ pub fn create_demo_db(name: &str) -> User {
         create_row2(5, "Store", true),
     ]);
     user.append_diff(&Diff::Insert(diff.unwrap()));
-    let (_, commit3) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 3 on Main Branch".to_string(),
@@ -159,7 +159,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let (_, commit4) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 4 on Main Branch".to_string(),
@@ -221,7 +221,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let (_, commit5) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 5 on Test Branch 1 1".to_string(),
@@ -246,7 +246,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let (_, commit6) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 6 on Test Branch 1".to_string(),
@@ -273,7 +273,7 @@ pub fn create_demo_db(name: &str) -> User {
         create_row2(20, "University", true),
     ]);
     user.append_diff(&Diff::Insert(diff.unwrap()));
-    let (_, commit7) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 7 on Test Branch 1".to_string(),
@@ -301,7 +301,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let (_, commit8) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 8 on Test Branch 1".to_string(),
@@ -330,7 +330,7 @@ pub fn create_demo_db(name: &str) -> User {
         create_row2(25, "University", true),
     ]);
     user.append_diff(&Diff::Insert(diff.unwrap()));
-    let (_, commit9) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 9 on Main Branch".to_string(),
@@ -366,7 +366,7 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let (_, commit10) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 10 on Main Branch".to_string(),
@@ -381,7 +381,7 @@ pub fn create_demo_db(name: &str) -> User {
 
     let diff = delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user));
     user.append_diff(&Diff::TableRemove(diff.unwrap()));
-    let (_, commit11) = get_db_instance()
+    let _ = get_db_instance()
         .unwrap()
         .create_commit_and_node(
             &"Create Commit 11 on Test Branch 2".to_string(),
