@@ -221,6 +221,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     &src_branch_name,
                     user,
                     &message,
+                    true,
                     merge_strategy,
                     delete_src_branch
                 )

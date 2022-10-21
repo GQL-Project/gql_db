@@ -2201,6 +2201,7 @@ mod tests {
                 &branch_name, 
                 &mut user, 
                 &"Merged Branches".to_string(), 
+                true,
                 MergeConflictResolutionAlgo::NoConflicts,
                 false)
             .unwrap();
@@ -2418,6 +2419,7 @@ mod tests {
                 &branch_name, 
                 &mut user, 
                 &"Merged Branches".to_string(), 
+                true,
                 MergeConflictResolutionAlgo::NoConflicts,
                 false)
             .unwrap();

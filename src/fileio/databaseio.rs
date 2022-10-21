@@ -698,11 +698,12 @@ impl Database {
     /// It uses the user's branch as the destination branch, and the given branch as the source branch.
     pub fn merge_branches(
         &mut self, 
-        src_branch_name: &String, 
-        user: &mut User,
-        merge_cmt_msg: &String,
-        conflict_res_algo: MergeConflictResolutionAlgo,
-        do_delete_src_branch: bool
+        src_branch_name: &String,                       // The source branch to merge from
+        user: &mut User,                                // The user, who's branch will be the destination branch
+        merge_cmt_msg: &String,                         // The commit message of the merge commit
+        do_commit_merge: bool,                          // Whether we write the commit to a file or not
+        conflict_res_algo: MergeConflictResolutionAlgo, // What type of conflict resolution algorithm to use
+        do_delete_src_branch: bool                      // Whether we delete the source branch after the merge or not
     ) -> Result<Commit, String> {
         let dest_branch_name: String = user.get_current_branch_name();
         let merged_diffs: Vec<Diff>;
@@ -758,13 +759,16 @@ impl Database {
             )?;
 
             // Only squash the commits if we have some to squash
-            let mut src_diffs: Vec<Diff> = Vec::new();
+            let src_diffs: Vec<Diff>;
             if src_commits.len() > 0 {
                 let src_squashed_cmt: Commit = self.commit_file.squash_commits(
                     &src_commits, 
                     false
                 )?;
                 src_diffs = src_squashed_cmt.diffs;
+            }
+            else {
+                return Err("Merge Branches Error: Must have at least one source commit to merge.".to_owned());
             }
             
             // 4. Squash commits of destination branch (common ancestor to branch head) into a single commit object
@@ -791,6 +795,17 @@ impl Database {
                 &self.get_current_working_branch_path(user),
                 conflict_res_algo
             )?;
+
+            // If we aren't committing the merge, we can just return here
+            if !do_commit_merge {
+                return Ok(Commit::new(
+                    Commit::create_hash(),
+                    src_commits.last().unwrap().timestamp.clone(),
+                    merge_cmt_msg.clone(),
+                    format!("Merged {} into {}", src_branch_name, dest_branch_name),
+                    merged_diffs
+                ));
+            }
         }
 
         // 6. Apply diffs to destination branch that user is on
@@ -824,72 +839,25 @@ impl Database {
         Ok(commit)
     }
 
-    pub fn check_merge_conflict(
+    /// Checks for a merge conflict between the source branch name and the branch that the user is currently on
+    pub fn does_merge_conflict(
         &mut self,
-        dest_branch_name: &String,
-        src_branch_name: &String
+        src_branch_name: &String, // The source branch name
+        user: &mut User           // The user who is on the destination branch
     ) -> Result<bool, String> {
-        // Make sure to lock the database before doing anything
-        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+        let merge_result: Result<Commit, String> = self.merge_branches(
+            src_branch_name, 
+            user, 
+            &"Test Merge Conflict".to_string(), 
+            false, 
+            MergeConflictResolutionAlgo::NoConflicts,
+            false
+        );
 
-        // Ensure both branches exist
-        // Checking if the argument branch exists. It will return an error if it doesn't exist.
-        self.branch_heads.get_branch_head(&dest_branch_name)?;
-        self.branch_heads.get_branch_head(&src_branch_name)?;
-
-        // Check merge conflict follows these steps:
-        // 1. Find a common ancestor
-        // 2. Collect diffs between common ancestor and destination branch
-        // 3. Collect diffs between common ancestor and source branch
-        // 4. Squash all diffs into a single commit object for destination branch
-        // 5. Squash all diffs into a single commit object for source branch
-        // 6. Check if there are any conflicts
-
-        // 1. Find a common ancestor
-        // Get the node for the destination branch's HEAD
-        let dest_branch_node: BranchNode = self
-            .branch_heads
-            .get_branch_node_from_head(&dest_branch_name, &self.branches)?;
-        // Get the node for the source branch's HEAD
-        let src_branch_node: BranchNode = self
-            .branch_heads
-            .get_branch_node_from_head(&src_branch_name, &self.branches)?;
-        // Find the common ancestor between the two branches
-        let common_ancestor: BranchNode =
-            self.find_common_ancestor(&dest_branch_node, &src_branch_node)?;
-
-        // 2. Collect diffs between common ancestor and destination branch
-        let dest_diff_list: Vec<Diff> =
-            self.get_diffs_between_nodes(Some(&common_ancestor), &dest_branch_node)?;
-        
-        // 3. Collect diffs between common ancestor and source branch
-        let src_diff_list: Vec<Diff> =
-            self.get_diffs_between_nodes(Some(&common_ancestor), &src_branch_node)?;
-        
-        // 4. TODO: Squash all diffs into a single commit object for destination branch
-        let mut dest_diffs: Vec<Diff> = Vec::new();
-        for diff in dest_diff_list {
-            dest_diffs.push(diff);
+        match merge_result {
+            Ok(_) => Ok(false), // Doesn't conflict
+            Err(_) => Ok(true), // Does conflict
         }
-
-        // 5. TODO: Squash all diffs into a single commit object for source branch
-        let mut src_diffs: Vec<Diff> = Vec::new();
-        for diff in src_diff_list {
-            src_diffs.push(diff);
-        }
-
-        // 6. Check if there are any conflicts
-        let mut conflict: bool = false;
-        'outer: for dest_diff in dest_diffs.clone() {
-            for src_diff in src_diffs.clone() {
-                if dest_diff.is_merge_conflict(&src_diff) {
-                    conflict = true;
-                    break 'outer;
-                }
-            }
-        }
-
-        Ok(conflict)
     }
 
     /// Create a temporary directory for the uncommited queries to be executed against
@@ -1353,7 +1321,7 @@ mod tests {
         fileio::header::Schema,
         util::{
             dbtype::{Column, Value},
-            row::{Row, RowInfo},
+            row::Row,
         },
         version_control,
     };
@@ -3303,7 +3271,7 @@ mod tests {
         assert_eq!(
             get_db_instance()
                 .unwrap()
-                .check_merge_conflict(&MAIN_BRANCH_NAME.to_string(), &branch_name)
+                .does_merge_conflict(&branch_name, &mut user)
                 .unwrap(),
             false
         );
@@ -3337,7 +3305,7 @@ mod tests {
         assert_eq!(
             get_db_instance()
                 .unwrap()
-                .check_merge_conflict(&MAIN_BRANCH_NAME.to_string(), &branch_name)
+                .does_merge_conflict(&branch_name, &mut user)
                 .unwrap(),
             true
         );
