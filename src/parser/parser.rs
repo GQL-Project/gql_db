@@ -1,6 +1,8 @@
 use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::command;
+use crate::version_control::commit::Commit;
+use crate::version_control::merge::MergeConflictResolutionAlgo;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -132,6 +134,99 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     .map_err(|e| e.to_string())?;
                 return Ok(format!("Branch switched to {}", &vec[2]));
             }
+        }
+        "merge" => {
+            // merge (One Arguments: <src_branch_name> <dest_branch_name> <message> (optional -d for deleting source branch) (optional -s <strategy> for strategy)) 
+            // merges into the current branch
+
+            if vec.len() < 5 || vec.len() > 8 {
+                return Err(
+                    format!(
+                        "Invalid Merge Command, expected at least 3 arguments not {}",
+                        vec.len() - 2
+                    ).to_string()
+                );
+            }
+
+            /// Get the strategy from the command string
+            fn get_strategy(strategy: &str) -> Result<MergeConflictResolutionAlgo, String> {
+                match strategy {
+                    "ours" => Ok(MergeConflictResolutionAlgo::UseSource),
+                    "theirs" => Ok(MergeConflictResolutionAlgo::UseTarget),
+                    "clean" => Ok(MergeConflictResolutionAlgo::NoConflicts),
+                    _ => Err("Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'".to_string()),
+                }
+            }
+
+            // Check optional arguments
+            let mut delete_src_branch: bool = false;
+            let mut merge_strategy: MergeConflictResolutionAlgo = MergeConflictResolutionAlgo::NoConflicts;
+            if vec.len() == 6 {
+                if vec[5] == "-d" {
+                    delete_src_branch = true;
+                }
+                else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+            else if vec.len() == 7 {
+                if vec[5] == "-s" {
+                    merge_strategy = get_strategy(vec[5])?;
+                }
+                else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+            else if vec.len() == 8 {
+                if vec[5] == "-d" {
+                    delete_src_branch = true;
+                    if vec[6] == "-s" {
+                        merge_strategy = get_strategy(vec[7])?;
+                    }
+                    else {
+                        return Err("Invalid Merge Command. Invalid flag.".to_string());
+                    }
+                }
+                else if vec[5] == "-s" {
+                    merge_strategy = get_strategy(vec[6])?;
+                    if vec[7] == "-d" {
+                        delete_src_branch = true;
+                    }
+                    else {
+                        return Err("Invalid Merge Command. Invalid flag.".to_string());
+                    }
+                }
+                else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+
+            let src_branch_name: String = vec[2].to_string();
+            let dest_branch_name: String = vec[3].to_string();
+            let message: String = vec[4].to_string();
+
+            // Make sure user does not have any uncommitted changes
+            if user.get_diffs().len() > 0 {
+                return Err("Cannot merge with uncommitted changes".to_string());
+            }
+
+            // Swap user to the destination branch
+            get_db_instance()?
+                .switch_branch(&dest_branch_name, user)
+                .map_err(|e| e.to_string())?;
+            
+            // Merge the source branch into the destination branch
+            let merge_commit: Commit = get_db_instance()?
+                .merge_branches(
+                    &src_branch_name,
+                    user,
+                    &message,
+                    merge_strategy,
+                    delete_src_branch
+                )
+                .map_err(|e| e.to_string())?;
+            
+            return Ok(format!("Merge Successful Made at hash {}", merge_commit.hash).to_string());
         }
         "log" => {
             // log (NO FLAGS OR ARGS)
