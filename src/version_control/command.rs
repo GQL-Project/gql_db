@@ -2,7 +2,10 @@ use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use super::branches::{BranchNode, Branches};
+use super::{
+    branches::{BranchNode, Branches},
+    commit::Commit,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct Log {
@@ -24,9 +27,8 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
         return Ok(("No Commits!".to_string(), vec![], "".to_string()));
     }
 
-    let branch_node = branch_heads_instance
-        .get_branch_node_from_head(&branch_name, &branches_from_head)
-        .unwrap();
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&branch_name, &branches_from_head)?;
 
     let branch_nodes: Vec<BranchNode> = get_db_instance()?
         .get_branch_file()
@@ -66,6 +68,84 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     Ok((log_string, log_strings, json))
 }
 
+/// Takes two commit hashes, and attempts to find a chain of commits
+/// from the first commit to the second, assuming that the commits are
+/// from the same branch.
+/// Squashes are only permitted when no other branches use the
+/// commits in a squash
+pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, String> {
+    let branch_name: String = user.get_current_branch_name();
+    let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
+    let head_mngr = get_db_instance()?.get_branch_heads_file_mut();
+
+    if head_mngr.get_all_branch_heads()?.len() == 0 {
+        return Err("No Commits in Current Branch!".to_string());
+    }
+
+    // Branch head
+    let mut current = Some(head_mngr.get_branch_node_from_head(&branch_name, &branches)?);
+
+    // Hash 1's node
+    let mut save_first: Option<BranchNode> = None;
+    // Hash 2's node
+    let mut save_last: Option<BranchNode> = None;
+    let mut commit_hashes: Vec<String> = Vec::new();
+
+    while let Some(node) = current {
+        if node.commit_hash == *hash2 {
+            save_last = Some(node.clone());
+            current = Some(node.clone());
+            while current != None {
+                let node = current.as_ref().unwrap();
+                commit_hashes.push(node.commit_hash.clone());
+                if !node.can_squash() {
+                    return Err(format!(
+                        "Could not squash, commit {} is shared across branches.",
+                        node.commit_hash
+                    ));
+                }
+                if node.commit_hash == *hash1 {
+                    save_first = Some(node.clone());
+                    break;
+                }
+                current = branches.get_prev_branch_node(&node)?;
+            }
+        }
+        current = branches.get_prev_branch_node(&node)?;
+    }
+
+    if commit_hashes.len() == 0 {
+        return Err("Commits not found in Current Branch".to_string());
+    }
+
+    let save_first = save_first.map_or(Err(format!("{} not found in Branch", hash1)), Ok)?;
+    let save_last = save_last.map_or(Err(format!("{} not found in Branch", hash2)), Ok)?;
+
+    let commits = commit_hashes
+        .into_iter()
+        .map(|hash| get_db_instance()?.get_commit_file_mut().fetch_commit(&hash))
+        .rev()
+        .collect::<Result<Vec<Commit>, String>>()?;
+
+    let squash_commit = get_db_instance()?
+        .get_commit_file_mut()
+        .squash_commits(&commits)?;
+
+    // Use the new commit hash, and make the current hash2 point to the commit before hash1.
+    let squash_node = BranchNode {
+        commit_hash: squash_commit.hash.clone(),
+        branch_name: branch_name.clone(),
+        prev_pagenum: save_first.prev_pagenum,
+        prev_rownum: save_first.prev_rownum,
+        curr_pagenum: save_last.curr_pagenum,
+        curr_rownum: save_last.curr_rownum,
+        num_kids: save_last.num_kids,
+        is_head: save_last.is_head,
+    };
+    branches.update_branch_node(&squash_node)?;
+    Ok(squash_commit)
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -76,7 +156,7 @@ mod tests {
             databaseio::{create_db_instance, delete_db_instance},
             header::Schema,
         },
-        util::dbtype::*,
+        util::{bench::{create_demo_db, fcreate_db_instance}, dbtype::*},
         version_control::{commit::Commit, diff::Diff},
     };
 
@@ -89,7 +169,7 @@ mod tests {
         let mut diffs: Vec<Diff> = Vec::new();
 
         // Create the database
-        create_db_instance(&"log_test_db".to_string()).unwrap();
+        fcreate_db_instance(&"log_test_db");
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -155,7 +235,7 @@ mod tests {
         let mut diffs: Vec<Diff> = Vec::new();
 
         // Create the database
-        create_db_instance(&"log_test_db1".to_string()).unwrap();
+        fcreate_db_instance(&"log_test_db1");
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -234,6 +314,66 @@ mod tests {
         assert_eq!(result[0][2], second_commit.message);
 
         // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_valid_squash() {
+        let user = create_demo_db("squash_valid");
+        let hashes = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .get_hashes()
+            .unwrap();
+
+        // Commits 0 - 3 should be squashable
+        let result = squash(&hashes[0], &hashes[2], &user).unwrap();
+        // After sqaushing this, all the updates and removes should be gone
+        for diff in result.diffs {
+            match diff {
+                Diff::Update(_) => panic!("Update diff should not exist"),
+                Diff::Remove(_) => panic!("Remove diff should not exist"),
+                Diff::TableRemove(_) => panic!("TableRemoveDiff should not exist"),
+                _ => (),
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_squash_shared() {
+        let mut user = create_demo_db("squash_invalid_shared");
+        let hashes = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .get_hashes()
+            .unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"test_branch1".to_string(), &mut user)
+            .unwrap();
+        // Commits 3 - 5 should not be squasable, since 4 is shared with another branch
+        let _ = squash(&hashes[2], &hashes[4], &user).unwrap_err();
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_squash_branch() {
+        let mut user = create_demo_db("squash_invalid_branch");
+        let hashes = get_db_instance()
+            .unwrap()
+            .get_commit_file_mut()
+            .get_hashes()
+            .unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"test_branch2".to_string(), &mut user)
+            .unwrap();
+        // Commits 5 - 7 should not be squasable, since user is on another branch
+        let _ = squash(&hashes[4], &hashes[6], &user).unwrap_err();
         delete_db_instance().unwrap();
     }
 }

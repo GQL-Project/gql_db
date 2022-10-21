@@ -1,19 +1,80 @@
+use std::cmp::Ordering;
+
 use crate::{
     fileio::{header::*, tableio::*},
     util::row::*,
 };
 
+/* Constants */
+pub const INSERT_TYPE: i32 = 0;
+pub const UPDATE_TYPE: i32 = 1;
+pub const REMOVE_TYPE: i32 = 2;
+pub const TABLE_CREATE_TYPE: i32 = 3;
+pub const TABLE_REMOVE_TYPE: i32 = 4;
+
 /***************************************************************************************************/
 /*                                         Diff Structs                                            */
 /***************************************************************************************************/
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Diff {
-    Update(UpdateDiff),
     Insert(InsertDiff),
+    Update(UpdateDiff),
     Remove(RemoveDiff),
     TableCreate(TableCreateDiff),
     TableRemove(TableRemoveDiff),
+}
+
+impl Diff {
+    pub fn get_table_name(&self) -> String {
+        match self {
+            Diff::Update(diff) => diff.table_name.clone(),
+            Diff::Insert(diff) => diff.table_name.clone(),
+            Diff::Remove(diff) => diff.table_name.clone(),
+            Diff::TableCreate(diff) => diff.table_name.clone(),
+            Diff::TableRemove(diff) => diff.table_name.clone(),
+        }
+    }
+
+    pub fn get_schema(&self) -> Schema {
+        match self {
+            Diff::Update(diff) => diff.schema.clone(),
+            Diff::Insert(diff) => diff.schema.clone(),
+            Diff::Remove(diff) => diff.schema.clone(),
+            Diff::TableCreate(diff) => diff.schema.clone(),
+            Diff::TableRemove(diff) => diff.schema.clone(),
+        }
+    }
+
+    pub fn get_rows(&self) -> Result<Vec<RowInfo>, String> {
+        match self {
+            Diff::Update(diff) => Ok(diff.rows.clone()),
+            Diff::Insert(diff) => Ok(diff.rows.clone()),
+            Diff::Remove(diff) => Ok(diff.rows.clone()),
+            Diff::TableCreate(_) => Err("Cannot get rows from a TableCreateDiff".to_string()),
+            Diff::TableRemove(_) => Err("Cannot get rows from a TableRemoveDiff".to_string()),
+        }
+    }
+
+    pub fn get_type(&self) -> i32 {
+        match self {
+            Diff::Update(_) => UPDATE_TYPE,
+            Diff::Insert(_) => INSERT_TYPE,
+            Diff::Remove(_) => REMOVE_TYPE,
+            Diff::TableCreate(_) => TABLE_CREATE_TYPE,
+            Diff::TableRemove(_) => TABLE_REMOVE_TYPE,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Diff::Update(diff) => diff.rows.is_empty(),
+            Diff::Insert(diff) => diff.rows.is_empty(),
+            Diff::Remove(diff) => diff.rows.is_empty(),
+            Diff::TableCreate(_) => false,
+            Diff::TableRemove(_) => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,7 +95,7 @@ pub struct InsertDiff {
 pub struct RemoveDiff {
     pub table_name: String, // The name of the table that the rows were removed from
     pub schema: Schema,     // The schema of the table
-    pub rows_removed: Vec<RowInfo>, // The rows that were removed
+    pub rows: Vec<RowInfo>, // The rows that were removed
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,12 +136,42 @@ impl InsertDiff {
 }
 
 impl RemoveDiff {
-    pub fn new(table_name: String, schema: Schema, rows_removed: Vec<RowInfo>) -> Self {
+    pub fn new(table_name: String, schema: Schema, rows: Vec<RowInfo>) -> Self {
         Self {
             table_name,
             schema,
-            rows_removed,
+            rows,
         }
+    }
+}
+
+impl PartialOrd for UpdateDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for InsertDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for RemoveDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for TableCreateDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for TableRemoveDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
     }
 }
 
@@ -103,7 +194,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
             Diff::Remove(remove_diff) => {
                 let table = Table::new(table_dir, &remove_diff.table_name, None)?;
                 let mut row_locations_removed: Vec<RowLocation> = Vec::new();
-                for row in remove_diff.rows_removed.clone() {
+                for row in remove_diff.rows.clone() {
                     row_locations_removed.push(row.get_row_location());
                 }
                 table.remove_rows(row_locations_removed)?;
@@ -148,7 +239,7 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
             // Insert instead of remove as we're reverting the change
             Diff::Remove(remove_diff) => {
                 let mut table = Table::new(table_dir, &remove_diff.table_name, None)?;
-                table.write_rows(remove_diff.rows_removed.clone())?;
+                table.write_rows(remove_diff.rows.clone())?;
             }
             Diff::TableCreate(table_create_diff) => {
                 delete_table_in_dir(&table_create_diff.table_name, table_dir)?;

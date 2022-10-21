@@ -43,14 +43,14 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
     // pretty table
     let mut table = builder.build();
     table.with(Style::rounded());
-    // println!("Print something here!");
     // will print the table on the terminal
     println!("{}", table);
     Ok(())
 }
 
 fn from_timestamp(t: &Timestamp) -> String {
-    let time = NaiveDateTime::from_timestamp(t.seconds, t.nanos as u32);
+    let time =
+        NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos as u32).unwrap_or(NaiveDateTime::MAX);
     time.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
