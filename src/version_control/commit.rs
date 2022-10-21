@@ -701,7 +701,7 @@ mod tests {
         executor::query::{create_table, insert},
         fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance, Database},
         user::userdata::User,
-        util::row::RowLocation,
+        util::{row::RowLocation, bench::fcreate_db_instance},
     };
 
     use super::*;
@@ -1028,7 +1028,7 @@ mod tests {
         let table_name1: String = "table1".to_string();
 
         // Create a new database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a new user
         let mut user: User = User::new("test_user".to_string());

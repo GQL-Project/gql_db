@@ -156,7 +156,7 @@ mod tests {
             databaseio::{create_db_instance, delete_db_instance},
             header::Schema,
         },
-        util::{bench::create_demo_db, dbtype::*},
+        util::{bench::{create_demo_db, fcreate_db_instance}, dbtype::*},
         version_control::{commit::Commit, diff::Diff},
     };
 
@@ -169,7 +169,7 @@ mod tests {
         let mut diffs: Vec<Diff> = Vec::new();
 
         // Create the database
-        create_db_instance(&"log_test_db".to_string()).unwrap();
+        fcreate_db_instance(&"log_test_db");
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -235,7 +235,7 @@ mod tests {
         let mut diffs: Vec<Diff> = Vec::new();
 
         // Create the database
-        create_db_instance(&"log_test_db1".to_string()).unwrap();
+        fcreate_db_instance(&"log_test_db1");
 
         // Create a user on the main branch
         let mut user: User = User::new("test_user".to_string());

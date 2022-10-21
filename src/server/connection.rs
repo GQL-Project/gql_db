@@ -87,7 +87,7 @@ mod tests {
     use crate::{
         fileio::{databaseio::*, header::Schema},
         util::dbtype::Column,
-        util::{dbtype::Value, row::*},
+        util::{dbtype::Value, row::*, bench::fcreate_db_instance},
         version_control::diff::{Diff, InsertDiff},
     };
     use serial_test::serial;
@@ -97,7 +97,7 @@ mod tests {
     fn test_new_client() {
         let connection = Connection::default();
         // Create a new database instance
-        create_db_instance(&"test_new_client".to_string()).unwrap();
+        fcreate_db_instance(&"test_new_client");
 
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
@@ -112,7 +112,7 @@ mod tests {
     fn test_new_clients() {
         let connection = Connection::default();
         // Create a new database instance
-        create_db_instance(&"test_new_clients".to_string()).unwrap();
+        fcreate_db_instance(&"test_new_clients");
 
         let id1 = connection.new_client().unwrap();
         let id2 = connection.new_client().unwrap();
@@ -129,7 +129,7 @@ mod tests {
     fn test_remove_client() {
         let connection = Connection::default();
         // Create a new database instance
-        create_db_instance(&"test_new_clients".to_string()).unwrap();
+        fcreate_db_instance(&"test_new_clients");
 
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
@@ -147,7 +147,7 @@ mod tests {
     fn test_remove_non_client() {
         let connection = Connection::default();
         // Create a new database instance
-        create_db_instance(&"test_new_clients".to_string()).unwrap();
+        fcreate_db_instance(&"test_new_clients");
 
         let id = connection.new_client().unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
@@ -165,7 +165,7 @@ mod tests {
     fn test_mutability_of_get_client() {
         let connection: Connection = Connection::default();
         // Create a new database instance
-        create_db_instance(&"test_new_clients".to_string()).unwrap();
+        fcreate_db_instance(&"test_new_clients");
 
         // Create a scope for appending the diff
         {
@@ -180,7 +180,7 @@ mod tests {
             ];
             client.append_diff(&Diff::Insert(InsertDiff {
                 table_name: "test".to_string(),
-                schema: schema,
+                schema,
                 rows: vec![RowInfo {
                     row: vec![
                         Value::I32(1),

@@ -14,13 +14,18 @@ use crate::{
 
 use super::dbtype::parse_time;
 
+// Delete instance if it exists (Only for testing)
+pub fn fcreate_db_instance(name: &str) {
+    if let Ok(db) = Database::load_db(name.to_string()) {
+        db.delete_database().unwrap();
+    }
+    create_db_instance(&name.to_string()).unwrap();
+}
+
 /// Creating a big database to run tests on, with enough data and some commits filled in.
 pub fn create_demo_db(name: &str) -> User {
     let name = format!("benchmark_db_{name}");
-    if let Ok(db) = Database::load_db(name.clone()) {
-        db.delete_database().unwrap();
-    }
-    create_db_instance(&name).unwrap();
+    fcreate_db_instance(&name);
     let db = get_db_instance().unwrap();
     let mut user: User = User::new("test_user".to_string());
     let schema1: Schema = vec![

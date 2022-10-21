@@ -201,7 +201,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
 mod tests {
     use serial_test::serial;
 
-    use crate::fileio::databaseio::{create_db_instance, delete_db_instance};
+    use crate::{fileio::databaseio::delete_db_instance, util::bench::fcreate_db_instance};
 
     use super::*;
 
@@ -210,7 +210,7 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance_ 1".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_1");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
@@ -243,7 +243,7 @@ mod tests {
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance_2".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_2");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
@@ -266,7 +266,7 @@ mod tests {
         let query0 = "GQL branch branch_name";
         let query = "GQL switch_branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"TEST_DB".to_string()).unwrap();
+        fcreate_db_instance("TEST_DB");
         let mut user: User = User::new("test_user".to_string());
         parse_vc_cmd(query0, &mut user).unwrap();
         let result = parse_vc_cmd(query, &mut user);
@@ -279,7 +279,7 @@ mod tests {
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
         // Create a new user on the main branch
-        create_db_instance(&"TEST_DB".to_string()).unwrap();
+        fcreate_db_instance("TEST_DB");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
@@ -290,7 +290,7 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
-        create_db_instance(&"gql_log_db_instance_3".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_3");
 
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
