@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use super::merge::MergeConflictResolutionAlgo;
 use std::cmp::Ordering;
 
 use crate::{

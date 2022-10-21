@@ -364,8 +364,6 @@ impl CommitFile {
     pub fn squash_commits(&mut self, commits: &Vec<Commit>, write_commit_to_file: bool) -> Result<Commit, String> {
         if commits.len() == 0 {
             return Err("No commits to combine".to_string());
-        } else if commits.len() == 1 {
-            //return Ok(commits[0].clone());
         }
         let msg = format!("Combined {} commits", commits.len());
         let cmd = format!(
