@@ -10,6 +10,8 @@ use crate::version_control::diff::*;
 use itertools::Itertools;
 use sqlparser::ast::{Expr, SetExpr, Statement};
 
+type WhereClause = fn(&Row) -> bool;
+
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
 pub fn execute_query(
@@ -29,6 +31,10 @@ pub fn execute_query(
                     for c in s.projection.iter() {
                         column_names.push(c.to_string());
                     }
+                    let pred: Option<WhereClause> = match &s.selection {
+                        Some(e) => Some(where_clause(e)?),
+                        None => None,
+                    };
                     let mut table_names = Vec::new();
                     for t in s.from.iter() {
                         let table_name = t.to_string();
@@ -315,6 +321,15 @@ pub fn insert(
     let diff: InsertDiff = table.insert_rows(values)?;
     user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
+}
+
+// This method implements the SQL Where clause. It takes in an expression, and generates
+// a function that takes in a row and returns a boolean. The function returns an error if
+// the expression is invalid.
+pub fn where_clause(
+    predicate: &Expr
+) -> Result<WhereClause, String> {
+    Err("Could not parse where clause".to_string())
 }
 
 // Generating tables with aliases from a list of table names,
