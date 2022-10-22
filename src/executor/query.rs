@@ -326,10 +326,31 @@ pub fn insert(
 // This method implements the SQL Where clause. It takes in an expression, and generates
 // a function that takes in a row and returns a boolean. The function returns an error if
 // the expression is invalid.
-pub fn where_clause(
-    predicate: &Expr
-) -> Result<WhereClause, String> {
-    Err("Could not parse where clause".to_string())
+// Currently, this is implemented recursively, see if we can do it iteratively
+pub fn where_clause(mut pred: &Expr) -> Result<WhereClause, String> {
+    match pred {
+        Expr::Identifier(x) => todo!(),
+        Expr::CompoundIdentifier(_) => todo!(),
+        Expr::IsFalse(_) => todo!(),
+        Expr::IsNotFalse(_) => todo!(),
+        Expr::IsTrue(_) => todo!(),
+        Expr::IsNotTrue(_) => todo!(),
+        Expr::IsNull(_) => todo!(),
+        Expr::IsNotNull(_) => todo!(),
+        Expr::Between {
+            expr,
+            negated,
+            low,
+            high,
+        } => todo!(),
+        Expr::BinaryOp { left, op, right } => todo!(),
+        Expr::AnyOp(_) => todo!(),
+        Expr::AllOp(_) => todo!(),
+        Expr::UnaryOp { op, expr } => todo!(),
+        Expr::Nested(_) => todo!(),
+        Expr::Value(_) => todo!(),
+        _ => Err(format!("Invalid Where Clause: {:?}", pred)),
+    }
 }
 
 // Generating tables with aliases from a list of table names,
