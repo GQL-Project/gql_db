@@ -15,7 +15,7 @@ use crate::{
 };
 use itertools::Itertools;
 use sqlparser::ast::Value as SqlValue;
-use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement};
+use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, UnaryOperator};
 
 // Basically, these are pointers to functions that can take a row and return a bool
 // We could also encounter an invalid operation, like 1 + 'a' or 'a' + 'b'
@@ -69,7 +69,7 @@ pub fn execute_query(
                         )?),
                         None => None,
                     };
-                    return select(column_names, table_names, get_db_instance()?, user);
+                    return select(column_names, pred, table_names, get_db_instance()?, user);
                 }
                 _ => print!("Not a select\n"),
             },
@@ -193,6 +193,7 @@ pub fn drop_table(
 /// It returns a tuple containing the schema and the rows of the resulting table.
 pub fn select(
     column_names: Vec<String>,
+    pred: Option<SolvePredicate>,
     table_names: Vec<(String, String)>,
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
@@ -233,8 +234,10 @@ pub fn select(
             table_rows
                 .into_iter()
                 .for_each(|x| selected_cells.extend(x.row));
-            // Append the selected_cells row to our result
-            selected_rows.push(selected_cells);
+            // Add the accumulated cells to the selected rows
+            if resolve_predicate(&pred, &selected_cells)? {
+                selected_rows.push(selected_cells);
+            }
         }
     }
     // We need to take a subset of columns
@@ -271,22 +274,23 @@ pub fn select(
             for row_info in table_rows {
                 output_row.extend(row_info.row);
             }
+            if resolve_predicate(&pred, &output_row)? {
+                // Iterate through the output row and only select the columns we want
+                let selected_cells: Row = output_row
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, row_cell)| {
+                        if table_column_indices.contains(&i) {
+                            Some(row_cell)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-            // Iterate through the output row and only select the columns we want
-            let selected_cells: Row = output_row
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, row_cell)| {
-                    if table_column_indices.contains(&i) {
-                        Some(row_cell)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            // Append the selected_cells row to our result
-            selected_rows.push(selected_cells);
+                // Append the selected_cells row to our result
+                selected_rows.push(selected_cells);
+            }
         }
     }
 
@@ -372,113 +376,6 @@ pub fn where_clause(
         .map(|(i, (name, _, _))| (name.clone(), i))
         .collect::<HashMap<String, usize>>();
     solve_predicate(pred, &col_names, &index_refs)
-}
-
-// Currently, this is implemented recursively, see if we can do it iteratively
-fn solve_predicate(
-    pred: &Expr,
-    column_names: &Vec<(String, Column, String)>,
-    index_refs: &HashMap<String, usize>,
-) -> Result<SolvePredicate, String> {
-    match pred {
-        Expr::IsFalse(pred) => {
-            let pred = solve_predicate(pred, column_names, index_refs)?;
-            Ok(Box::new(move |row| Ok(!pred(row)?)))
-        }
-        Expr::IsNotFalse(pred) => solve_predicate(pred, column_names, index_refs),
-        Expr::IsTrue(pred) => solve_predicate(pred, column_names, index_refs),
-        Expr::IsNotTrue(pred) => {
-            let pred = solve_predicate(pred, column_names, index_refs)?;
-            Ok(Box::new(move |row| Ok(!pred(row)?)))
-        }
-        Expr::IsNull(pred) => {
-            let pred = solve_value(pred, column_names, index_refs)?;
-            Ok(Box::new(move |row| match pred(row)? {
-                JointValues::DBValue(Value::Null) => Ok(true),
-                JointValues::SQLValue(SqlValue::Null) => Ok(true),
-                _ => Ok(false),
-            }))
-        }
-        Expr::IsNotNull(pred) => {
-            let pred = solve_value(pred, column_names, index_refs)?;
-            Ok(Box::new(move |row| match pred(row)? {
-                JointValues::DBValue(Value::Null) => Ok(false),
-                JointValues::SQLValue(SqlValue::Null) => Ok(false),
-                _ => Ok(true),
-            }))
-        }
-        Expr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::Gt => todo!(),
-            BinaryOperator::Lt => todo!(),
-            BinaryOperator::GtEq => todo!(),
-            BinaryOperator::LtEq => todo!(),
-            BinaryOperator::Eq => todo!(),
-            BinaryOperator::NotEq => todo!(),
-            BinaryOperator::And => {
-                let left = solve_predicate(left, column_names, index_refs)?;
-                let right = solve_predicate(right, column_names, index_refs)?;
-                Ok(Box::new(move |row| Ok(left(row)? && right(row)?)))
-            }
-            BinaryOperator::Or => {
-                let left = solve_predicate(left, column_names, index_refs)?;
-                let right = solve_predicate(right, column_names, index_refs)?;
-                Ok(Box::new(move |row| Ok(left(row)? || right(row)?)))
-            }
-            _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
-        },
-        Expr::UnaryOp { op, expr } => todo!(),
-        Expr::Nested(pred) => solve_predicate(pred, column_names, index_refs),
-        _ => Err(format!("Invalid Predicate Clause: {:?}", pred)),
-    }
-}
-
-fn solve_value(
-    pred: &Expr,
-    column_names: &Vec<(String, Column, String)>,
-    index_refs: &HashMap<String, usize>,
-) -> Result<SolveValue, String> {
-    match pred {
-        Expr::Identifier(x) => {
-            let index = *index_refs.get(&x.value.to_string()).ok_or(format!(
-                "Column {} does not exist in the table",
-                x.value.to_string()
-            ))?;
-            // Force the closure to take `index` ownership
-            // Then, create a closure that takes in a row and returns the value at the index
-            Ok(Box::new(move |row: &Row| {
-                Ok(JointValues::DBValue(row[index].clone()))
-            }))
-        }
-        Expr::CompoundIdentifier(list) => {
-            // Join all the identifiers in the list with a dot
-            let x = list
-                .iter()
-                .map(|x| x.value.to_string())
-                .collect::<Vec<String>>()
-                .join(".");
-            let index = *index_refs
-                .get(&x)
-                .ok_or(format!("Column {} does not exist in the table", x))?;
-            Ok(Box::new(move |row: &Row| {
-                Ok(JointValues::DBValue(row[index].clone()))
-            }))
-        }
-        Expr::Nested(x) => solve_value(x, column_names, index_refs),
-        Expr::Value(x) => {
-            let val = x.clone();
-            Ok(Box::new(move |_| Ok(JointValues::SQLValue(val.clone()))))
-        }
-        Expr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::Plus => todo!(),
-            BinaryOperator::Minus => todo!(),
-            BinaryOperator::Multiply => todo!(),
-            BinaryOperator::Divide => todo!(),
-            BinaryOperator::Modulo => todo!(),
-            _ => Err(format!("Invalid Binary Operator for Value: {:?}", op)),
-        },
-        Expr::UnaryOp { op, expr } => todo!(),
-        _ => Err(format!("Unexpected Value Clause: {:?}", pred)),
-    }
 }
 
 // Generating tables with aliases from a list of table names,
@@ -570,6 +467,176 @@ fn resolve_reference(
     }
 }
 
+// Currently, this is implemented recursively, see if we can do it iteratively
+fn solve_predicate(
+    pred: &Expr,
+    column_names: &Vec<(String, Column, String)>,
+    index_refs: &HashMap<String, usize>,
+) -> Result<SolvePredicate, String> {
+    match pred {
+        Expr::IsFalse(pred) => {
+            let pred = solve_predicate(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| Ok(!pred(row)?)))
+        }
+        Expr::IsNotFalse(pred) => solve_predicate(pred, column_names, index_refs),
+        Expr::IsTrue(pred) => solve_predicate(pred, column_names, index_refs),
+        Expr::IsNotTrue(pred) => {
+            let pred = solve_predicate(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| Ok(!pred(row)?)))
+        }
+        Expr::IsNull(pred) => {
+            let pred = solve_value(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| match pred(row)? {
+                JointValues::DBValue(Value::Null) => Ok(true),
+                JointValues::SQLValue(SqlValue::Null) => Ok(true),
+                _ => Ok(false),
+            }))
+        }
+        Expr::IsNotNull(pred) => {
+            let pred = solve_value(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| match pred(row)? {
+                JointValues::DBValue(Value::Null) => Ok(false),
+                JointValues::SQLValue(SqlValue::Null) => Ok(false),
+                _ => Ok(true),
+            }))
+        }
+        Expr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::Gt => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    Ok(left.gt(&right))
+                }))
+            }
+            BinaryOperator::Lt => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    Ok(left.lt(&right))
+                }))
+            }
+            BinaryOperator::GtEq => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    Ok(left.ge(&right))
+                }))
+            }
+            BinaryOperator::LtEq => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    Ok(left.le(&right))
+                }))
+            }
+            BinaryOperator::Eq => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    Ok(left.eq(&right))
+                }))
+            }
+            BinaryOperator::NotEq => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    Ok(left.ne(&right))
+                }))
+            }
+            BinaryOperator::And => {
+                let left = solve_predicate(left, column_names, index_refs)?;
+                let right = solve_predicate(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| Ok(left(row)? && right(row)?)))
+            }
+            BinaryOperator::Or => {
+                let left = solve_predicate(left, column_names, index_refs)?;
+                let right = solve_predicate(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| Ok(left(row)? || right(row)?)))
+            }
+            _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
+        },
+        Expr::UnaryOp { op, expr } => match op {
+            UnaryOperator::Not => {
+                let expr = solve_predicate(expr, column_names, index_refs)?;
+                Ok(Box::new(move |row| Ok(!expr(row)?)))
+            }
+            _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
+        },
+        Expr::Nested(pred) => solve_predicate(pred, column_names, index_refs),
+        _ => Err(format!("Invalid Predicate Clause: {:?}", pred)),
+    }
+}
+
+fn solve_value(
+    pred: &Expr,
+    column_names: &Vec<(String, Column, String)>,
+    index_refs: &HashMap<String, usize>,
+) -> Result<SolveValue, String> {
+    match pred {
+        Expr::Identifier(x) => {
+            let x = resolve_reference(x.value.to_string(), column_names)?;
+            let index = *index_refs
+                .get(&x)
+                .ok_or(format!("Column {} does not exist in the table", x))?;
+            // Force the closure to take `index` ownership
+            // Then, create a closure that takes in a row and returns the value at the index
+            Ok(Box::new(move |row: &Row| {
+                Ok(JointValues::DBValue(row[index].clone()))
+            }))
+        }
+        Expr::CompoundIdentifier(list) => {
+            // Join all the identifiers in the list with a dot
+            let x = resolve_reference(
+                list.iter()
+                    .map(|x| x.value.to_string())
+                    .collect::<Vec<String>>()
+                    .join("."),
+                column_names,
+            )?;
+            let index = *index_refs
+                .get(&x)
+                .ok_or(format!("Column {} does not exist in the table", x))?;
+            Ok(Box::new(move |row: &Row| {
+                Ok(JointValues::DBValue(row[index].clone()))
+            }))
+        }
+        Expr::Nested(x) => solve_value(x, column_names, index_refs),
+        Expr::Value(x) => {
+            let val = x.clone();
+            Ok(Box::new(move |_| Ok(JointValues::SQLValue(val.clone()))))
+        }
+        Expr::BinaryOp { left: _, op, right: _ } => match op {
+            BinaryOperator::Plus => todo!(),
+            BinaryOperator::Minus => todo!(),
+            BinaryOperator::Multiply => todo!(),
+            BinaryOperator::Divide => todo!(),
+            BinaryOperator::Modulo => todo!(),
+            _ => Err(format!("Invalid Binary Operator for Value: {:?}", op)),
+        },
+        Expr::UnaryOp { op, expr } => todo!(),
+        _ => Err(format!("Unexpected Value Clause: {:?}", pred)),
+    }
+}
+
+fn resolve_predicate(pred: &Option<SolvePredicate>, row: &Row) -> Result<bool, String> {
+    match pred {
+        Some(pred) => pred(row),
+        None => Ok(true),
+    }
+}
+
 impl PartialEq for JointValues {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -598,7 +665,7 @@ impl PartialOrd for JointValues {
         match (self, other) {
             (Self::DBValue(l0), Self::DBValue(r0)) => l0.partial_cmp(r0),
             (Self::SQLValue(l0), Self::SQLValue(r0)) => {
-                from_sql_value(l0).partial_cmp(from_sql_value(r0))
+                Value::from_sql_value(l0).partial_cmp(&Value::from_sql_value(r0))
             }
             (Self::DBValue(l0), Self::SQLValue(r0)) => {
                 if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
@@ -658,7 +725,7 @@ mod tests {
         .unwrap();
 
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -743,7 +810,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(),None,  tables, &new_db, &user).unwrap();
 
         // Check that the schema is correct
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -831,7 +898,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -898,7 +965,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -986,7 +1053,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(),None,  tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("country".to_string(), Column::String(50)));
@@ -1078,7 +1145,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let _ = select(columns.to_owned(), tables, &new_db, &user).unwrap_err();
+        let _ = select(columns.to_owned(), None, tables, &new_db, &user).unwrap_err();
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -1127,7 +1194,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user);
+        let result = select(columns.to_owned(), None, tables, &new_db, &user);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -1178,7 +1245,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user);
+        let result = select(columns.to_owned(), None, tables, &new_db, &user);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -1261,7 +1328,7 @@ mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -1406,7 +1473,7 @@ mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -1562,7 +1629,7 @@ mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(
             result.0[0],
