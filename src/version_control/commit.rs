@@ -704,7 +704,7 @@ fn add_diff(map: &mut HashMap<String, HashMap<i32, Diff>>, diff: Diff, table_nam
 mod tests {
     use crate::{
         executor::query::{create_table, insert},
-        fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance, Database},
+        fileio::databaseio::{delete_db_instance, get_db_instance, Database},
         user::userdata::User,
         util::{bench::fcreate_db_instance, row::RowLocation},
     };

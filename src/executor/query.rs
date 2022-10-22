@@ -177,49 +177,13 @@ pub fn select(
     let mut selected_rows: Vec<Row> = Vec::new();
     let mut selected_schema: Schema = Vec::new();
 
-    // Read in the tables into a vector of tuples where they are represented as (table, alias)
-    let mut next_alias = 'A'; // Trusting that there will be less than 26 tables in a query
-    let table_dir: String = database.get_current_working_branch_path(user);
-    let tables: Vec<(Table, String)> = table_names
-        .iter()
-        .map(|(table_name, alias)| {
-            let table = Table::new(&table_dir, &table_name, None)?;
-            if alias.is_empty() {
-                let alias = next_alias.to_string();
-                next_alias = (next_alias as u8 + 1) as char;
-                Ok((table, alias))
-            } else {
-                Ok((table, alias.to_string()))
-            }
-        })
-        .collect::<Result<Vec<(Table, String)>, String>>()?;
+    let tables = gen_aliased_tables(database, user, table_names)?;
 
     // Create an iterator of table iterators using the cartesion product of the tables :)
     let table_iterator = tables.iter().map(|x| x.0.clone()).multi_cartesian_product();
 
-    // Get the names of all the columns in the tables along with their aliases in
-    // the format <alias>.<column_name> and store them in a vector of tuples
-    // alongside their column types and new column name when output.
-    // It will be a vector of tuples where each tuple is of the form:
-    // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
     // This is where the fun begins... ;)
-    let table_column_names: Vec<(String, Column, String)> = tables
-        .iter()
-        .map(|(table, alias): &(Table, String)| {
-            table
-                .schema
-                .iter()
-                .map(|(name, coltype)| {
-                    (
-                        format!("{}.{}", alias, name.clone()),
-                        coltype.clone(),
-                        name.clone(),
-                    )
-                })
-                .collect::<Vec<(String, Column, String)>>()
-        })
-        .flatten()
-        .collect::<Vec<(String, Column, String)>>();
+    let table_column_names = generate_aliases(tables);
 
     // We need to take all the columns
     if is_star_cols {
@@ -243,32 +207,7 @@ pub fn select(
     // We need to take a subset of columns
     else {
         // Pass through columns with no aliases used to provide an alias if unambiguous
-        let column_names = column_names
-            .into_iter()
-            .map(|x| {
-                if x.contains(".") {
-                    // We know this works, as the parser does not allow for '.' in column names
-                    Ok(x)
-                } else {
-                    let mut matches: Vec<String> = Vec::new();
-                    for (col_name, _, name) in &table_column_names {
-                        if name == &x {
-                            matches.push(col_name.clone());
-                        }
-                    }
-                    if matches.len() == 1 {
-                        Ok(matches[0].clone())
-                    } else if matches.len() != 0 {
-                        Err(format!(
-                            "Column name {} is ambiguous. Please specify the table name using an alias.",
-                            x
-                        ))
-                    } else {
-                        Err(format!("Column name {} does not exist.", x))
-                    }
-                }
-            })
-            .collect::<Result<Vec<String>, String>>()?;
+        let column_names = resolve_colnames(column_names, &table_column_names)?;
 
         // Get the indices of the columns we want to select
         let mut table_column_indices: Vec<usize> = Vec::new();
@@ -376,6 +315,86 @@ pub fn insert(
     let diff: InsertDiff = table.insert_rows(values)?;
     user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
+}
+
+// Generating tables with aliases from a list of table names,
+// and creating new aliases where necessary
+fn gen_aliased_tables(
+    database: &Database,
+    user: &User,
+    table_names: Vec<(String, String)>,
+) -> Result<Vec<(Table, String)>, String> {
+    let table_dir: String = database.get_current_working_branch_path(user);
+    let tables: Vec<(Table, String)> = table_names
+        .iter()
+        .map(|(table_name, alias)| {
+            let table = Table::new(&table_dir, &table_name, None)?;
+            if alias.is_empty() {
+                // If no alias is provided, use the table name as the alias
+                let alias = table_name.clone();
+                Ok((table, alias))
+            } else {
+                Ok((table, alias.to_string()))
+            }
+        })
+        .collect::<Result<Vec<(Table, String)>, String>>()?;
+    Ok(tables)
+}
+
+// Get the names of all the columns in the tables along with their aliases in
+// the format <alias>.<column_name> and store them in a vector of tuples
+// alongside their column types and new column name when output.
+// It will be a vector of tuples where each tuple is of the form:
+// (<table_alias>.<column_name>, <column_type>, <output_column_name>)
+fn generate_aliases(tables: Vec<(Table, String)>) -> Vec<(String, Column, String)> {
+    tables
+        .iter()
+        .map(|(table, alias): &(Table, String)| {
+            table
+                .schema
+                .iter()
+                .map(|(name, coltype)| {
+                    (
+                        format!("{}.{}", alias, name.clone()),
+                        coltype.clone(),
+                        name.clone(),
+                    )
+                })
+                .collect::<Vec<(String, Column, String)>>()
+        })
+        .flatten()
+        .collect::<Vec<(String, Column, String)>>()
+}
+
+// Unambiguates column names by adding the table alias if there is only one table with that column name
+fn resolve_colnames(
+    column_names: Vec<String>,
+    table_column_names: &Vec<(String, Column, String)>,
+) -> Result<Vec<String>, String> {
+    let column_names = column_names
+        .into_iter()
+        .map(|x| {
+            if x.contains(".") {
+                // We know this works, as the parser does not allow for '.' in column names
+                Ok(x)
+            } else {
+                let mut matches: Vec<String> = Vec::new();
+                for (col_name, _, name) in table_column_names {
+                    if name == &x {
+                        matches.push(col_name.clone());
+                    }
+                }
+                if matches.len() == 1 {
+                    Ok(matches[0].clone())
+                } else if matches.len() != 0 {
+                    Err(format!("Column name {} is ambiguous.", x))
+                } else {
+                    Err(format!("Column name {} does not exist.", x))
+                }
+            }
+        })
+        .collect::<Result<Vec<String>, String>>()?;
+    Ok(column_names)
 }
 
 #[cfg(test)]
@@ -838,7 +857,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap_err();
+        let _ = select(columns.to_owned(), tables, &new_db, &user).unwrap_err();
         // Delete the test database
         new_db.delete_database().unwrap();
     }
