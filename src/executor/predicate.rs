@@ -18,6 +18,7 @@ pub type SolvePredicate = Box<dyn Fn(&Row) -> Result<bool, String>>;
 type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
+#[derive(Debug)]
 enum JointValues {
     DBValue(Value),
     SQLValue(SqlValue),
@@ -38,6 +39,17 @@ pub fn solve_predicate(
     index_refs: &HashMap<String, usize>,
 ) -> Result<SolvePredicate, String> {
     match pred {
+        Expr::Identifier(_) => {
+            let solve_value = solve_value(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| {
+                let value = solve_value(row)?;
+                match value {
+                    JointValues::DBValue(Value::Bool(x)) => Ok(x),
+                    JointValues::SQLValue(SqlValue::Boolean(x)) => Ok(x),
+                    _ => Err(format!("Cannot compare value {:?} to bool", value)),
+                }
+            }))
+        }
         Expr::IsFalse(pred) => {
             let pred = solve_predicate(pred, column_names, index_refs)?;
             Ok(Box::new(move |row| Ok(!pred(row)?)))
@@ -139,7 +151,7 @@ pub fn solve_predicate(
             _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
         },
         Expr::Nested(pred) => solve_predicate(pred, column_names, index_refs),
-        _ => Err(format!("Invalid Predicate Clause: {:?}", pred)),
+        _ => Err(format!("Invalid Predicate Clause: {}", pred)),
     }
 }
 
@@ -191,10 +203,10 @@ fn solve_value(
             BinaryOperator::Multiply => todo!(),
             BinaryOperator::Divide => todo!(),
             BinaryOperator::Modulo => todo!(),
-            _ => Err(format!("Invalid Binary Operator for Value: {:?}", op)),
+            _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
         },
         Expr::UnaryOp { op: _, expr: _ } => todo!(),
-        _ => Err(format!("Unexpected Value Clause: {:?}", pred)),
+        _ => Err(format!("Unexpected Value Clause: {}", pred)),
     }
 }
 
