@@ -1,7 +1,9 @@
 use chrono::NaiveDateTime;
 use core::mem::size_of;
 use prost_types::Timestamp;
+use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
+use std::cmp::Ordering;
 
 use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
@@ -230,6 +232,43 @@ impl Column {
         };
         Ok(res)
     }
+
+    pub fn from_sql_value(&self, parse: &SqlValue) -> Result<Value, String> {
+        match parse {
+            SqlValue::Number(x, _) => self.parse(&x.to_string()),
+            SqlValue::SingleQuotedString(x) => self.parse(&x.to_string()),
+            SqlValue::DoubleQuotedString(x) => self.parse(&x.to_string()),
+            SqlValue::Boolean(x) => Ok(Value::Bool(*x)),
+            SqlValue::Null => Ok(Value::Null),
+            _ => Err(format!("Unsupported value type: {:?}", parse)),
+        }
+    }
+}
+
+impl Value {
+    pub fn from_sql_value(parse: &SqlValue) -> Result<Value, String> {
+        match parse {
+            SqlValue::Number(x, _) => Column::I64.parse(x).or_else(|_| Column::Double.parse(x)),
+            SqlValue::SingleQuotedString(x) => Ok(Value::String(x.clone())),
+            SqlValue::DoubleQuotedString(x) => Ok(Value::String(x.clone())),
+            SqlValue::Boolean(x) => Ok(Value::Bool(*x)),
+            SqlValue::Null => Ok(Value::Null),
+            _ => Err(format!("Unsupported value type: {:?}", parse)),
+        }
+    }
+
+    pub fn get_coltype(&self) -> Column {
+        match self {
+            Value::I32(_) => Column::I32,
+            Value::I64(_) => Column::I64,
+            Value::Float(_) => Column::Float,
+            Value::Double(_) => Column::Double,
+            Value::Bool(_) => Column::Bool,
+            Value::Timestamp(_) => Column::Timestamp,
+            Value::String(_) => Column::String(0),
+            Value::Null => Column::Nullable(Box::new(Column::I32)),
+        }
+    }
 }
 
 impl ToString for Column {
@@ -258,6 +297,38 @@ impl ToString for Value {
             Value::Timestamp(x) => format!("Timestamp({})", x),
             Value::String(x) => format!("String({})", x),
             Value::Null => "Null()".to_string(),
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Value::I32(x), Value::I32(y)) => x.partial_cmp(y),
+            (Value::I64(x), Value::I64(y)) => x.partial_cmp(y),
+            (Value::Float(x), Value::Float(y)) => x.partial_cmp(y),
+            (Value::Double(x), Value::Double(y)) => x.partial_cmp(y),
+            (Value::Bool(x), Value::Bool(y)) => x.partial_cmp(y),
+            (Value::Timestamp(x), Value::Timestamp(y)) => {
+                x.seconds.partial_cmp(&y.seconds).and_then(|opt| {
+                    if opt == Ordering::Equal {
+                        x.nanos.partial_cmp(&y.nanos)
+                    } else {
+                        Some(opt)
+                    }
+                })
+            }
+            (Value::String(x), Value::String(y)) => x.partial_cmp(y),
+            // Type coercions
+            (Value::I64(x), Value::I32(y)) => x.partial_cmp(&(*y as i64)),
+            (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)),
+            (Value::Float(x), Value::Double(y)) => x.partial_cmp(&(*y as f32)),
+            (Value::I32(x), Value::I64(y)) => (*x as i64).partial_cmp(y),
+            // Null cases
+            (Value::Null, Value::Null) => Some(Ordering::Equal),
+            (Value::Null, _) => Some(Ordering::Less),
+            (_, Value::Null) => Some(Ordering::Greater),
+            _ => None,
         }
     }
 }

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use crate::user::userdata::*;
@@ -13,10 +14,20 @@ use crate::{
     util::dbtype::Value,
 };
 use itertools::Itertools;
-use sqlparser::ast::{Expr, SetExpr, Statement};
+use sqlparser::ast::Value as SqlValue;
+use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement};
 
-type SolvePredicate = Box<dyn Fn(&Row) -> bool>;
-type SolveValue = Box<dyn Fn(&Row) -> Value>;
+// Basically, these are pointers to functions that can take a row and return a bool
+// We could also encounter an invalid operation, like 1 + 'a' or 'a' + 'b'
+// These are actually closures, which could have a variable number of arguments
+type SolvePredicate = Box<dyn Fn(&Row) -> Result<bool, String>>;
+type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
+
+// We could encounter cases with two different types of values, so we need to be able to handle both
+enum JointValues {
+    DBValue(Value),
+    SQLValue(SqlValue),
+}
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -50,9 +61,12 @@ pub fn execute_query(
                     }
                     user.append_command(&command);
                     let pred: Option<SolvePredicate> = match &s.selection {
-                        Some(pred) => {
-                            Some(where_clause(pred, table_names, get_db_instance()?, user)?)
-                        }
+                        Some(pred) => Some(where_clause(
+                            pred,
+                            table_names.clone(),
+                            get_db_instance()?,
+                            user,
+                        )?),
                         None => None,
                     };
                     return select(column_names, table_names, get_db_instance()?, user);
@@ -105,6 +119,9 @@ pub fn execute_update(
                                     Expr::Value(sqlparser::ast::Value::SingleQuotedString(s)) => {
                                         data.push(s);
                                     }
+                                    Expr::Value(sqlparser::ast::Value::DoubleQuotedString(s)) => {
+                                        data.push(s);
+                                    }
                                     Expr::Value(sqlparser::ast::Value::Number(s, _)) => {
                                         data.push(s);
                                     }
@@ -114,7 +131,7 @@ pub fn execute_update(
                                     Expr::Value(sqlparser::ast::Value::Null) => {
                                         data.push("".to_string());
                                     }
-                                    _ => print!("Not a string\n"),
+                                    _ => println!("Unexpected Value"),
                                 }
                             }
                             all_data.push(data);
@@ -364,26 +381,54 @@ fn solve_predicate(
     index_refs: &HashMap<String, usize>,
 ) -> Result<SolvePredicate, String> {
     match pred {
-        Expr::CompoundIdentifier(_) => todo!(),
-        Expr::IsFalse(_) => todo!(),
-        Expr::IsNotFalse(_) => todo!(),
-        Expr::IsTrue(_) => todo!(),
-        Expr::IsNotTrue(_) => todo!(),
-        Expr::IsNull(_) => todo!(),
-        Expr::IsNotNull(_) => todo!(),
-        Expr::Between {
-            expr,
-            negated,
-            low,
-            high,
-        } => todo!(),
-        Expr::BinaryOp { left, op, right } => todo!(),
-        Expr::AnyOp(_) => todo!(),
-        Expr::AllOp(_) => todo!(),
+        Expr::IsFalse(pred) => {
+            let pred = solve_predicate(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| Ok(!pred(row)?)))
+        }
+        Expr::IsNotFalse(pred) => solve_predicate(pred, column_names, index_refs),
+        Expr::IsTrue(pred) => solve_predicate(pred, column_names, index_refs),
+        Expr::IsNotTrue(pred) => {
+            let pred = solve_predicate(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| Ok(!pred(row)?)))
+        }
+        Expr::IsNull(pred) => {
+            let pred = solve_value(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| match pred(row)? {
+                JointValues::DBValue(Value::Null) => Ok(true),
+                JointValues::SQLValue(SqlValue::Null) => Ok(true),
+                _ => Ok(false),
+            }))
+        }
+        Expr::IsNotNull(pred) => {
+            let pred = solve_value(pred, column_names, index_refs)?;
+            Ok(Box::new(move |row| match pred(row)? {
+                JointValues::DBValue(Value::Null) => Ok(false),
+                JointValues::SQLValue(SqlValue::Null) => Ok(false),
+                _ => Ok(true),
+            }))
+        }
+        Expr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::Gt => todo!(),
+            BinaryOperator::Lt => todo!(),
+            BinaryOperator::GtEq => todo!(),
+            BinaryOperator::LtEq => todo!(),
+            BinaryOperator::Eq => todo!(),
+            BinaryOperator::NotEq => todo!(),
+            BinaryOperator::And => {
+                let left = solve_predicate(left, column_names, index_refs)?;
+                let right = solve_predicate(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| Ok(left(row)? && right(row)?)))
+            }
+            BinaryOperator::Or => {
+                let left = solve_predicate(left, column_names, index_refs)?;
+                let right = solve_predicate(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| Ok(left(row)? || right(row)?)))
+            }
+            _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
+        },
         Expr::UnaryOp { op, expr } => todo!(),
-        Expr::Nested(_) => todo!(),
-        Expr::Value(_) => todo!(),
-        _ => Err(format!("Invalid Where Clause: {:?}", pred)),
+        Expr::Nested(pred) => solve_predicate(pred, column_names, index_refs),
+        _ => Err(format!("Invalid Predicate Clause: {:?}", pred)),
     }
 }
 
@@ -400,7 +445,9 @@ fn solve_value(
             ))?;
             // Force the closure to take `index` ownership
             // Then, create a closure that takes in a row and returns the value at the index
-            Ok(Box::new(move |row: &Row| row[index].clone()))
+            Ok(Box::new(move |row: &Row| {
+                Ok(JointValues::DBValue(row[index].clone()))
+            }))
         }
         Expr::CompoundIdentifier(list) => {
             // Join all the identifiers in the list with a dot
@@ -412,17 +459,25 @@ fn solve_value(
             let index = *index_refs
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
-            // Force the closure to take `index` ownership
-            // Then, create a closure that takes in a row and returns the value at the index
-            Ok(Box::new(move |row: &Row| row[index].clone()))
+            Ok(Box::new(move |row: &Row| {
+                Ok(JointValues::DBValue(row[index].clone()))
+            }))
         }
-        Expr::BinaryOp { left, op, right } => todo!(),
-        Expr::AnyOp(_) => todo!(),
-        Expr::AllOp(_) => todo!(),
+        Expr::Nested(x) => solve_value(x, column_names, index_refs),
+        Expr::Value(x) => {
+            let val = x.clone();
+            Ok(Box::new(move |_| Ok(JointValues::SQLValue(val.clone()))))
+        }
+        Expr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::Plus => todo!(),
+            BinaryOperator::Minus => todo!(),
+            BinaryOperator::Multiply => todo!(),
+            BinaryOperator::Divide => todo!(),
+            BinaryOperator::Modulo => todo!(),
+            _ => Err(format!("Invalid Binary Operator for Value: {:?}", op)),
+        },
         Expr::UnaryOp { op, expr } => todo!(),
-        Expr::Nested(_) => todo!(),
-        Expr::Value(_) => todo!(),
-        _ => Err(format!("Invalid Where Clause: {:?}", pred)),
+        _ => Err(format!("Unexpected Value Clause: {:?}", pred)),
     }
 }
 
@@ -495,7 +550,7 @@ fn resolve_reference(
         // We know this works, as the parser does not allow for '.' in column names
         Ok(column_name)
     } else {
-        let mut matches: Vec<&String> = table_column_names
+        let matches: Vec<&String> = table_column_names
             .iter()
             .filter_map(|(col_name, _, name)| {
                 if name == &column_name {
@@ -511,6 +566,54 @@ fn resolve_reference(
             Err(format!("Column name {} is ambiguous.", column_name))
         } else {
             Err(format!("Column name {} does not exist.", column_name))
+        }
+    }
+}
+
+impl PartialEq for JointValues {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::DBValue(l0), Self::DBValue(r0)) => l0 == r0,
+            (Self::SQLValue(l0), Self::SQLValue(r0)) => l0 == r0,
+            (Self::DBValue(l0), Self::SQLValue(r0)) => {
+                if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
+                    l0 == &r0
+                } else {
+                    false
+                }
+            }
+            (Self::SQLValue(r0), Self::DBValue(l0)) => {
+                if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
+                    l0 == &r0
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl PartialOrd for JointValues {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Self::DBValue(l0), Self::DBValue(r0)) => l0.partial_cmp(r0),
+            (Self::SQLValue(l0), Self::SQLValue(r0)) => {
+                from_sql_value(l0).partial_cmp(from_sql_value(r0))
+            }
+            (Self::DBValue(l0), Self::SQLValue(r0)) => {
+                if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
+                    l0.partial_cmp(&r0)
+                } else {
+                    None
+                }
+            }
+            (Self::SQLValue(r0), Self::DBValue(l0)) => {
+                if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
+                    l0.partial_cmp(&r0)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
