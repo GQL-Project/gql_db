@@ -1,16 +1,22 @@
-use crate::fileio::{
-    databaseio::*,
-    header::*,
-    tableio::{self, *},
-};
+use std::collections::HashMap;
+
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::Row;
 use crate::version_control::diff::*;
+use crate::{
+    fileio::{
+        databaseio::*,
+        header::*,
+        tableio::{self, *},
+    },
+    util::dbtype::Value,
+};
 use itertools::Itertools;
 use sqlparser::ast::{Expr, SetExpr, Statement};
 
-type WhereClause = fn(&Row) -> bool;
+type SolvePredicate = Box<dyn Fn(&Row) -> bool>;
+type SolveValue = Box<dyn Fn(&Row) -> Value>;
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -31,10 +37,6 @@ pub fn execute_query(
                     for c in s.projection.iter() {
                         column_names.push(c.to_string());
                     }
-                    let pred: Option<WhereClause> = match &s.selection {
-                        Some(e) => Some(where_clause(e)?),
-                        None => None,
-                    };
                     let mut table_names = Vec::new();
                     for t in s.from.iter() {
                         let table_name = t.to_string();
@@ -47,6 +49,12 @@ pub fn execute_query(
                         }
                     }
                     user.append_command(&command);
+                    let pred: Option<SolvePredicate> = match &s.selection {
+                        Some(pred) => {
+                            Some(where_clause(pred, table_names, get_db_instance()?, user)?)
+                        }
+                        None => None,
+                    };
                     return select(column_names, table_names, get_db_instance()?, user);
                 }
                 _ => print!("Not a select\n"),
@@ -183,13 +191,16 @@ pub fn select(
     let mut selected_rows: Vec<Row> = Vec::new();
     let mut selected_schema: Schema = Vec::new();
 
-    let tables = gen_aliased_tables(database, user, table_names)?;
-
-    // Create an iterator of table iterators using the cartesion product of the tables :)
-    let table_iterator = tables.iter().map(|x| x.0.clone()).multi_cartesian_product();
+    let tables = load_aliased_tables(database, user, table_names)?;
 
     // This is where the fun begins... ;)
-    let table_column_names = generate_aliases(tables);
+    let table_column_names = gen_column_aliases(&tables);
+
+    // Create an iterator of table iterators using the cartesion product of the tables :)
+    let table_iterator = tables
+        .into_iter()
+        .map(|(table, _)| table)
+        .multi_cartesian_product();
 
     // We need to take all the columns
     if is_star_cols {
@@ -203,11 +214,10 @@ pub fn select(
             // Accumulate all the cells across the vector of rows into a single vector
             let mut selected_cells: Row = Vec::new();
             table_rows
-                .iter()
-                .for_each(|x| selected_cells.extend(x.row.clone()));
-
+                .into_iter()
+                .for_each(|x| selected_cells.extend(x.row));
             // Append the selected_cells row to our result
-            selected_rows.push(selected_cells.clone());
+            selected_rows.push(selected_cells);
         }
     }
     // We need to take a subset of columns
@@ -242,19 +252,24 @@ pub fn select(
             // Flatten the entire output row, but it includes all columns from all tables
             let mut output_row: Row = Vec::new();
             for row_info in table_rows {
-                output_row.extend(row_info.row.clone());
+                output_row.extend(row_info.row);
             }
 
             // Iterate through the output row and only select the columns we want
-            let mut selected_cells: Row = Vec::new();
-            for (i, row_cell) in output_row.iter().enumerate() {
-                if table_column_indices.contains(&i) {
-                    selected_cells.push(row_cell.clone());
-                }
-            }
+            let selected_cells: Row = output_row
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, row_cell)| {
+                    if table_column_indices.contains(&i) {
+                        Some(row_cell)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
             // Append the selected_cells row to our result
-            selected_rows.push(selected_cells.clone());
+            selected_rows.push(selected_cells);
         }
     }
 
@@ -326,10 +341,29 @@ pub fn insert(
 // This method implements the SQL Where clause. It takes in an expression, and generates
 // a function that takes in a row and returns a boolean. The function returns an error if
 // the expression is invalid.
+pub fn where_clause(
+    pred: &Expr,
+    table_names: Vec<(String, String)>,
+    database: &Database,
+    user: &User,
+) -> Result<SolvePredicate, String> {
+    let tables = load_aliased_tables(database, user, table_names)?;
+    let col_names = gen_column_aliases(&tables);
+    let index_refs = col_names
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _, _))| (name.clone(), i))
+        .collect::<HashMap<String, usize>>();
+    solve_predicate(pred, &col_names, &index_refs)
+}
+
 // Currently, this is implemented recursively, see if we can do it iteratively
-pub fn where_clause(mut pred: &Expr) -> Result<WhereClause, String> {
+fn solve_predicate(
+    pred: &Expr,
+    column_names: &Vec<(String, Column, String)>,
+    index_refs: &HashMap<String, usize>,
+) -> Result<SolvePredicate, String> {
     match pred {
-        Expr::Identifier(x) => todo!(),
         Expr::CompoundIdentifier(_) => todo!(),
         Expr::IsFalse(_) => todo!(),
         Expr::IsNotFalse(_) => todo!(),
@@ -353,9 +387,48 @@ pub fn where_clause(mut pred: &Expr) -> Result<WhereClause, String> {
     }
 }
 
+fn solve_value(
+    pred: &Expr,
+    column_names: &Vec<(String, Column, String)>,
+    index_refs: &HashMap<String, usize>,
+) -> Result<SolveValue, String> {
+    match pred {
+        Expr::Identifier(x) => {
+            let index = *index_refs.get(&x.value.to_string()).ok_or(format!(
+                "Column {} does not exist in the table",
+                x.value.to_string()
+            ))?;
+            // Force the closure to take `index` ownership
+            // Then, create a closure that takes in a row and returns the value at the index
+            Ok(Box::new(move |row: &Row| row[index].clone()))
+        }
+        Expr::CompoundIdentifier(list) => {
+            // Join all the identifiers in the list with a dot
+            let x = list
+                .iter()
+                .map(|x| x.value.to_string())
+                .collect::<Vec<String>>()
+                .join(".");
+            let index = *index_refs
+                .get(&x)
+                .ok_or(format!("Column {} does not exist in the table", x))?;
+            // Force the closure to take `index` ownership
+            // Then, create a closure that takes in a row and returns the value at the index
+            Ok(Box::new(move |row: &Row| row[index].clone()))
+        }
+        Expr::BinaryOp { left, op, right } => todo!(),
+        Expr::AnyOp(_) => todo!(),
+        Expr::AllOp(_) => todo!(),
+        Expr::UnaryOp { op, expr } => todo!(),
+        Expr::Nested(_) => todo!(),
+        Expr::Value(_) => todo!(),
+        _ => Err(format!("Invalid Where Clause: {:?}", pred)),
+    }
+}
+
 // Generating tables with aliases from a list of table names,
 // and creating new aliases where necessary
-fn gen_aliased_tables(
+fn load_aliased_tables(
     database: &Database,
     user: &User,
     table_names: Vec<(String, String)>,
@@ -382,7 +455,7 @@ fn gen_aliased_tables(
 // alongside their column types and new column name when output.
 // It will be a vector of tuples where each tuple is of the form:
 // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
-fn generate_aliases(tables: Vec<(Table, String)>) -> Vec<(String, Column, String)> {
+fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, String)> {
     tables
         .iter()
         .map(|(table, alias): &(Table, String)| {
@@ -409,28 +482,37 @@ fn resolve_colnames(
 ) -> Result<Vec<String>, String> {
     let column_names = column_names
         .into_iter()
-        .map(|x| {
-            if x.contains(".") {
-                // We know this works, as the parser does not allow for '.' in column names
-                Ok(x)
-            } else {
-                let mut matches: Vec<String> = Vec::new();
-                for (col_name, _, name) in table_column_names {
-                    if name == &x {
-                        matches.push(col_name.clone());
-                    }
-                }
-                if matches.len() == 1 {
-                    Ok(matches[0].clone())
-                } else if matches.len() != 0 {
-                    Err(format!("Column name {} is ambiguous.", x))
-                } else {
-                    Err(format!("Column name {} does not exist.", x))
-                }
-            }
-        })
+        .map(|x| resolve_reference(x, table_column_names))
         .collect::<Result<Vec<String>, String>>()?;
     Ok(column_names)
+}
+
+fn resolve_reference(
+    column_name: String,
+    table_column_names: &Vec<(String, Column, String)>,
+) -> Result<String, String> {
+    if column_name.contains(".") {
+        // We know this works, as the parser does not allow for '.' in column names
+        Ok(column_name)
+    } else {
+        let mut matches: Vec<&String> = table_column_names
+            .iter()
+            .filter_map(|(col_name, _, name)| {
+                if name == &column_name {
+                    Some(col_name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if matches.len() == 1 {
+            Ok(matches[0].clone())
+        } else if matches.len() != 0 {
+            Err(format!("Column name {} is ambiguous.", column_name))
+        } else {
+            Err(format!("Column name {} does not exist.", column_name))
+        }
+    }
 }
 
 #[cfg(test)]
