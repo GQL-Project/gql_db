@@ -321,9 +321,20 @@ impl PartialOrd for Value {
             (Value::String(x), Value::String(y)) => x.partial_cmp(y),
             // Type coercions
             (Value::I64(x), Value::I32(y)) => x.partial_cmp(&(*y as i64)),
-            (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)),
-            (Value::Float(x), Value::Double(y)) => x.partial_cmp(&(*y as f32)),
+            (Value::I64(x), Value::Double(y)) => (*x as f64).partial_cmp(y),
+            (Value::I64(x), Value::Float(y)) => (*x as f32).partial_cmp(y),
+
             (Value::I32(x), Value::I64(y)) => (*x as i64).partial_cmp(y),
+            (Value::I32(x), Value::Float(y)) => (*x as f32).partial_cmp(y),
+            (Value::I32(x), Value::Double(y)) => (*x as f64).partial_cmp(y),
+
+            (Value::Float(x), Value::I32(y)) => x.partial_cmp(&(*y as f32)),
+            (Value::Float(x), Value::I64(y)) => x.partial_cmp(&(*y as f32)),
+            (Value::Float(x), Value::Double(y)) => x.partial_cmp(&(*y as f32)),
+
+            (Value::Double(x), Value::I32(y)) => x.partial_cmp(&(*y as f64)),
+            (Value::Double(x), Value::I64(y)) => x.partial_cmp(&(*y as f64)),
+            (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)),
             // Null cases
             (Value::Null, Value::Null) => Some(Ordering::Equal),
             (Value::Null, _) => Some(Ordering::Less),

@@ -16,7 +16,7 @@ use super::query::resolve_reference;
 /// The SolvePredicate Function Type takes a row and returns a bool, used to filter rows
 pub type SolvePredicate = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// The SolveValue Function Type takes a row and returns a Value, which is used by SolvePredicate
-type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
+pub type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
 #[derive(Debug)]
@@ -156,7 +156,7 @@ pub fn solve_predicate(
     }
 }
 
-fn solve_value(
+pub fn solve_value(
     pred: &Expr,
     column_names: &Vec<(String, Column, String)>,
     index_refs: &HashMap<String, usize>,
@@ -231,6 +231,20 @@ fn solve_value(
                     left.divide(&right)
                 }))
             }
+            BinaryOperator::And
+            | BinaryOperator::Or
+            | BinaryOperator::Lt
+            | BinaryOperator::LtEq
+            | BinaryOperator::Gt
+            | BinaryOperator::GtEq
+            | BinaryOperator::Eq
+            | BinaryOperator::NotEq => {
+                let binary = solve_predicate(pred, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let pred = binary(row)?;
+                    Ok(JointValues::DBValue(Value::Bool(pred)))
+                }))
+            }
             _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
         },
         Expr::UnaryOp { op: _, expr: _ } => todo!(),
@@ -279,7 +293,7 @@ impl JointValues {
     fn divide(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x / y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x / y);
-        let apply_string = |x: &String, y: &String| {
+        let apply_string = |_: &String, _: &String| {
             Err::<String, String>("Cannot divide string by string".to_string())
         };
         self.apply(other, apply_int, apply_float, apply_string)
@@ -382,7 +396,7 @@ impl JointValues {
                 (Value::String(l), Value::Double(r)) => {
                     Self::DBValue(Value::String(string_func(l, &r.to_string())?))
                 }
-                _ => Err(format!("Cannot add {:?} and {:?} together", l0, r0))?,
+                _ => Err(format!("Cannot apply {:?} and {:?} together", l0, r0))?,
             },
             // Convert these into DBValues and then apply the function
             (Self::DBValue(x), Self::SQLValue(y)) => self.apply(
@@ -400,7 +414,6 @@ impl JointValues {
                 let y = x.get_coltype().from_sql_value(y)?;
                 Self::DBValue(x).apply(&Self::DBValue(y), int_func, float_func, string_func)?
             }
-            _ => Err(format!("Cannot add {:?} and {:?}", self, other))?,
         })
     }
 }
@@ -408,8 +421,16 @@ impl JointValues {
 impl PartialEq for JointValues {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::DBValue(l0), Self::DBValue(r0)) => l0 == r0,
-            (Self::SQLValue(l0), Self::SQLValue(r0)) => l0 == r0,
+            (Self::DBValue(l0), Self::DBValue(r0)) => l0.partial_cmp(r0) == Some(Ordering::Equal),
+            (Self::SQLValue(l0), Self::SQLValue(r0)) => {
+                let l = Value::from_sql_value(l0);
+                let r = Value::from_sql_value(r0);
+                if l.is_err() || r.is_err() {
+                    false
+                } else {
+                    l.unwrap().partial_cmp(&r.unwrap()) == Some(Ordering::Equal)
+                }
+            }
             (Self::DBValue(l0), Self::SQLValue(r0)) => {
                 if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
                     l0 == &r0
