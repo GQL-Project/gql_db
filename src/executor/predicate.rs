@@ -258,5 +258,324 @@ impl PartialOrd for JointValues {
     }
 }
 
+// Where (predicate) tests go here
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use serial_test::serial;
+
+    use crate::{
+        executor::query::execute_query,
+        fileio::databaseio::{delete_db_instance, get_db_instance},
+        parser::parser::parse,
+        util::{bench::create_demo_db, dbtype::Value},
+    };
+
+    #[test]
+    #[serial]
+    fn test_comparator_predicates() {
+        let mut user = create_demo_db("comp_predicates");
+        // It's very tricky / weird to test the predicates, so we're just running SQL commands
+        // and checking if the results are correct
+        let (_, results) = execute_query(
+            &parse("select * from personal_info where id < 20", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x < 20);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+
+        let (_, results) = execute_query(
+            &parse("select * from personal_info where id >= 19", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x >= 19);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+
+        let (_, results) = execute_query(
+            &parse("select * from personal_info where first_name <= 'D'", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::String(x) = &row[1] {
+                assert!(x.as_str() <= "D");
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_equality_predicates() {
+        let mut user = create_demo_db("equals_predicates");
+        // It's very tricky / weird to test the predicates, so we're just running SQL commands
+        // and checking if the results are correct
+        let (_, results) = execute_query(
+            &parse(
+                "select first_name, age, height from personal_info where height is null",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            assert!(row[2] == Value::Null);
+        }
+
+        let (_, results) = execute_query(
+            &parse(
+                "select * from personal_info where age = 32 and height is not null",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                assert!(x == 32);
+                assert!(row[4] != Value::Null);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+
+        let (_, results) = execute_query(
+            &parse(
+                "select * from personal_info where age = 32 and height < 30",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                if let Value::Float(y) = row[4] {
+                    assert!(x == 32);
+                    assert!(y < 30.0);
+                } else {
+                    panic!("Invalid value type");
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_nested_predicates() {
+        let mut user = create_demo_db("nested_predicates");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        // It's very tricky / weird to test the predicates, so we're just running SQL commands
+        // and checking if the results are correct
+        let (_, results) = execute_query(
+            &parse(
+                "select * from personal_info P, locations L where P.id < L.id and (P.age > L.id or (is_open and height is NULL)) and age < 32;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            println!("Row: {:?}", row);
+            if let Value::I32(x) = row[0] {
+                if let Value::I32(y) = row[6] {
+                    assert!(x < y);
+                    if let Value::I64(z) = row[3] {
+                        assert!(
+                            z > y.into() || (row[8] == Value::Bool(true) && row[4] == Value::Null)
+                        );
+                        assert!(z < 32);
+                    } else {
+                        panic!("Invalid value type");
+                    }
+                } else {
+                    panic!("Invalid value type");
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_join_predicate() {
+        let mut user = create_demo_db("join_predicate");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        // It's very tricky / weird to test the predicates, so we're just running SQL commands
+        // and checking if the results are correct
+        let (_, results) = execute_query(
+            &parse(
+                "select * from personal_info P, locations L where P.id = L.id;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                if let Value::I32(y) = row[6] {
+                    assert!(x == y);
+                } else {
+                    panic!("Invalid value type");
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+
+        let (_, results) = execute_query(
+            &parse(
+                "select * from personal_info P, locations L where (P.id < L.id) and (P.id <= P.age);",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                if let Value::I32(y) = row[6] {
+                    if let Value::I64(z) = row[3] {
+                        assert!(x < y);
+                        assert!(x as i64 <= z);
+                    } else {
+                        panic!("Invalid value type");
+                    }
+                } else {
+                    panic!("Invalid value type");
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_boolean_predicate() {
+        let mut user = create_demo_db("bool_predicate");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        // It's very tricky / weird to test the predicates, so we're just running SQL commands
+        // and checking if the results are correct
+        let (_, results) = execute_query(
+            &parse(
+                "select * from personal_info P, locations L where not (P.id = L.id) and not is_open;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                if let Value::I32(y) = row[6] {
+                    assert!(x != y);
+                    assert!(row[8] == Value::Bool(false));
+                } else {
+                    panic!("Invalid value type");
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_predicate() {
+        let mut user = create_demo_db("invalid_predicates");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        // Unidentified variable
+        execute_query(
+            &parse(
+                "select * from personal_info where age < 32 and x = '30';",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap_err();
+
+        // Parsable but invalid
+        let (_, results) = execute_query(
+            &parse("select * from personal_info where age < 'Test';", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.is_empty());
+
+        // Ambigous column name
+        execute_query(
+            &parse(
+                "select * from personal_info, locations where id < 5;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap_err();
+
+        delete_db_instance().unwrap();
+    }
+}
