@@ -176,15 +176,17 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             let mut branch_exist = false;
             let mut flag = false;
             let mut branch_name = String::new();
+            let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+            
             if vec[2] == "-f" {
                 flag = true;
                 branch_name = vec[3].to_string();
-                branch_exist = get_db_instance()?.get_branch_heads_file_mut().does_branch_exist(branch_name.clone())?;
+                branch_exist = branch_heads_instance.does_branch_exist(branch_name.clone())?;
             }
             else {
                 flag = false;
                 branch_name = vec[2].to_string();
-                branch_exist = get_db_instance()?.get_branch_heads_file_mut().does_branch_exist(branch_name.clone())?;
+                branch_exist = branch_heads_instance.does_branch_exist(branch_name.clone())?;
             }
             
             if !branch_exist {
@@ -205,10 +207,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
 
             let del_results = del_branch::del_branch(user, &branch_name.clone(), flag)?;
 
-            if del_results.starts_with("ERROR") {
+            if del_results.starts_with("Branch") {
                 return Err(del_results.to_string());
             }
-            
+
             return Ok(del_results.to_string());
         }
         _ => {
