@@ -2,8 +2,9 @@
 #![allow(dead_code)]
 pub mod branch_heads;
 pub mod branches;
+pub mod command;
 pub mod commit;
 pub mod commitfile;
 pub mod diff;
-pub mod log;
 pub mod del_branch;
+pub mod merge;

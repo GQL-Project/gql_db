@@ -1,6 +1,9 @@
 use crate::fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME};
 use crate::user::userdata::User;
-use crate::version_control::*;
+use crate::version_control::command;
+use crate::version_control::commit::Commit;
+use crate::version_control::merge::MergeConflictResolutionAlgo;
+use crate::version_control::del_branch;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -27,7 +30,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         return Err("Empty VC Command query".to_string());
     }
     let command = query.split_whitespace();
-    let vec = command.collect::<Vec<&str>>();
+    let mut vec = command.collect::<Vec<&str>>();
 
     // vec[0] = "GQL"
     // vec[1] = <command>
@@ -66,13 +69,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                         return Err("No changes to commit".to_string());
                     }
 
-                    let (res_node, res_commit) =
-                        get_db_instance().unwrap().create_commit_and_node(
-                            &message.to_string(),
-                            &user.get_commands().join(":"),
-                            user,
-                            None,
-                        )?;
+                    let (res_node, res_commit) = get_db_instance()?.create_commit_and_node(
+                        &message.to_string(),
+                        &user.get_commands().join(":"),
+                        user,
+                        None,
+                    )?;
                     return Ok(format!(
                         "Commit created on branch {} with hash {}",
                         res_node.branch_name, res_commit.hash
@@ -84,19 +86,25 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             }
         }
         "branch" => {
-            // branch (CoPilot rec: Possible flags: -d, -m, -l (list branches))
+            // branch (CoPilot rec: Possible flags: -l (list branches), -c (current branch))
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else if !vec[2].to_string().starts_with("-") && vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
                 return Err("Invalid Branch Name".to_string());
             } else {
                 // using a flag that's not supposed to be used
-                if vec[2].to_string().starts_with("-") && vec[2].to_string() != "-l" {
-                    return Err("Invalid flag".to_string());
+                if vec[2].to_string().starts_with("-")
+                    && vec[2].to_string() != "-l"
+                    && vec[2].to_string() != "-c"
+                {
+                    return Err(format!(
+                        "Invalid Flag for Branch VC Command: {}",
+                        vec[2].to_string()
+                    ));
                 }
                 if vec[2].to_string() == "-l" {
                     // We want to return a list of branches
@@ -105,6 +113,9 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                     let branch_names_str: String = branch_names.join(",");
 
                     return Ok(branch_names_str);
+                } else if vec[2].to_string() == "-c" {
+                    // We want to return the current branch
+                    return Ok(user.get_current_branch_name());
                 } else {
                     // vec[2] should be a branch name
                     // create branch
@@ -121,11 +132,11 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // Needs an argument
             if vec.len() < 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else if vec.len() > 3 {
                 // spaces in the branch name
                 // error message here
-                return Err("Invalid Branch Name".to_string());
+                return Err(format!("Invalid Branch Name '{}'", vec.join(" ")));
             } else {
                 // vec[2] should be a branch name
                 get_db_instance()?
@@ -134,23 +145,156 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Ok(format!("Branch switched to {}", &vec[2]));
             }
         }
-        "log" => {
-            // log (NO FLAGS OR ARGS)
-            if vec.len() != 2 {
-                // Error message here
-                return Err("Invalid VC Command".to_string());
+        "merge_branch" => {
+            // merge (One Arguments: <src_branch_name> <dest_branch_name> <message> (optional -d for deleting source branch) (optional -s <strategy> for strategy))
+            // merges into the current branch
+
+            // Combine the message into a single string
+            let mut parsed_message: String = String::new();
+            let mut post_msg_vec: Vec<&str> = Vec::new();
+            for i in 4..vec.len() {
+                if vec[i].to_string() == "-d" || vec[i].to_string() == "-s" {
+                    post_msg_vec = vec[i..vec.len()].to_vec();
+                    break;
+                }
+                parsed_message.push_str(&vec[i].replace(&"\"".to_string(), &"".to_string()));
+                parsed_message.push_str(" ");
             }
 
-            let log_results = log::log(user)?;
+            vec.splice(4..vec.len(), vec![parsed_message.trim()]);
+            vec.append(&mut post_msg_vec);
+
+            if vec.len() < 5 || vec.len() > 8 {
+                return Err(format!(
+                    "Invalid Merge Command, expected at least 3 arguments not {}",
+                    vec.len() - 2
+                )
+                .to_string());
+            }
+
+            println!("Merge Command: {:?}", vec);
+
+            let src_branch_name: String = vec[2].to_string();
+            let dest_branch_name: String = vec[3].to_string();
+            let message: String = vec[4].to_string();
+
+            /// Get the strategy from the command string
+            fn get_strategy(strategy: &str) -> Result<MergeConflictResolutionAlgo, String> {
+                match strategy {
+                    "ours" => Ok(MergeConflictResolutionAlgo::UseSource),
+                    "theirs" => Ok(MergeConflictResolutionAlgo::UseTarget),
+                    "clean" => Ok(MergeConflictResolutionAlgo::NoConflicts),
+                    _ => Err(
+                        "Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'".to_string(),
+                    ),
+                }
+            }
+
+            // Check optional arguments
+            let mut delete_src_branch: bool = false;
+            let mut merge_strategy: MergeConflictResolutionAlgo =
+                MergeConflictResolutionAlgo::NoConflicts;
+            if vec.len() == 6 {
+                if vec[5] == "-d" {
+                    delete_src_branch = true;
+                } else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            } else if vec.len() == 7 {
+                if vec[5] == "-s" {
+                    merge_strategy = get_strategy(vec[5])?;
+                } else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            } else if vec.len() == 8 {
+                if vec[5] == "-d" {
+                    delete_src_branch = true;
+                    if vec[6] == "-s" {
+                        merge_strategy = get_strategy(vec[7])?;
+                    } else {
+                        return Err("Invalid Merge Command. Invalid flag.".to_string());
+                    }
+                } else if vec[5] == "-s" {
+                    merge_strategy = get_strategy(vec[6])?;
+                    if vec[7] == "-d" {
+                        delete_src_branch = true;
+                    } else {
+                        return Err("Invalid Merge Command. Invalid flag.".to_string());
+                    }
+                } else {
+                    return Err("Invalid Merge Command. Invalid flag.".to_string());
+                }
+            }
+
+            if src_branch_name == dest_branch_name {
+                return Err("Cannot merge a branch into itself".to_string());
+            }
+
+            // Make sure user does not have any uncommitted changes
+            if user.get_diffs().len() > 0 {
+                return Err("Cannot merge with uncommitted changes".to_string());
+            }
+
+            // Swap user to the destination branch
+            get_db_instance()?
+                .switch_branch(&dest_branch_name, user)
+                .map_err(|e| e.to_string())?;
+
+            // Merge the source branch into the destination branch
+            let merge_commit: Commit = get_db_instance()?
+                .merge_branches(
+                    &src_branch_name,
+                    user,
+                    &message,
+                    true,
+                    merge_strategy,
+                    delete_src_branch,
+                )
+                .map_err(|e| e.to_string())?;
+
+            return Ok(format!("Merge Successful Made at hash {}", merge_commit.hash).to_string());
+        }
+        "log" => {
+            // log (NO FLAGS OR ARGS)
+            if vec.len() != 2 && vec.len() != 3 {
+                // Error message here
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
+            }
+
+            let log_results = command::log(user)?;
             let log_string: String = log_results.0;
 
+            if vec.len() == 3 {
+                if vec[2] != "-json" {
+                    // Error message here
+                    return Err("Invalid VC Command".to_string());
+                } else {
+                    // Return the log in JSON format
+                    return Ok(log_results.2);
+                }
+            }
             return Ok(log_string);
+        }
+        "squash" => {
+            // squash (Two Arguments: <hash1> <hash2>)
+            if vec.len() != 4 {
+                // Error message here
+                return Err("Invalid Squash Command, expected two Commit Hashes".to_string());
+            }
+
+            let hash1 = vec[2].to_string();
+            let hash2 = vec[3].to_string();
+            let squash_results = command::squash(&hash1, &hash2, user)?;
+            return Ok(format!(
+                "Squash Commit Made at hash: {}",
+                squash_results.hash
+            ));
         }
         "revert" => {
             // revert (Needs an argument)
             if vec.len() != 3 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             } else {
                 // vec[2] should be a commit hash
                 return Ok("Valid Revert Command".to_string());
@@ -160,7 +304,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
             // status (NO FLAGS OR ARGS)
             if vec.len() != 2 {
                 // error message here
-                return Err("Invalid VC Command".to_string());
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
             return Ok("Valid Status Command".to_string());
         }
@@ -215,7 +359,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         }
         _ => {
             // error message here
-            return Err("Invalid VC Command".to_string());
+            return Err(format!("Invalid VC Command: {}", vec.join(" ")));
         }
     }
 }
@@ -224,7 +368,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
 mod tests {
     use serial_test::serial;
 
-    use crate::fileio::databaseio::{create_db_instance, delete_db_instance};
+    use crate::{fileio::databaseio::delete_db_instance, util::bench::fcreate_db_instance};
 
     use super::*;
 
@@ -233,7 +377,7 @@ mod tests {
     fn test_parse_vc_cmd() {
         let query = "GQL commit -m \"This is a commit message\"";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance_ 1".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_1");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
@@ -266,7 +410,7 @@ mod tests {
     fn test_parse_vc_cmd4() {
         let query = "GQL branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"gql_log_db_instance_2".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_2");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         assert!(result.is_ok());
@@ -289,7 +433,7 @@ mod tests {
         let query0 = "GQL branch branch_name";
         let query = "GQL switch_branch branch_name";
         // Create a new user on the main branch
-        create_db_instance(&"TEST_DB".to_string()).unwrap();
+        fcreate_db_instance("TEST_DB");
         let mut user: User = User::new("test_user".to_string());
         parse_vc_cmd(query0, &mut user).unwrap();
         let result = parse_vc_cmd(query, &mut user);
@@ -302,7 +446,7 @@ mod tests {
     fn test_parse_vc_cmd7() {
         let query = "GQL switch_branch branch name";
         // Create a new user on the main branch
-        create_db_instance(&"TEST_DB".to_string()).unwrap();
+        fcreate_db_instance("TEST_DB");
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);
         delete_db_instance().unwrap();
@@ -313,7 +457,7 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd8() {
         let query = "GQL log";
-        create_db_instance(&"gql_log_db_instance_3".to_string()).unwrap();
+        fcreate_db_instance("gql_log_db_instance_3");
 
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
@@ -388,6 +532,16 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd15() {
         let query = "GQL commit -m \"\"";
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        let result = parse_vc_cmd(query, &mut user);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_parse_vc_cmd16() {
+        let query = "GQL log -json";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let result = parse_vc_cmd(query, &mut user);

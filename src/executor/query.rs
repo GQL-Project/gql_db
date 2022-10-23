@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use super::predicate::{resolve_predicate, solve_predicate, SolvePredicate};
 use crate::fileio::{
     databaseio::*,
     header::*,
@@ -40,7 +43,16 @@ pub fn execute_query(
                         }
                     }
                     user.append_command(&command);
-                    return select(column_names, table_names, get_db_instance()?, user);
+                    let pred: Option<SolvePredicate> = match &s.selection {
+                        Some(pred) => Some(where_clause(
+                            pred,
+                            table_names.clone(),
+                            get_db_instance()?,
+                            user,
+                        )?),
+                        None => None,
+                    };
+                    return select(column_names, pred, table_names, get_db_instance()?, user);
                 }
                 _ => print!("Not a select\n"),
             },
@@ -90,6 +102,9 @@ pub fn execute_update(
                                     Expr::Value(sqlparser::ast::Value::SingleQuotedString(s)) => {
                                         data.push(s);
                                     }
+                                    Expr::Value(sqlparser::ast::Value::DoubleQuotedString(s)) => {
+                                        data.push(s);
+                                    }
                                     Expr::Value(sqlparser::ast::Value::Number(s, _)) => {
                                         data.push(s);
                                     }
@@ -99,21 +114,20 @@ pub fn execute_update(
                                     Expr::Value(sqlparser::ast::Value::Null) => {
                                         data.push("".to_string());
                                     }
-                                    _ => print!("Not a string\n"),
+                                    _ => println!("Unexpected Value"),
                                 }
                             }
                             all_data.push(data);
                         }
                     }
                     _ => {
-                        return Err("Not a values statement".to_string());
+                        return Err("Expected a Values statement".to_string());
                     }
                 }
                 results.push(insert(all_data, table_name, get_db_instance()?, user)?.0);
-                //
             }
             _ => {
-                return Err("Not a create or insert".to_string());
+                return Err(format!("Not a valid command: {0}", a));
             }
         }
     }
@@ -162,6 +176,7 @@ pub fn drop_table(
 /// It returns a tuple containing the schema and the rows of the resulting table.
 pub fn select(
     column_names: Vec<String>,
+    pred: Option<SolvePredicate>,
     table_names: Vec<(String, String)>,
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
@@ -171,40 +186,22 @@ pub fn select(
     }
 
     // Whether the select statement used '*' to select columns or not
-    let is_star_cols: bool = column_names.get(0).unwrap().eq(&"*".to_string());
+    let is_star_cols: bool = column_names.contains(&"*".to_string());
 
     // The rows and schema that are to be returned from the select statement
     let mut selected_rows: Vec<Row> = Vec::new();
     let mut selected_schema: Schema = Vec::new();
 
-    // Read in the tables into a vector of tuples where they are represented as (table, alias)
-    let mut tables: Vec<(Table, String)> = Vec::new();
-    let table_dir: String = database.get_current_working_branch_path(user);
-    for (table_name, alias) in table_names {
-        tables.push((Table::new(&table_dir, &table_name, None)?, alias.clone()));
-    }
+    let tables = load_aliased_tables(database, user, table_names)?;
+
+    // This is where the fun begins... ;)
+    let table_column_names = gen_column_aliases(&tables);
 
     // Create an iterator of table iterators using the cartesion product of the tables :)
-    let table_iterator = tables.iter().map(|x| x.0.clone()).multi_cartesian_product();
-
-    // Get the names of all the columns in the tables along with their aliases in
-    // the format <alias>.<column_name> and store them in a vector of tuples
-    // alongside their column types and new column name when output.
-    // It will be a vector of tuples where each tuple is of the form:
-    // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
-    // This is where the fun begins... ;)
-    let table_column_names: Vec<(String, Column, String)> = tables
-        .iter()
-        .map(|x: &(Table, String)| {
-            x.0.schema
-                .iter()
-                .map(|y: &(String, Column)| {
-                    (format!("{}.{}", x.1, y.0.clone()), y.1.clone(), y.0.clone())
-                })
-                .collect::<Vec<(String, Column, String)>>()
-        })
-        .flatten()
-        .collect::<Vec<(String, Column, String)>>();
+    let table_iterator = tables
+        .into_iter()
+        .map(|(table, _)| table)
+        .multi_cartesian_product();
 
     // We need to take all the columns
     if is_star_cols {
@@ -218,21 +215,25 @@ pub fn select(
             // Accumulate all the cells across the vector of rows into a single vector
             let mut selected_cells: Row = Vec::new();
             table_rows
-                .iter()
-                .for_each(|x| selected_cells.extend(x.row.clone()));
-
-            // Append the selected_cells row to our result
-            selected_rows.push(selected_cells.clone());
+                .into_iter()
+                .for_each(|x| selected_cells.extend(x.row));
+            // Add the accumulated cells to the selected rows
+            if resolve_predicate(&pred, &selected_cells)? {
+                selected_rows.push(selected_cells);
+            }
         }
     }
     // We need to take a subset of columns
     else {
+        // Pass through columns with no aliases used to provide an alias if unambiguous
+        let column_names = resolve_colnames(column_names, &table_column_names)?;
+
         // Get the indices of the columns we want to select
         let mut table_column_indices: Vec<usize> = Vec::new();
         for desired_column in column_names {
             let index = table_column_names
                 .iter()
-                .position(|x| x.0.eq(&desired_column));
+                .position(|(name, _, _)| name.eq(&desired_column));
             // Check that index is valid
             match index {
                 Some(x) => {
@@ -254,19 +255,25 @@ pub fn select(
             // Flatten the entire output row, but it includes all columns from all tables
             let mut output_row: Row = Vec::new();
             for row_info in table_rows {
-                output_row.extend(row_info.row.clone());
+                output_row.extend(row_info.row);
             }
+            if resolve_predicate(&pred, &output_row)? {
+                // Iterate through the output row and only select the columns we want
+                let selected_cells: Row = output_row
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, row_cell)| {
+                        if table_column_indices.contains(&i) {
+                            Some(row_cell)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-            // Iterate through the output row and only select the columns we want
-            let mut selected_cells: Row = Vec::new();
-            for (i, row_cell) in output_row.iter().enumerate() {
-                if table_column_indices.contains(&i) {
-                    selected_cells.push(row_cell.clone());
-                }
+                // Append the selected_cells row to our result
+                selected_rows.push(selected_cells);
             }
-
-            // Append the selected_cells row to our result
-            selected_rows.push(selected_cells.clone());
         }
     }
 
@@ -294,8 +301,8 @@ pub fn insert(
         .map(|x| {
             if x.len() != table.schema.len() {
                 Err(format!(
-                    "Number of values to be inserted does not match the number of columns in the table"
-                ))
+                    "Number of values ({}) to be inserted does not match the number of columns in the table ({})"
+                , x.len(), table.schema.len()))
             } else {
                 Ok(x
                     .iter()
@@ -333,6 +340,116 @@ pub fn insert(
     let diff: InsertDiff = table.insert_rows(values)?;
     user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
+}
+
+// This method implements the SQL Where clause. It takes in an expression, and generates
+// a function that takes in a row and returns a boolean. The function returns an error if
+// the expression is invalid.
+pub fn where_clause(
+    pred: &Expr,
+    table_names: Vec<(String, String)>,
+    database: &Database,
+    user: &User,
+) -> Result<SolvePredicate, String> {
+    let tables = load_aliased_tables(database, user, table_names)?;
+    let col_names = gen_column_aliases(&tables);
+    let index_refs = col_names
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _, _))| (name.clone(), i))
+        .collect::<HashMap<String, usize>>();
+    solve_predicate(pred, &col_names, &index_refs)
+}
+
+// Generating tables with aliases from a list of table names,
+// and creating new aliases where necessary
+fn load_aliased_tables(
+    database: &Database,
+    user: &User,
+    table_names: Vec<(String, String)>,
+) -> Result<Vec<(Table, String)>, String> {
+    let table_dir: String = database.get_current_working_branch_path(user);
+    let tables: Vec<(Table, String)> = table_names
+        .iter()
+        .map(|(table_name, alias)| {
+            let table = Table::new(&table_dir, &table_name, None)?;
+            if alias.is_empty() {
+                // If no alias is provided, use the table name as the alias
+                let alias = table_name.clone();
+                Ok((table, alias))
+            } else {
+                Ok((table, alias.to_string()))
+            }
+        })
+        .collect::<Result<Vec<(Table, String)>, String>>()?;
+    Ok(tables)
+}
+
+// Get the names of all the columns in the tables along with their aliases in
+// the format <alias>.<column_name> and store them in a vector of tuples
+// alongside their column types and new column name when output.
+// It will be a vector of tuples where each tuple is of the form:
+// (<table_alias>.<column_name>, <column_type>, <output_column_name>)
+fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, String)> {
+    tables
+        .iter()
+        .map(|(table, alias): &(Table, String)| {
+            table
+                .schema
+                .iter()
+                .map(|(name, coltype)| {
+                    (
+                        format!("{}.{}", alias, name.clone()),
+                        coltype.clone(),
+                        name.clone(),
+                    )
+                })
+                .collect::<Vec<(String, Column, String)>>()
+        })
+        .flatten()
+        .collect::<Vec<(String, Column, String)>>()
+}
+
+// Unambiguates column names by adding the table alias if there is only one table with that column name
+fn resolve_colnames(
+    column_names: Vec<String>,
+    table_column_names: &Vec<(String, Column, String)>,
+) -> Result<Vec<String>, String> {
+    let column_names = column_names
+        .into_iter()
+        .map(|x| resolve_reference(x, table_column_names))
+        .collect::<Result<Vec<String>, String>>()?;
+    Ok(column_names)
+}
+
+// Given a column name, it figures out which table it belongs to and returns the
+// unambiguous column name
+pub fn resolve_reference(
+    column_name: String,
+    table_column_names: &Vec<(String, Column, String)>,
+) -> Result<String, String> {
+    if column_name.contains(".") {
+        // We know this works, as the parser does not allow for '.' in column names
+        Ok(column_name)
+    } else {
+        let matches: Vec<&String> = table_column_names
+            .iter()
+            .filter_map(|(col_name, _, name)| {
+                if name == &column_name {
+                    Some(col_name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if matches.len() == 1 {
+            Ok(matches[0].clone())
+        } else if matches.len() != 0 {
+            Err(format!("Column name {} is ambiguous.", column_name))
+        } else {
+            Err(format!("Column name {} does not exist.", column_name))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -375,7 +492,7 @@ mod tests {
         .unwrap();
 
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -460,7 +577,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         // Check that the schema is correct
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
@@ -515,7 +632,7 @@ mod tests {
     fn test_select_single_table_specific_columns() {
         // This tests
         // SELECT T.id, T.name FROM select_test_db.test_table1 T;
-        let columns = vec!["T.id".to_string(), "T.name".to_string()];
+        let columns = vec!["T.id".to_string(), "name".to_string()];
         let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
 
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
@@ -548,7 +665,74 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], ("id".to_string(), Column::I32));
+        assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 3);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_unaliased_select() {
+        // This tests
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = vec!["id".to_string(), "name".to_string()];
+        let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        insert(
+            vec![
+                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+                vec![
+                    "3".to_string(),
+                    "Doctor Strange".to_string(),
+                    "35".to_string(),
+                ],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -581,11 +765,11 @@ mod tests {
     #[serial]
     fn test_select_multiple_tables_specific_columns() {
         // This tests
-        // SELECT T1.id, T2.country FROM select_test_db.test_table1 T1, select_test_db.test_table2 T2;
-        let columns = vec!["T1.id".to_string(), "T2.country".to_string()];
+        // SELECT T1.id, country FROM select_test_db.test_table1 T1, select_test_db.test_table2;
+        let columns = vec!["T1.id".to_string(), "country".to_string()];
         let tables = vec![
             ("test_table1".to_string(), "T1".to_string()),
-            ("test_table2".to_string(), "T2".to_string()),
+            ("test_table2".to_string(), "".to_string()),
         ]; // [(table_name, alias)]
 
         let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
@@ -636,7 +820,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("country".to_string(), Column::String(50)));
@@ -665,6 +849,70 @@ mod tests {
         assert_eq!(result.1[3][0], Value::I32(2));
         assert_eq!(result.1[3][1], Value::String("Britain".to_string()));
 
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_ambigous_select() {
+        // This tests
+        // SELECT id, country FROM select_test_db.test_table1, select_test_db.test_table2;
+        let columns = vec!["id".to_string(), "country".to_string()];
+        let tables = vec![
+            ("test_table1".to_string(), "".to_string()),
+            ("test_table2".to_string(), "".to_string()),
+        ]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec![
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
+                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("country".to_string(), Column::String(50)),
+        ];
+
+        create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec!["5".to_string(), "United States".to_string()],
+                vec!["6".to_string(), "Britain".to_string()],
+            ],
+            "test_table2".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let _ = select(columns.to_owned(), None, tables, &new_db, &user).unwrap_err();
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -713,7 +961,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user);
+        let result = select(columns.to_owned(), None, tables, &new_db, &user);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -764,7 +1012,7 @@ mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user);
+        let result = select(columns.to_owned(), None, tables, &new_db, &user);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -847,7 +1095,7 @@ mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -992,7 +1240,7 @@ mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], ("id".to_string(), Column::I32));
         assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
@@ -1148,7 +1396,7 @@ mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
 
         assert_eq!(
             result.0[0],

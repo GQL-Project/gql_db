@@ -102,6 +102,32 @@ Now that you have the common ancestor, you can merge the branches. The merge str
 2. Repeat step 1 with the target commits.
 3. **NOTE** Use the empty bits in the first byte of the table row to indicate rows that are ready to be deleted/inserted/updated. This way, you can keep track of which rows will cause a merge conflict or not. 
 
+### Squashing The Commits
+
+Squashing the commits has two main steps:
+1. Squashing the commits: Here, all the diffs between the two commits are squashed into a single commit, with necessary merges being made. Namely:
+  - An Insert on a row followed by an Update on the same row will be squashed into an Insert on the row, with the Update's row.
+  - An Insert on a row followed by a Delete on the same row will cancel out.
+  - An Update on a row followed by a Delete on the same row will be squashed into a Delete on the row.
+  - An Update on a row followed by an Update on the same row will be squashed into an Update on the row, with the second Update's row.
+  - A Delete on a row followed by an Insert on the same row will be squashed into an Insert on the row.
+  - We also delete duplicate references to the same row, for Remove and Insert, defering to the last reference to the row.
+2. Restoring Branches: Here, the branches using the old chain of commits will need to use the new squashed commit. There are some important cases to handle:
+  - In every case, the branch's HEAD will be updated to point to the new squashed commit.
+
+Also to note, Squash assumes that the commits are in order, and that the current branch contains hash2, as there can be multiple branches that contain hash2.
+
+### What Causes a Merge Conflict?
+
+There are a certain set of operations that will cause a merge conflict. These are:
+- A row is deleted in one branch, but updated in the other branch.
+- A row is updated in both branches, but with different values.
+- A row is updated in one branch, but that table is deleeted in the other branch
+- A table is created in one branch, but deleted in the other branch.
+- A table is created in both branches, but with different schemas.
+
+Inserts are not considered merge conflicts because they can be resolved by simply inserting the row in the other branch. If the same row is inserted in both branches, only 1 copy of that row will be inserted in the merged branch.
+
 ## Invariants
 
 1. All commits in a branch have increasing timestamps.

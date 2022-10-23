@@ -200,8 +200,11 @@ impl Table {
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
         //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
-        let mut diff: UpdateDiff =
-            UpdateDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
+        let mut diff: UpdateDiff = UpdateDiff {
+            table_name: self.name.clone(),
+            schema: self.schema.clone(),
+            rows: Vec::new(),
+        };
 
         if rows.len() < 1 {
             return Ok(diff);
@@ -231,8 +234,11 @@ impl Table {
     /// It returns a diff of the rows that were inserted.
     pub fn insert_rows(&mut self, rows: Vec<Row>) -> Result<InsertDiff, String> {
         // Keep track of how the rows have changed.
-        let mut diff: InsertDiff =
-            InsertDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
+        let mut diff: InsertDiff = InsertDiff {
+            table_name: self.name.clone(),
+            schema: self.schema.clone(),
+            rows: Vec::new(),
+        };
 
         // Just return right away if we aren't inserting any rows
         if rows.len() == 0 {
@@ -253,10 +259,16 @@ impl Table {
                     // Allocate a new page
                     page = Box::new([0; 4096]);
                     self.max_pages += 1;
+
+                    // Update the header
+                    let new_header: Header = Header {
+                        num_pages: self.max_pages,
+                        schema: self.schema.clone(),
+                    };
+                    write_header(&self.path, &new_header)?;
                 }
                 rownum_inserted = insert_row(&self.schema, page.as_mut(), &row)?;
             }
-
             // Add the information to the diff
             diff.rows.push(RowInfo {
                 row: row.clone(),
@@ -274,8 +286,11 @@ impl Table {
     /// This is a dangerous operation because it could overwrite existing data.
     pub fn write_rows(&mut self, mut rows: Vec<RowInfo>) -> Result<InsertDiff, String> {
         // Keep track of how the rows have changed.
-        let mut diff: InsertDiff =
-            InsertDiff::new(self.name.clone(), self.schema.clone(), Vec::new());
+        let mut diff: InsertDiff = InsertDiff {
+            table_name: self.name.clone(),
+            schema: self.schema.clone(),
+            rows: Vec::new(),
+        };
 
         // Just return right away if we aren't inserting any rows
         if rows.len() == 0 {
@@ -294,6 +309,13 @@ impl Table {
                 let new_page = Box::new([0; 4096]);
                 self.max_pages += 1;
                 write_page(self.max_pages - 1, &self.path, new_page.as_ref())?;
+
+                // Update the header
+                let new_header: Header = Header {
+                    num_pages: self.max_pages,
+                    schema: self.schema.clone(),
+                };
+                write_header(&self.path, &new_header)?;
             }
             // Read in the page
             page = read_page(rowinfo.pagenum, &self.path)?;
@@ -320,7 +342,11 @@ impl Table {
     pub fn remove_rows(&self, rows: Vec<RowLocation>) -> Result<RemoveDiff, String> {
         // Keep track of how the rows have changed.
         let schema = self.schema.clone();
-        let mut diff: RemoveDiff = RemoveDiff::new(self.name.clone(), schema, Vec::new());
+        let mut diff: RemoveDiff = RemoveDiff {
+            table_name: self.name.clone(),
+            schema: schema,
+            rows: Vec::new(),
+        };
 
         // Return right away if we aren't removing any rows
         if rows.len() == 0 {
@@ -345,14 +371,22 @@ impl Table {
                     clear_row(&self.schema, page.as_mut(), rownum)?;
 
                     // Add changes to the diff
-                    diff.rows_removed.push(RowInfo {
+                    diff.rows.push(RowInfo {
                         row: row_read,
-                        pagenum: row_location.pagenum,
-                        rownum: row_location.rownum,
+                        pagenum,
+                        rownum,
                     });
                 }
                 None => {
-                    return Err(format!("The provided Row doesn't exist!"));
+                    println!(
+                        "Error: Row not found at pagenum {} rownum {}",
+                        pagenum, rownum
+                    );
+                    return Err(
+                        format!(
+                            "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!", pagenum, rownum
+                        )
+                    );
                 }
             }
         }
@@ -371,7 +405,74 @@ impl Table {
             Some(row) => {
                 return Ok(row);
             }
-            None => Err("Row not found".to_string()),
+            None => Err(format!(
+                "Row not found at {} {}",
+                row_location.pagenum, row_location.rownum
+            )),
+        }
+    }
+
+    /// Gets a vector of EmptyRowLocations within the table
+    pub fn get_empty_rows(&self) -> Result<Vec<EmptyRowLocation>, String> {
+        let mut empty_rows: Vec<EmptyRowLocation> = Vec::new();
+
+        for pagenum in 1..self.max_pages {
+            let mut empty_rows_on_page: EmptyRowLocation = EmptyRowLocation {
+                location: RowLocation {
+                    pagenum,
+                    rownum: u16::MAX,
+                },
+                num_rows_empty: 0,
+            };
+
+            let page: Page = *read_page(pagenum, &self.path)?;
+            let mut rownum: u16 = 0;
+            loop {
+                match is_row_present(&self.schema, &page, rownum) {
+                    Ok(is_present) => {
+                        if is_present {
+                            // If we have any empty rows, reset the rowlocation
+                            if empty_rows_on_page.num_rows_empty > 0 {
+                                empty_rows.push(empty_rows_on_page);
+                                empty_rows_on_page = EmptyRowLocation {
+                                    location: RowLocation {
+                                        pagenum,
+                                        rownum: u16::MAX,
+                                    },
+                                    num_rows_empty: 0,
+                                };
+                            }
+                        } else {
+                            // If we have any empty rows, reset the rowlocation
+                            if empty_rows_on_page.num_rows_empty == 0 {
+                                // Start a new empty row location
+                                empty_rows_on_page.location = RowLocation { pagenum, rownum };
+                                empty_rows_on_page.num_rows_empty = 1;
+                            } else {
+                                empty_rows_on_page.num_rows_empty += 1;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        if empty_rows_on_page.num_rows_empty != 0 {
+                            empty_rows.push(empty_rows_on_page.clone());
+                        }
+                        break;
+                    }
+                }
+
+                // Increment the rownum
+                rownum += 1;
+            }
+        }
+        Ok(empty_rows)
+    }
+
+    pub fn pos_to_loc(&self, index: i32) -> RowLocation {
+        let rows_per_page = PAGE_SIZE as i32 / self.schema_size as i32;
+        RowLocation {
+            pagenum: (index / rows_per_page) as u32 + 1,
+            rownum: (index % rows_per_page) as u16,
         }
     }
 }
@@ -547,6 +648,8 @@ mod tests {
             }
         }
         assert_eq!(count, 5);
+        // Clean up by removing file
+        clean_table(&path);
     }
 
     #[test]
@@ -672,9 +775,9 @@ mod tests {
         // Verify that the remove_diff is correct
         assert_eq!(remove_diff.table_name, "test_differator".to_string());
         // Verify that the row is correct
-        assert_eq!(remove_diff.rows_removed[0].row[0], Value::I32(3));
-        assert_eq!(remove_diff.rows_removed[0].pagenum, 3);
-        assert_eq!(remove_diff.rows_removed[0].rownum, 0);
+        assert_eq!(remove_diff.rows[0].row[0], Value::I32(3));
+        assert_eq!(remove_diff.rows[0].pagenum, 3);
+        assert_eq!(remove_diff.rows[0].rownum, 0);
 
         // Clean up by removing file
         clean_table(&path);
@@ -778,6 +881,120 @@ mod tests {
             assert_eq!(row2.row[1], Value::String("Aaron Burr".to_string()));
             assert_eq!(row2.row[2], Value::I32(40));
         }
+
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_empty_rows() {
+        let path: String = "test_get_empty_rows".to_string();
+        let schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let mut table = create_table_in_dir(&path, &schema, &"".to_string())
+            .unwrap()
+            .0;
+
+        // Insert into table
+        table
+            .insert_rows(vec![vec![
+                Value::I32(3),
+                Value::String("Alexander Hamilton".to_string()),
+                Value::I32(60),
+            ]])
+            .unwrap();
+
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 1);
+        assert_eq!(empty_rows[0].location.pagenum, 1);
+        assert_eq!(empty_rows[0].location.rownum, 1);
+        assert_eq!(empty_rows[0].num_rows_empty, 68);
+
+        // Insert into table again
+        table
+            .insert_rows(vec![vec![
+                Value::I32(2),
+                Value::String("Alexander Hamilton".to_string()),
+                Value::I32(10),
+            ]])
+            .unwrap();
+
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 1);
+        assert_eq!(empty_rows[0].location.pagenum, 1);
+        assert_eq!(empty_rows[0].location.rownum, 2);
+        assert_eq!(empty_rows[0].num_rows_empty, 67);
+
+        // Insert 70 rows into table
+        let mut rows: Vec<Vec<Value>> = Vec::new();
+        for i in 0..70 {
+            rows.push(vec![
+                Value::I32(i),
+                Value::String("Alexander Hamilton".to_string()),
+                Value::I32(10),
+            ]);
+        }
+        table.insert_rows(rows).unwrap();
+
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 1);
+        assert_eq!(empty_rows[0].location.pagenum, 2);
+        assert_eq!(empty_rows[0].location.rownum, 3);
+        assert_eq!(empty_rows[0].num_rows_empty, 66);
+
+        // Remove some rows from the first page in the table
+        table
+            .remove_rows(vec![
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 6,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 7,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 8,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 9,
+                },
+                RowLocation {
+                    pagenum: 1,
+                    rownum: 16,
+                },
+            ])
+            .unwrap();
+
+        // Get empty rows
+        let empty_rows: Vec<EmptyRowLocation> = table.get_empty_rows().unwrap();
+
+        // Verify that there the empty rows are correct
+        assert_eq!(empty_rows.len(), 3);
+        assert_eq!(empty_rows[0].location.pagenum, 1);
+        assert_eq!(empty_rows[0].location.rownum, 6);
+        assert_eq!(empty_rows[0].num_rows_empty, 4);
+        assert_eq!(empty_rows[1].location.pagenum, 1);
+        assert_eq!(empty_rows[1].location.rownum, 16);
+        assert_eq!(empty_rows[1].num_rows_empty, 1);
+        assert_eq!(empty_rows[2].location.pagenum, 2);
+        assert_eq!(empty_rows[2].location.rownum, 3);
+        assert_eq!(empty_rows[2].num_rows_empty, 66);
 
         // Clean up by removing file
         clean_table(&path);

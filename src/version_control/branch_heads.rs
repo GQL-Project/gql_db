@@ -86,6 +86,7 @@ impl BranchHEADs {
     }
 
     /// Takes in a branch name and returns the corresponding branch HEAD.
+    /// If the branch name does not exist, returns an error.
     pub fn get_branch_head(&mut self, branch_name: &String) -> Result<BranchHead, String> {
         let branch_heads: Vec<BranchHead> = self.get_all_branch_heads()?;
 
@@ -121,8 +122,6 @@ impl BranchHEADs {
 
         for row_info in self.branch_heads_table.by_ref().into_iter().clone() {
             let row: Row = row_info.row;
-
-            let branch_name: String;
 
             // Get the branch name
             match row.get(0) {
@@ -251,6 +250,8 @@ impl BranchHEADs {
 
     /// Set branch head object to point to a new branch node within `branches.gql`
     /// This function is used when an existing branch gets a new branch node appended to it.
+    /// Note that the Branch Node itself needs to be updated to ensure it is also
+    /// marked as a branch head
     pub fn set_branch_head(
         &mut self,
         branch_name: &String,
