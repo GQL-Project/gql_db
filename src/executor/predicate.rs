@@ -20,7 +20,7 @@ pub type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
 #[derive(Debug)]
-enum JointValues {
+pub enum JointValues {
     DBValue(Value),
     SQLValue(SqlValue),
 }
@@ -30,6 +30,13 @@ pub fn resolve_predicate(pred: &Option<SolvePredicate>, row: &Row) -> Result<boo
     match pred {
         Some(pred) => pred(row),
         None => Ok(true),
+    }
+}
+
+pub fn resolve_value(solver: &SolveValue, row: &Row) -> Result<Value, String> {
+    match solver(row)? {
+        JointValues::DBValue(v) => Ok(v),
+        JointValues::SQLValue(v) => Value::from_sql_value(&v),
     }
 }
 
@@ -247,7 +254,20 @@ pub fn solve_value(
             }
             _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
         },
-        Expr::UnaryOp { op: _, expr: _ } => todo!(),
+        Expr::UnaryOp { op, expr } => match op {
+            UnaryOperator::Plus => {
+                let expr = solve_value(expr, column_names, index_refs)?;
+                Ok(Box::new(move |row| expr(row)))
+            }
+            UnaryOperator::Minus => {
+                let expr = solve_value(expr, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let val = expr(row)?;
+                    JointValues::DBValue(Value::I32(0)).subtract(&val)
+                }))
+            }
+            _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
+        },
         _ => Err(format!("Unexpected Value Clause: {}", pred)),
     }
 }
