@@ -83,8 +83,6 @@ pub fn from_value(value: CellValue) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::dbtype::Column;
-
     use super::*;
 
     #[test]

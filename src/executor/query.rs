@@ -406,12 +406,7 @@ fn resolve_selects(
         SelectItem::Wildcard => {
             let names: Vec<Expr> = table_column_names
                 .iter()
-                .map(|(x, _, _)| {
-                    Expr::Identifier(Ident {
-                        value: x.clone(),
-                        quote_style: None,
-                    })
-                })
+                .map(|(x, _, _)| to_ident(x.clone()))
                 .collect();
             column_names.append(
                 table_column_names
@@ -440,10 +435,7 @@ fn resolve_selects(
                     .iter()
                     .map(|(colname, _)| {
                         column_names.push(colname.clone());
-                        Expr::Identifier(Ident {
-                            value: format!("{}.{}", alias, colname),
-                            quote_style: None,
-                        })
+                        to_ident(format!("{}.{}", alias, colname))
                     })
                     .collect()
             } else {
@@ -487,1021 +479,1036 @@ pub fn resolve_reference(
     }
 }
 
+pub fn to_ident(s: String) -> Expr {
+    Expr::Identifier(Ident {
+        value: s.to_string(),
+        quote_style: None,
+    })
+}
+
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::util::dbtype::{Column, Value};
     use serial_test::serial;
 
-    // #[test]
-    // #[serial]
-    // fn test_select_single_table_star() {
-    //     // This tests
-    //     // SELECT * FROM select_test_db.test_table1
-    //     let columns = vec!["*".to_string()];
-    //     let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         [
-    //             vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-    //             vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-    //         ]
-    //         .to_vec(),
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-    //     assert_eq!(result.0[2], ("age".to_string(), Column::I32));
-
-    //     // Assert that 2 rows were returned
-    //     assert_eq!(result.1.iter().len(), 2);
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(1));
-    //     assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
-    //     assert_eq!(result.1[0][2], Value::I32(40));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(2));
-    //     assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
-    //     assert_eq!(result.1[1][2], Value::I32(20));
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_select_multi_table_star() {
-    //     // This tests:
-    //     // SELECT * FROM select_test_db.test_table1, select_test_db.test_table2
-    //     let columns = vec!["*".to_string()];
-    //     let tables = vec![
-    //         ("test_table1".to_string(), "T1".to_string()),
-    //         ("test_table2".to_string(), "T2".to_string()),
-    //     ]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema1: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-    //     let schema2: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("country".to_string(), Column::String(50)),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
-    //     create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
-
-    //     // Write rows to first table
-    //     insert(
-    //         [
-    //             // Rewritten with all as strings
-    //             vec![
-    //                 "1".to_string(),
-    //                 "Robert Downey Jr.".to_string(),
-    //                 "40".to_string(),
-    //             ],
-    //             vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-    //         ]
-    //         .to_vec(),
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Write rows to second table
-    //     insert(
-    //         [
-    //             vec!["1".to_string(), "United States".to_string()],
-    //             vec!["2".to_string(), "Britain".to_string()],
-    //         ]
-    //         .to_vec(),
-    //         "test_table2".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     // Check that the schema is correct
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-    //     assert_eq!(result.0[2], ("age".to_string(), Column::I32));
-    //     assert_eq!(result.0[3], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[4], ("country".to_string(), Column::String(50)));
-
-    //     // Check that we returned 4 rows
-    //     assert_eq!(result.1.iter().len(), 4);
-
-    //     // Check that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(1));
-    //     assert_eq!(
-    //         result.1[0][1],
-    //         Value::String("Robert Downey Jr.".to_string())
-    //     );
-    //     assert_eq!(result.1[0][2], Value::I32(40));
-    //     assert_eq!(result.1[0][3], Value::I32(1));
-    //     assert_eq!(result.1[0][4], Value::String("United States".to_string()));
-
-    //     // Check that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(1));
-    //     assert_eq!(
-    //         result.1[1][1],
-    //         Value::String("Robert Downey Jr.".to_string())
-    //     );
-    //     assert_eq!(result.1[1][2], Value::I32(40));
-    //     assert_eq!(result.1[1][3], Value::I32(2));
-    //     assert_eq!(result.1[1][4], Value::String("Britain".to_string()));
-
-    //     // Check that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(2));
-    //     assert_eq!(result.1[2][1], Value::String("Tom Holland".to_string()));
-    //     assert_eq!(result.1[2][2], Value::I32(20));
-    //     assert_eq!(result.1[2][3], Value::I32(1));
-    //     assert_eq!(result.1[2][4], Value::String("United States".to_string()));
-
-    //     // Check that the fourth row is correct
-    //     assert_eq!(result.1[3][0], Value::I32(2));
-    //     assert_eq!(result.1[3][1], Value::String("Tom Holland".to_string()));
-    //     assert_eq!(result.1[3][2], Value::I32(20));
-    //     assert_eq!(result.1[3][3], Value::I32(2));
-    //     assert_eq!(result.1[3][4], Value::String("Britain".to_string()));
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_select_single_table_specific_columns() {
-    //     // This tests
-    //     // SELECT T.id, T.name FROM select_test_db.test_table1 T;
-    //     let columns = vec!["T.id".to_string(), "name".to_string()];
-    //     let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     insert(
-    //         vec![
-    //             vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-    //             vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-    //             vec![
-    //                 "3".to_string(),
-    //                 "Doctor Strange".to_string(),
-    //                 "35".to_string(),
-    //             ],
-    //         ],
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-
-    //     // Assert that 3 rows were returned
-    //     assert_eq!(result.1.iter().len(), 3);
-
-    //     // Assert that each row only has 2 columns
-    //     for row in result.1.clone() {
-    //         assert_eq!(row.len(), 2);
-    //     }
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(1));
-    //     assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(2));
-    //     assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
-
-    //     // Assert that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(3));
-    //     assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_unaliased_select() {
-    //     // This tests
-    //     // SELECT T.id, T.name FROM select_test_db.test_table1 T;
-    //     let columns = vec!["id".to_string(), "name".to_string()];
-    //     let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     insert(
-    //         vec![
-    //             vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-    //             vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-    //             vec![
-    //                 "3".to_string(),
-    //                 "Doctor Strange".to_string(),
-    //                 "35".to_string(),
-    //             ],
-    //         ],
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-
-    //     // Assert that 3 rows were returned
-    //     assert_eq!(result.1.iter().len(), 3);
-
-    //     // Assert that each row only has 2 columns
-    //     for row in result.1.clone() {
-    //         assert_eq!(row.len(), 2);
-    //     }
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(1));
-    //     assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(2));
-    //     assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
-
-    //     // Assert that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(3));
-    //     assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_select_multiple_tables_specific_columns() {
-    //     // This tests
-    //     // SELECT T1.id, country FROM select_test_db.test_table1 T1, select_test_db.test_table2;
-    //     let columns = vec!["T1.id".to_string(), "country".to_string()];
-    //     let tables = vec![
-    //         ("test_table1".to_string(), "T1".to_string()),
-    //         ("test_table2".to_string(), "".to_string()),
-    //     ]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema1: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         vec![
-    //             vec![
-    //                 "1".to_string(),
-    //                 "Robert Downey Jr".to_string(),
-    //                 "40".to_string(),
-    //             ],
-    //             vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-    //         ],
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     let schema2: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("country".to_string(), Column::String(50)),
-    //     ];
-
-    //     create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         vec![
-    //             vec!["5".to_string(), "United States".to_string()],
-    //             vec!["6".to_string(), "Britain".to_string()],
-    //         ],
-    //         "test_table2".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("country".to_string(), Column::String(50)));
-
-    //     // Assert that 4 rows were returned
-    //     assert_eq!(result.1.iter().len(), 4);
-
-    //     // Assert that each row only has 2 columns
-    //     for row in result.1.clone() {
-    //         assert_eq!(row.len(), 2);
-    //     }
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(1));
-    //     assert_eq!(result.1[0][1], Value::String("United States".to_string()));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(1));
-    //     assert_eq!(result.1[1][1], Value::String("Britain".to_string()));
-
-    //     // Assert that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(2));
-    //     assert_eq!(result.1[2][1], Value::String("United States".to_string()));
-
-    //     // Assert that the fourth row is correct
-    //     assert_eq!(result.1[3][0], Value::I32(2));
-    //     assert_eq!(result.1[3][1], Value::String("Britain".to_string()));
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_ambigous_select() {
-    //     // This tests
-    //     // SELECT id, country FROM select_test_db.test_table1, select_test_db.test_table2;
-    //     let columns = vec!["id".to_string(), "country".to_string()];
-    //     let tables = vec![
-    //         ("test_table1".to_string(), "".to_string()),
-    //         ("test_table2".to_string(), "".to_string()),
-    //     ]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema1: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         vec![
-    //             vec![
-    //                 "1".to_string(),
-    //                 "Robert Downey Jr".to_string(),
-    //                 "40".to_string(),
-    //             ],
-    //             vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-    //         ],
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     let schema2: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("country".to_string(), Column::String(50)),
-    //     ];
-
-    //     create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         vec![
-    //             vec!["5".to_string(), "United States".to_string()],
-    //             vec!["6".to_string(), "Britain".to_string()],
-    //         ],
-    //         "test_table2".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let _ = select(columns.to_owned(), None, tables, &new_db, &user).unwrap_err();
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_invalid_column_select() {
-    //     // This tests
-    //     // SELECT id, name, age, invalid_column FROM select_test_db.test_table1;
-
-    //     let columns = vec![
-    //         "id".to_string(),
-    //         "name".to_string(),
-    //         "age".to_string(),
-    //         "invalid_column".to_string(),
-    //     ];
-    //     let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema1: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         vec![
-    //             vec![
-    //                 "1".to_string(),
-    //                 "Robert Downey Jr".to_string(),
-    //                 "40".to_string(),
-    //             ],
-    //             vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-    //         ],
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user);
-
-    //     // Verify that SELECT failed
-    //     assert!(result.is_err());
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_invalid_table_select() {
-    //     // This tests
-    //     // SELECT id, name, age FROM select_test_db.test_table1, select_test_db.test_table2;
-
-    //     let columns = vec!["id".to_string(), "name".to_string(), "age".to_string()];
-    //     let tables = vec![
-    //         ("test_table1".to_string(), "".to_string()),
-    //         ("test_table2".to_string(), "".to_string()),
-    //     ]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
-
-    //     let schema1: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
-
-    //     insert(
-    //         vec![
-    //             vec![
-    //                 "1".to_string(),
-    //                 "Robert Downey Jr".to_string(),
-    //                 "40".to_string(),
-    //             ],
-    //             vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-    //         ],
-    //         "test_table1".to_string(),
-    //         &new_db,
-    //         &mut user,
-    //     )
-    //     .unwrap();
-
-    //     // Run the SELECT query
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user);
-
-    //     // Verify that SELECT failed
-    //     assert!(result.is_err());
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_insert_columns() {
-    //     // SELECT T.id, T.name FROM select_test_db.test_table1 T;
-    //     let columns = vec!["T.id".to_string(), "T.name".to_string()];
-    //     let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-
-    //     let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     let rows = vec![
-    //         vec![
-    //             Value::I32(1),
-    //             Value::String("Iron Man".to_string()),
-    //             Value::I32(40),
-    //         ],
-    //         vec![
-    //             Value::I32(2),
-    //             Value::String("Spiderman".to_string()),
-    //             Value::I32(20),
-    //         ],
-    //         vec![
-    //             Value::I32(3),
-    //             Value::String("Doctor Strange".to_string()),
-    //             Value::I32(35),
-    //         ],
-    //         vec![
-    //             Value::I32(4),
-    //             Value::String("Captain America".to_string()),
-    //             Value::I32(100),
-    //         ],
-    //         vec![
-    //             Value::I32(5),
-    //             Value::String("Thor".to_string()),
-    //             Value::I32(1000),
-    //         ],
-    //     ];
-    //     let newrows = vec![
-    //         vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-    //         vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-    //         vec![
-    //             "3".to_string(),
-    //             "Doctor Strange".to_string(),
-    //             "35".to_string(),
-    //         ],
-    //         vec![
-    //             "4".to_string(),
-    //             "Captain America".to_string(),
-    //             "100".to_string(),
-    //         ],
-    //         vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
-    //     ];
-    //     let (_, diff) = insert(newrows, "test_table1".to_string(), &new_db, &mut user).unwrap();
-
-    //     // Verify that the insert was successful by looking at the diff first
-    //     assert_eq!(diff.rows.len(), 5);
-    //     assert_eq!(diff.schema, schema);
-    //     assert_eq!(diff.table_name, "test_table1".to_string());
-    //     assert_eq!(diff.rows[0].row, rows[0]);
-    //     assert_eq!(diff.rows[1].row, rows[1]);
-    //     assert_eq!(diff.rows[2].row, rows[2]);
-    //     assert_eq!(diff.rows[3].row, rows[3]);
-    //     assert_eq!(diff.rows[4].row, rows[4]);
-
-    //     // Run the SELECT query and ensure that the result is correct
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-
-    //     // Assert that 3 rows were returned
-    //     assert_eq!(result.1.iter().len(), 5);
-
-    //     // Assert that each row only has 2 columns
-    //     for row in result.1.clone() {
-    //         assert_eq!(row.len(), 2);
-    //     }
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(1));
-    //     assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(2));
-    //     assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
-
-    //     // Assert that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(3));
-    //     assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
-
-    //     // Assert that the fourth row is correct
-    //     assert_eq!(result.1[3][0], Value::I32(4));
-    //     assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
-
-    //     // Assert that the fifth row is correct
-    //     assert_eq!(result.1[4][0], Value::I32(5));
-    //     assert_eq!(result.1[4][1], Value::String("Thor".to_string()));
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // fn test_invalid_insert() {
-    //     let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::I32),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-
-    //     let newrows = vec![
-    //         vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-    //         vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-    //         vec!["3".to_string(), "35".to_string()],
-    //         vec![
-    //             "4".to_string(),
-    //             "Captain America".to_string(),
-    //             "100".to_string(),
-    //         ],
-    //     ];
-
-    //     assert!(insert(newrows, "test_table1".to_string(), &new_db, &mut user).is_err());
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // // Ensures that insert can cast values to the correct type if possible
-    // fn test_insert_casts() {
-    //     // SELECT T.id, T.name FROM select_test_db.test_table1 T;
-    //     let columns = vec!["T.id".to_string(), "T.name".to_string()];
-    //     let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::Double),
-    //     ];
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     let rows = vec![
-    //         vec![
-    //             Value::I32(100), // Can only insert I32
-    //             Value::String("Iron Man".to_string()),
-    //             Value::Double(3.456),
-    //         ],
-    //         vec![
-    //             Value::I32(2),
-    //             Value::String("Spiderman".to_string()),
-    //             Value::Double(3.43456),
-    //         ],
-    //         vec![
-    //             Value::I32(3),
-    //             Value::String("Doctor Strange".to_string()),
-    //             Value::Double(322.456),
-    //         ],
-    //         vec![
-    //             Value::I32(4),
-    //             Value::String("Captain America".to_string()),
-    //             Value::Double(12.456),
-    //         ],
-    //     ];
-    //     let new_rows = vec![
-    //         vec![
-    //             "100".to_string(), // Can only insert I32
-    //             "Iron Man".to_string(),
-    //             "3.456".to_string(),
-    //         ],
-    //         vec![
-    //             "2".to_string(),
-    //             "Spiderman".to_string(),
-    //             "3.43456".to_string(),
-    //         ],
-    //         vec![
-    //             "3".to_string(),
-    //             "Doctor Strange".to_string(),
-    //             "322.456".to_string(),
-    //         ],
-    //         vec![
-    //             "4".to_string(),
-    //             "Captain America".to_string(),
-    //             "12.456".to_string(),
-    //         ],
-    //     ];
-
-    //     let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
-
-    //     // Verify that the insert was successful by looking at the diff first
-    //     assert_eq!(diff.rows.len(), 4);
-    //     assert_eq!(diff.schema, schema);
-    //     assert_eq!(diff.table_name, "test_table1".to_string());
-    //     assert_eq!(diff.rows[0].row, rows[0]);
-    //     assert_eq!(diff.rows[1].row, rows[1]);
-    //     assert_eq!(diff.rows[2].row, rows[2]);
-    //     assert_eq!(diff.rows[3].row, rows[3]);
-
-    //     // Run the SELECT query and ensure that the result is correct
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(result.0[0], ("id".to_string(), Column::I32));
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-
-    //     // Assert that 3 rows were returned
-    //     assert_eq!(result.1.iter().len(), 4);
-
-    //     // Assert that each row only has 2 columns
-    //     for row in result.1.clone() {
-    //         assert_eq!(row.len(), 2);
-    //     }
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
-    //     assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::I32(2));
-    //     assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
-
-    //     // Assert that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(3));
-    //     assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
-
-    //     // Assert that the fourth row is correct
-    //     assert_eq!(result.1[3][0], Value::I32(4));
-    //     assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // // Ensures that insert exits if a value cannot be casted
-    // fn test_insert_invalid_casts() {
-    //     let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         ("age".to_string(), Column::Double),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     let rows = vec![
-    //         vec![
-    //             "100".to_string(), // Can only insert I32
-    //             "Iron Man".to_string(),
-    //             "Robert Downey".to_string(),
-    //         ],
-    //         vec![
-    //             "2".to_string(),
-    //             "Spiderman".to_string(),
-    //             "3.43456".to_string(),
-    //         ],
-    //         vec![
-    //             "3".to_string(),
-    //             "Doctor Strange".to_string(),
-    //             "322.456".to_string(),
-    //         ],
-    //         vec![
-    //             "4".to_string(),
-    //             "Captain America".to_string(),
-    //             "12.456".to_string(),
-    //         ],
-    //     ];
-
-    //     assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // // Ensures that insert can cast values to the correct type if possible
-    // fn test_insert_nulls() {
-    //     // SELECT T.id, T.name FROM select_test_db.test_table1 T;
-    //     let columns = vec!["T.id".to_string(), "T.name".to_string()];
-    //     let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::Nullable(Box::new(Column::I32))),
-    //         ("name".to_string(), Column::String(50)),
-    //         (
-    //             "age".to_string(),
-    //             Column::Nullable(Box::new(Column::Double)),
-    //         ),
-    //     ];
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     let rows = vec![
-    //         vec![
-    //             Value::I32(100), // Can only insert I32
-    //             Value::String("Iron Man".to_string()),
-    //             Value::Double(3.456),
-    //         ],
-    //         vec![
-    //             Value::Null,
-    //             Value::String("Spiderman".to_string()),
-    //             Value::Double(3.43456),
-    //         ],
-    //         vec![
-    //             Value::I32(3),
-    //             Value::String("Doctor Strange".to_string()),
-    //             Value::Null,
-    //         ],
-    //         vec![
-    //             Value::Null,
-    //             Value::String("Captain America".to_string()),
-    //             Value::Null,
-    //         ],
-    //     ];
-    //     let new_rows = vec![
-    //         vec![
-    //             "100".to_string(), // Can only insert I32
-    //             "Iron Man".to_string(),
-    //             "3.456".to_string(),
-    //         ],
-    //         vec![
-    //             "".to_string(),
-    //             "Spiderman".to_string(),
-    //             "3.43456".to_string(),
-    //         ],
-    //         vec![
-    //             "3".to_string(),
-    //             "Doctor Strange".to_string(),
-    //             "".to_string(),
-    //         ],
-    //         vec![
-    //             "".to_string(),
-    //             "Captain America".to_string(),
-    //             "".to_string(),
-    //         ],
-    //     ];
-
-    //     let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
-
-    //     // Verify that the insert was successful by looking at the diff first
-    //     assert_eq!(diff.rows.len(), 4);
-    //     assert_eq!(diff.schema, schema);
-    //     assert_eq!(diff.table_name, "test_table1".to_string());
-    //     assert_eq!(diff.rows[0].row, rows[0]);
-    //     assert_eq!(diff.rows[1].row, rows[1]);
-    //     assert_eq!(diff.rows[2].row, rows[2]);
-    //     assert_eq!(diff.rows[3].row, rows[3]);
-
-    //     // Run the SELECT query and ensure that the result is correct
-    //     let user: User = User::new("test_user".to_string());
-    //     let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
-
-    //     assert_eq!(
-    //         result.0[0],
-    //         ("id".to_string(), Column::Nullable(Box::new(Column::I32)))
-    //     );
-    //     assert_eq!(result.0[1], ("name".to_string(), Column::String(50)));
-
-    //     // Assert that 3 rows were returned
-    //     assert_eq!(result.1.iter().len(), 4);
-
-    //     // Assert that each row only has 2 columns
-    //     for row in result.1.clone() {
-    //         assert_eq!(row.len(), 2);
-    //     }
-
-    //     // Assert that the first row is correct
-    //     assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
-    //     assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
-
-    //     // Assert that the second row is correct
-    //     assert_eq!(result.1[1][0], Value::Null);
-    //     assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
-
-    //     // Assert that the third row is correct
-    //     assert_eq!(result.1[2][0], Value::I32(3));
-    //     assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
-
-    //     // Assert that the fourth row is correct
-    //     assert_eq!(result.1[3][0], Value::Null);
-    //     assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
-
-    // #[test]
-    // #[serial]
-    // // Ensures that insert exits if a value is not nullable and is inserted as null
-    // fn test_insert_invalid_nulls() {
-    //     let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
-    //     let schema: Schema = vec![
-    //         ("id".to_string(), Column::I32),
-    //         ("name".to_string(), Column::String(50)),
-    //         (
-    //             "age".to_string(),
-    //             Column::Nullable(Box::new(Column::Double)),
-    //         ),
-    //     ];
-
-    //     // Create a new user on the main branch
-    //     let mut user: User = User::new("test_user".to_string());
-
-    //     create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-    //     let rows = vec![
-    //         vec![
-    //             "".to_string(), // Nulled
-    //             "Iron Man".to_string(),
-    //             "Robert Downey".to_string(),
-    //         ],
-    //         vec!["2".to_string(), "Spiderman".to_string(), "".to_string()],
-    //         vec!["3".to_string(), "".to_string(), "322.456".to_string()],
-    //         vec![
-    //             "4".to_string(),
-    //             "Captain America".to_string(),
-    //             "".to_string(),
-    //         ],
-    //     ];
-
-    //     assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
-
-    //     // Delete the test database
-    //     new_db.delete_database().unwrap();
-    // }
+    pub fn to_selectitems(names: Vec<String>) -> Vec<SelectItem> {
+        names
+            .into_iter()
+            .map(|name| SelectItem::UnnamedExpr(to_ident(name)))
+            .collect()
+    }
+
+    #[test]
+    #[serial]
+    fn test_select_single_table_star() {
+        // This tests
+        // SELECT * FROM select_test_db.test_table1
+        let columns = vec![SelectItem::Wildcard];
+        let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        insert(
+            [
+                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            ]
+            .to_vec(),
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "id".to_string());
+        assert_eq!(result.0[1], "name".to_string());
+        assert_eq!(result.0[2], "age".to_string());
+
+        // Assert that 2 rows were returned
+        assert_eq!(result.1.iter().len(), 2);
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+        assert_eq!(result.1[0][2], Value::I32(40));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+        assert_eq!(result.1[1][2], Value::I32(20));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_select_multi_table_star() {
+        // This tests:
+        // SELECT * FROM select_test_db.test_table1, select_test_db.test_table2
+        let columns = vec![SelectItem::Wildcard];
+        let tables = vec![
+            ("test_table1".to_string(), "T1".to_string()),
+            ("test_table2".to_string(), "T2".to_string()),
+        ]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("country".to_string(), Column::String(50)),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+        create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
+
+        // Write rows to first table
+        insert(
+            [
+                // Rewritten with all as strings
+                vec![
+                    "1".to_string(),
+                    "Robert Downey Jr.".to_string(),
+                    "40".to_string(),
+                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+            ]
+            .to_vec(),
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Write rows to second table
+        insert(
+            [
+                vec!["1".to_string(), "United States".to_string()],
+                vec!["2".to_string(), "Britain".to_string()],
+            ]
+            .to_vec(),
+            "test_table2".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        // Check that the schema is correct
+        assert_eq!(result.0[0], "id".to_string());
+        assert_eq!(result.0[1], "name".to_string());
+        assert_eq!(result.0[2], "age".to_string());
+        assert_eq!(result.0[3], "id".to_string());
+        assert_eq!(result.0[4], "country".to_string());
+
+        // Check that we returned 4 rows
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Check that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(
+            result.1[0][1],
+            Value::String("Robert Downey Jr.".to_string())
+        );
+        assert_eq!(result.1[0][2], Value::I32(40));
+        assert_eq!(result.1[0][3], Value::I32(1));
+        assert_eq!(result.1[0][4], Value::String("United States".to_string()));
+
+        // Check that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(1));
+        assert_eq!(
+            result.1[1][1],
+            Value::String("Robert Downey Jr.".to_string())
+        );
+        assert_eq!(result.1[1][2], Value::I32(40));
+        assert_eq!(result.1[1][3], Value::I32(2));
+        assert_eq!(result.1[1][4], Value::String("Britain".to_string()));
+
+        // Check that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(2));
+        assert_eq!(result.1[2][1], Value::String("Tom Holland".to_string()));
+        assert_eq!(result.1[2][2], Value::I32(20));
+        assert_eq!(result.1[2][3], Value::I32(1));
+        assert_eq!(result.1[2][4], Value::String("United States".to_string()));
+
+        // Check that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(2));
+        assert_eq!(result.1[3][1], Value::String("Tom Holland".to_string()));
+        assert_eq!(result.1[3][2], Value::I32(20));
+        assert_eq!(result.1[3][3], Value::I32(2));
+        assert_eq!(result.1[3][4], Value::String("Britain".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_select_single_table_specific_columns() {
+        // This tests
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = to_selectitems(vec!["T.id".to_string(), "name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        insert(
+            vec![
+                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+                vec![
+                    "3".to_string(),
+                    "Doctor Strange".to_string(),
+                    "35".to_string(),
+                ],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "T.id".to_string());
+        assert_eq!(result.0[1], "name".to_string());
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 3);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_unaliased_select() {
+        // This tests
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = to_selectitems(vec!["id".to_string(), "name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        insert(
+            vec![
+                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+                vec![
+                    "3".to_string(),
+                    "Doctor Strange".to_string(),
+                    "35".to_string(),
+                ],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "id".to_string());
+        assert_eq!(result.0[1], "name".to_string());
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 3);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_select_multiple_tables_specific_columns() {
+        // This tests
+        // SELECT T1.id, country FROM select_test_db.test_table1 T1, select_test_db.test_table2;
+        let columns = to_selectitems(vec!["T1.id".to_string(), "country".to_string()]);
+        let tables = vec![
+            ("test_table1".to_string(), "T1".to_string()),
+            ("test_table2".to_string(), "".to_string()),
+        ]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec![
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
+                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("country".to_string(), Column::String(50)),
+        ];
+
+        create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec!["5".to_string(), "United States".to_string()],
+                vec!["6".to_string(), "Britain".to_string()],
+            ],
+            "test_table2".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "T1.id".to_string());
+        assert_eq!(result.0[1], "country".to_string());
+
+        // Assert that 4 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("United States".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(1));
+        assert_eq!(result.1[1][1], Value::String("Britain".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(2));
+        assert_eq!(result.1[2][1], Value::String("United States".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(2));
+        assert_eq!(result.1[3][1], Value::String("Britain".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_ambigous_select() {
+        // This tests
+        // SELECT id, country FROM select_test_db.test_table1, select_test_db.test_table2;
+        let columns = to_selectitems(vec!["id".to_string(), "country".to_string()]);
+        let tables = vec![
+            ("test_table1".to_string(), "".to_string()),
+            ("test_table2".to_string(), "".to_string()),
+        ]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec![
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
+                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        let schema2: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("country".to_string(), Column::String(50)),
+        ];
+
+        create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec!["5".to_string(), "United States".to_string()],
+                vec!["6".to_string(), "Britain".to_string()],
+            ],
+            "test_table2".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let _ = select(columns.to_owned(), None, tables, &new_db, &user).unwrap_err();
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_column_select() {
+        // This tests
+        // SELECT id, name, age, invalid_column FROM select_test_db.test_table1;
+
+        let columns = to_selectitems(vec![
+            "id".to_string(),
+            "name".to_string(),
+            "age".to_string(),
+            "invalid_column".to_string(),
+        ]);
+        let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec![
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
+                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user);
+
+        // Verify that SELECT failed
+        assert!(result.is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_table_select() {
+        // This tests
+        // SELECT id, name, age FROM select_test_db.test_table1, select_test_db.test_table2;
+
+        let columns = to_selectitems(vec![
+            "id".to_string(),
+            "name".to_string(),
+            "age".to_string(),
+        ]);
+        let tables = vec![
+            ("test_table1".to_string(), "".to_string()),
+            ("test_table2".to_string(), "".to_string()),
+        ]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("select_test_db".to_string()).unwrap();
+
+        let schema1: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
+
+        insert(
+            vec![
+                vec![
+                    "1".to_string(),
+                    "Robert Downey Jr".to_string(),
+                    "40".to_string(),
+                ],
+                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+            ],
+            "test_table1".to_string(),
+            &new_db,
+            &mut user,
+        )
+        .unwrap();
+
+        // Run the SELECT query
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user);
+
+        // Verify that SELECT failed
+        assert!(result.is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_insert_columns() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(1),
+                Value::String("Iron Man".to_string()),
+                Value::I32(40),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::I32(20),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I32(35),
+            ],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::I32(100),
+            ],
+            vec![
+                Value::I32(5),
+                Value::String("Thor".to_string()),
+                Value::I32(1000),
+            ],
+        ];
+        let newrows = vec![
+            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "35".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
+            ],
+            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+        ];
+        let (_, diff) = insert(newrows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 5);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+        assert_eq!(diff.rows[4].row, rows[4]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "T.id".to_string());
+        assert_eq!(result.0[1], "T.name".to_string());
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 5);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(1));
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(4));
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+
+        // Assert that the fifth row is correct
+        assert_eq!(result.1[4][0], Value::I32(5));
+        assert_eq!(result.1[4][1], Value::String("Thor".to_string()));
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_insert() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        let newrows = vec![
+            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
+            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+            vec!["3".to_string(), "35".to_string()],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "100".to_string(),
+            ],
+        ];
+
+        assert!(insert(newrows, "test_table1".to_string(), &new_db, &mut user).is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert can cast values to the correct type if possible
+    fn test_insert_casts() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::Double),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Double(322.456),
+            ],
+            vec![
+                Value::I32(4),
+                Value::String("Captain America".to_string()),
+                Value::Double(12.456),
+            ],
+        ];
+        let new_rows = vec![
+            vec![
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "3.456".to_string(),
+            ],
+            vec![
+                "2".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "322.456".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "12.456".to_string(),
+            ],
+        ];
+
+        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 4);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "T.id".to_string());
+        assert_eq!(result.0[1], "T.name".to_string());
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::I32(2));
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::I32(4));
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert exits if a value cannot be casted
+    fn test_insert_invalid_casts() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::Double),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "Robert Downey".to_string(),
+            ],
+            vec![
+                "2".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "322.456".to_string(),
+            ],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "12.456".to_string(),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert can cast values to the correct type if possible
+    fn test_insert_nulls() {
+        // SELECT T.id, T.name FROM select_test_db.test_table1 T;
+        let columns = to_selectitems(vec!["id".to_string(), "name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "".to_string())]; // [(table_name, alias)]
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::Nullable(Box::new(Column::I32))),
+            ("name".to_string(), Column::String(50)),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
+        ];
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::Null,
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+            vec![
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Null,
+            ],
+            vec![
+                Value::Null,
+                Value::String("Captain America".to_string()),
+                Value::Null,
+            ],
+        ];
+        let new_rows = vec![
+            vec![
+                "100".to_string(), // Can only insert I32
+                "Iron Man".to_string(),
+                "3.456".to_string(),
+            ],
+            vec![
+                "".to_string(),
+                "Spiderman".to_string(),
+                "3.43456".to_string(),
+            ],
+            vec![
+                "3".to_string(),
+                "Doctor Strange".to_string(),
+                "".to_string(),
+            ],
+            vec![
+                "".to_string(),
+                "Captain America".to_string(),
+                "".to_string(),
+            ],
+        ];
+
+        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+
+        // Verify that the insert was successful by looking at the diff first
+        assert_eq!(diff.rows.len(), 4);
+        assert_eq!(diff.schema, schema);
+        assert_eq!(diff.table_name, "test_table1".to_string());
+        assert_eq!(diff.rows[0].row, rows[0]);
+        assert_eq!(diff.rows[1].row, rows[1]);
+        assert_eq!(diff.rows[2].row, rows[2]);
+        assert_eq!(diff.rows[3].row, rows[3]);
+
+        // Run the SELECT query and ensure that the result is correct
+        let user: User = User::new("test_user".to_string());
+        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+
+        assert_eq!(result.0[0], "id".to_string());
+        assert_eq!(result.0[1], "name".to_string());
+
+        // Assert that 3 rows were returned
+        assert_eq!(result.1.iter().len(), 4);
+
+        // Assert that each row only has 2 columns
+        for row in result.1.clone() {
+            assert_eq!(row.len(), 2);
+        }
+
+        // Assert that the first row is correct
+        assert_eq!(result.1[0][0], Value::I32(100)); // Casted from I64
+        assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
+
+        // Assert that the second row is correct
+        assert_eq!(result.1[1][0], Value::Null);
+        assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
+
+        // Assert that the third row is correct
+        assert_eq!(result.1[2][0], Value::I32(3));
+        assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
+
+        // Assert that the fourth row is correct
+        assert_eq!(result.1[3][0], Value::Null);
+        assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Ensures that insert exits if a value is not nullable and is inserted as null
+    fn test_insert_invalid_nulls() {
+        let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                "".to_string(), // Nulled
+                "Iron Man".to_string(),
+                "Robert Downey".to_string(),
+            ],
+            vec!["2".to_string(), "Spiderman".to_string(), "".to_string()],
+            vec!["3".to_string(), "".to_string(), "322.456".to_string()],
+            vec![
+                "4".to_string(),
+                "Captain America".to_string(),
+                "".to_string(),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
+
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
 }
