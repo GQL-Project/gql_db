@@ -6,5 +6,4 @@ pub mod command;
 pub mod commit;
 pub mod commitfile;
 pub mod diff;
-pub mod del_branch;
 pub mod merge;

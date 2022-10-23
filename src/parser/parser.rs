@@ -3,7 +3,6 @@ use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
 use crate::version_control::merge::MergeConflictResolutionAlgo;
-use crate::version_control::del_branch;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -349,7 +348,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Cannot delete the master branch".to_string());
             }
 
-            let del_results = del_branch::del_branch(user, &branch_name.clone(), flag)?;
+            let del_results = command::del_branch(user, &branch_name.clone(), flag)?;
 
             if del_results.starts_with("Branch") {
                 return Err(del_results.to_string());
