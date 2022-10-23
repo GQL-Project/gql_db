@@ -1,20 +1,19 @@
 use std::collections::HashMap;
 
-use super::predicate::{resolve_predicate, resolve_value, solve_predicate, SolvePredicate};
+use super::predicate::{
+    resolve_predicate, resolve_value, solve_predicate, solve_value, SolvePredicate, SolveValue,
+};
+use crate::fileio::{
+    databaseio::*,
+    header::*,
+    tableio::{self, *},
+};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::Row;
 use crate::version_control::diff::*;
-use crate::{
-    executor::predicate::solve_value,
-    fileio::{
-        databaseio::*,
-        header::*,
-        tableio::{self, *},
-    },
-};
 use itertools::Itertools;
-use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement};
+use sqlparser::ast::{Expr, Ident, SelectItem, SetExpr, Statement};
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -188,9 +187,6 @@ pub fn select(
         return Err("Malformed SELECT Command".to_string());
     }
 
-    // Whether the select statement used '*' to select columns or not
-    let is_star_cols: bool = columns.contains(&SelectItem::Wildcard);
-
     // The rows and schema that are to be returned from the select statement
     let mut selected_rows: Vec<Row> = Vec::new();
     let mut column_names: Vec<String> = Vec::new();
@@ -202,8 +198,9 @@ pub fn select(
 
     // Create an iterator of table iterators using the cartesion product of the tables :)
     let table_iterator = tables
-        .into_iter()
+        .iter()
         .map(|(table, _)| table)
+        .cloned()
         .multi_cartesian_product();
 
     let index_refs = table_column_names
@@ -212,63 +209,31 @@ pub fn select(
         .map(|(i, (name, _, _))| (name.clone(), i))
         .collect::<HashMap<String, usize>>();
 
-    // We need to take all the columns
-    if is_star_cols {
-        // Add all columns to the selected schema
-        for (_, col_type, output_col_name) in table_column_names {
-            column_names.push(output_col_name);
+    // Pass through columns with no aliases used to provide an alias if unambiguous
+    let column_funcs = resolve_columns(
+        columns,
+        &mut column_names,
+        &tables,
+        &table_column_names,
+        &index_refs,
+    )?;
+
+    // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
+    for table_rows in table_iterator {
+        // Flatten the entire output row, but it includes all columns from all tables
+        let mut output_row: Row = Vec::new();
+        for row_info in table_rows {
+            output_row.extend(row_info.row);
         }
+        if resolve_predicate(&pred, &output_row)? {
+            // Iterate through the output row and apply the column functions to each row
+            let selected_cells: Row = column_funcs
+                .iter()
+                .map(|f| resolve_value(f, &output_row))
+                .collect::<Result<Vec<_>, _>>()?;
 
-        // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
-        for table_rows in table_iterator {
-            // Accumulate all the cells across the vector of rows into a single vector
-            let mut selected_cells: Row = Vec::new();
-            table_rows
-                .into_iter()
-                .for_each(|x| selected_cells.extend(x.row));
-            // Add the accumulated cells to the selected rows
-            if resolve_predicate(&pred, &selected_cells)? {
-                selected_rows.push(selected_cells);
-            }
-        }
-    }
-    // We need to take a subset of columns
-    else {
-        column_names = columns.iter().map(|x| x.to_string()).collect();
-        // Pass through columns with no aliases used to provide an alias if unambiguous
-        let column_funcs = columns
-            .into_iter()
-            .map(|item| {
-                let item = match item {
-                    SelectItem::ExprWithAlias { expr, alias: _ } => expr,
-                    SelectItem::UnnamedExpr(expr) => expr,
-                    SelectItem::QualifiedWildcard(_) => {
-                        // We could map this into a list of columns and then use that for selection
-                        Err("Qualified wildcards are not supported".to_string())?
-                    }
-                    _ => Err("Unexpected SelectItem".to_string())?,
-                };
-                solve_value(&item, &table_column_names, &index_refs)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
-        for table_rows in table_iterator {
-            // Flatten the entire output row, but it includes all columns from all tables
-            let mut output_row: Row = Vec::new();
-            for row_info in table_rows {
-                output_row.extend(row_info.row);
-            }
-            if resolve_predicate(&pred, &output_row)? {
-                // Iterate through the output row and only select the columns we want
-                let selected_cells: Row = column_funcs
-                    .iter()
-                    .map(|f| resolve_value(f, &output_row))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                // Append the selected_cells row to our result
-                selected_rows.push(selected_cells);
-            }
+            // Append the selected_cells row to our result
+            selected_rows.push(selected_cells);
         }
     }
 
@@ -405,16 +370,91 @@ fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, Str
         .collect::<Vec<(String, Column, String)>>()
 }
 
-// Unambiguates column names by adding the table alias if there is only one table with that column name
-fn resolve_colnames(
-    column_names: Vec<String>,
+/// Given a set of Columns, this creates a vector to reference these columns and apply relevant operations
+fn resolve_columns(
+    columns: Vec<SelectItem>,
+    column_names: &mut Vec<String>,
+    tables: &Vec<(Table, String)>,
     table_column_names: &Vec<(String, Column, String)>,
-) -> Result<Vec<String>, String> {
-    let column_names = column_names
+    index_refs: &HashMap<String, usize>,
+) -> Result<Vec<SolveValue>, String> {
+    columns
         .into_iter()
-        .map(|x| resolve_reference(x, table_column_names))
-        .collect::<Result<Vec<String>, String>>()?;
-    Ok(column_names)
+        .map(|item| resolve_selects(item, column_names, table_column_names, tables, index_refs))
+        .flatten_ok()
+        .collect::<Result<Vec<SolveValue>, String>>()
+}
+
+/// Given a specific SelectItem, this will resolve the column name and create a function to resolve the value
+fn resolve_selects(
+    item: SelectItem,
+    column_names: &mut Vec<String>,
+    table_column_names: &Vec<(String, Column, String)>,
+    tables: &Vec<(Table, String)>,
+    index_refs: &HashMap<String, usize>,
+) -> Result<Vec<SolveValue>, String> {
+    let items = Ok::<Vec<Expr>, String>(match item {
+        SelectItem::ExprWithAlias { expr, alias: _ } => {
+            column_names.push(expr.to_string());
+            vec![expr]
+        }
+        SelectItem::UnnamedExpr(expr) => {
+            column_names.push(expr.to_string());
+            vec![expr]
+        }
+        // Pick out all the columns
+        SelectItem::Wildcard => {
+            let names: Vec<Expr> = table_column_names
+                .iter()
+                .map(|(x, _, _)| {
+                    Expr::Identifier(Ident {
+                        value: x.clone(),
+                        quote_style: None,
+                    })
+                })
+                .collect();
+            column_names.append(
+                table_column_names
+                    .iter()
+                    .map(|(_, _, z)| z.clone())
+                    .collect::<Vec<String>>()
+                    .as_mut(),
+            );
+            names
+        }
+        // Pick out all the columns from tha table, aliased
+        SelectItem::QualifiedWildcard(idents) => {
+            let name = idents
+                .0
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(".");
+            let index = tables
+                .iter()
+                .position(|(t, alias)| t.name == name || alias == &name);
+            if let Some(index) = index {
+                let (table, alias) = tables.get(index).unwrap();
+                table
+                    .schema
+                    .iter()
+                    .map(|(colname, _)| {
+                        column_names.push(colname.clone());
+                        Expr::Identifier(Ident {
+                            value: format!("{}.{}", alias, colname),
+                            quote_style: None,
+                        })
+                    })
+                    .collect()
+            } else {
+                return Err(format!("Table {} not found.", name));
+            }
+        }
+    })?;
+    items
+        .into_iter()
+        .map(|item| solve_value(&item, &table_column_names, &index_refs))
+        .collect::<Result<Vec<SolveValue>, String>>()
 }
 
 // Given a column name, it figures out which table it belongs to and returns the
