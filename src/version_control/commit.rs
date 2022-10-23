@@ -245,6 +245,7 @@ impl CommitFile {
                     let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
                     let schema: Schema = self.sread_schema(page, pagenum, offset)?;
                     let mut rows: Vec<RowInfo> = Vec::new();
+                    let mut old_rows: Vec<RowInfo> = Vec::new();
                     for _ in 0..num_rows {
                         let row = self.sread_row(page, pagenum, offset, &schema)?;
                         let row_info = RowInfo {
@@ -253,6 +254,17 @@ impl CommitFile {
                             rownum: self.sread_type(page, pagenum, offset)?,
                         };
                         rows.push(row_info);
+
+                        // Read in the old row if this is an update
+                        if difftype == UPDATE_TYPE {
+                            let old_row = self.sread_row(page, pagenum, offset, &schema)?;
+                            let old_row_info = RowInfo {
+                                row: old_row,
+                                pagenum: self.sread_type(page, pagenum, offset)?,
+                                rownum: self.sread_type(page, pagenum, offset)?,
+                            };
+                            old_rows.push(old_row_info);
+                        }
                     }
                     if difftype == INSERT_TYPE {
                         Diff::Insert(InsertDiff {
@@ -265,6 +277,7 @@ impl CommitFile {
                             table_name,
                             schema,
                             rows,
+                            old_rows,
                         })
                     } else {
                         Diff::Remove(RemoveDiff {
@@ -338,6 +351,11 @@ impl CommitFile {
                         self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
+                    for old_row in &update.old_rows {
+                        self.swrite_row(page, pagenum, offset, &old_row.row, &update.schema)?;
+                        self.swrite_type(page, pagenum, offset, old_row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, old_row.rownum)?;
                     }
                 }
                 Diff::Remove(remove) => {
@@ -440,11 +458,30 @@ impl CommitFile {
                         if let Some(Diff::Update(existing)) =
                             get_diff(&map, &update.table_name, UPDATE_TYPE)
                         {
+                            // Update the old rows in newrows with the old rows in existing
+                            let mut old_rows: Vec<RowInfo> = update.old_rows
+                                .clone()
+                                .iter()
+                                .map(|x| {
+                                    let mut new_oldrow: RowInfo = x.clone();
+                                    for oldrow in &existing.old_rows {
+                                        if new_oldrow.rownum == oldrow.rownum
+                                            && new_oldrow.pagenum == oldrow.pagenum
+                                        {
+                                            new_oldrow.row = oldrow.row.clone();
+                                            return new_oldrow;
+                                        }
+                                    }
+                                    new_oldrow
+                                })
+                                .collect();
+
                             // Merge the diffs together, removing any rows that are in the new update
                             let rows = existing
                                 .rows
                                 .iter()
                                 .filter(|x| {
+                                    // If any of the newrows matches the existing row x, remove it from rows
                                     !newrows
                                         .iter()
                                         .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
@@ -459,6 +496,7 @@ impl CommitFile {
                                     table_name: update.table_name.clone(),
                                     schema: update.schema.clone(),
                                     rows,
+                                    old_rows,
                                 }),
                                 update.table_name.clone(),
                             );
@@ -469,6 +507,7 @@ impl CommitFile {
                                     table_name: update.table_name.clone(),
                                     schema: update.schema.clone(),
                                     rows: newrows,
+                                    old_rows: update.old_rows.clone(),
                                 }),
                                 update.table_name.clone(),
                             );
@@ -569,6 +608,7 @@ impl CommitFile {
                         if let Some(Diff::Update(update)) =
                             get_diff(&map, &remove.table_name, UPDATE_TYPE)
                         {
+                            
                             // Remove rows from update that are in remove
                             let rows = update
                                 .rows
@@ -580,6 +620,19 @@ impl CommitFile {
                                 })
                                 .cloned()
                                 .collect::<Vec<RowInfo>>();
+
+                            // Remove old_rows from update that are in remove
+                            let old_rows = update
+                                .old_rows
+                                .iter()
+                                .filter(|x| {
+                                    !newrows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
+                                .cloned()
+                                .collect::<Vec<RowInfo>>();
+                            
                             // Update the update diff with the new rows
                             add_diff(
                                 &mut map,
@@ -587,6 +640,7 @@ impl CommitFile {
                                     table_name: remove.table_name.clone(),
                                     schema: remove.schema.clone(),
                                     rows,
+                                    old_rows,
                                 }),
                                 remove.table_name.clone(),
                             );

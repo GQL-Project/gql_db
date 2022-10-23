@@ -83,7 +83,7 @@ pub struct UpdateDiff {
     pub table_name: String,     // The name of the table that the rows were updated in
     pub schema: Schema,         // The schema of the table
     pub rows: Vec<RowInfo>,     // The rows that were updated.
-    //pub old_rows: Vec<RowInfo>, // The old rows that were updated.
+    pub old_rows: Vec<RowInfo>, // The old rows that were updated.
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -186,6 +186,7 @@ impl TableSquashDiff {
                 table_name: table_name.clone(),
                 schema: schema.clone(),
                 rows: Vec::new(),
+                old_rows: Vec::new(),
             },
             insert_diff: InsertDiff {
                 table_name: table_name.clone(),
@@ -283,7 +284,7 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
         match diff {
             Diff::Update(update_diff) => {
                 let table = Table::new(table_dir, &update_diff.table_name, None)?;
-                table.rewrite_rows(update_diff.rows.clone())?;
+                table.rewrite_rows(update_diff.old_rows.clone())?;
             }
             // We remove rows instead of inserting as we're reverting the change
             Diff::Insert(insert_diff) => {
@@ -388,7 +389,7 @@ mod tests {
         assert_eq!(row1, vec![Value::I32(1), Value::String("John".to_string()), Value::I32(20)]);
         assert_eq!(row2, vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)]);
         assert_eq!(row3, vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)]);
-        
+
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();
     }

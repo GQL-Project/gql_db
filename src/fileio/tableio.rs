@@ -198,12 +198,12 @@ impl Table {
     /// It allows us to rewrite a specific row from the table.
     /// It returns a diff of the rows that were updated.
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
-        //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
         let mut diff: UpdateDiff = UpdateDiff {
             table_name: self.name.clone(),
             schema: self.schema.clone(),
             rows: Vec::new(),
+            old_rows: Vec::new(),
         };
 
         if rows.len() < 1 {
@@ -220,6 +220,27 @@ impl Table {
                 pagenum = row.pagenum;
                 load_page(row.pagenum, &self.path, page.as_mut())?;
             }
+            
+            // Read in the old values
+            let row_read_result: Option<Row> = read_row(&self.schema, &page, row.rownum);
+            match row_read_result {
+                Some(row_read) => {
+                    diff.old_rows.push(
+                        RowInfo {
+                            pagenum: row.pagenum,
+                            rownum: row.rownum,
+                            row: row_read,
+                        }
+                    );
+                }
+                None => {
+                    return Err(format!(
+                        "rewrite_rows: Could not read row {} from page {}",
+                        row.rownum, row.pagenum
+                    ));
+                }
+            }
+
             write_row(&self.schema, &mut page, &row.row, row.rownum)?;
             // Add the row to the diff
             diff.rows.push(row.clone());
