@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::util::dbtype::Column;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
+use prost_types::Timestamp;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
 
@@ -193,20 +194,214 @@ fn solve_value(
             let val = x.clone();
             Ok(Box::new(move |_| Ok(JointValues::SQLValue(val.clone()))))
         }
-        Expr::BinaryOp {
-            left: _,
-            op,
-            right: _,
-        } => match op {
-            BinaryOperator::Plus => todo!(),
-            BinaryOperator::Minus => todo!(),
-            BinaryOperator::Multiply => todo!(),
-            BinaryOperator::Divide => todo!(),
-            BinaryOperator::Modulo => todo!(),
+        Expr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::Plus => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    left.add(&right)
+                }))
+            }
+            BinaryOperator::Minus => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    left.subtract(&right)
+                }))
+            }
+            BinaryOperator::Multiply => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    left.multiply(&right)
+                }))
+            }
+            BinaryOperator::Divide => {
+                let left = solve_value(left, column_names, index_refs)?;
+                let right = solve_value(right, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    left.divide(&right)
+                }))
+            }
             _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
         },
         Expr::UnaryOp { op: _, expr: _ } => todo!(),
         _ => Err(format!("Unexpected Value Clause: {}", pred)),
+    }
+}
+
+type ApplyInt = fn(i64, i64) -> Result<i64, String>;
+type ApplyFloat = fn(f64, f64) -> Result<f64, String>;
+type ApplyString = fn(&String, &String) -> Result<String, String>;
+
+impl JointValues {
+    fn add(&self, other: &Self) -> Result<JointValues, String> {
+        let apply_int = |x: i64, y: i64| Ok::<i64, String>(x + y);
+        let apply_float = |x: f64, y: f64| Ok::<f64, String>(x + y);
+        let apply_string = |x: &String, y: &String| Ok::<String, String>(x.to_string() + y);
+        self.apply(other, apply_int, apply_float, apply_string)
+            .map_err(|_| format!("Cannot add {:?} and {:?}", self, other))
+    }
+
+    fn subtract(&self, other: &Self) -> Result<JointValues, String> {
+        let apply_int = |x: i64, y: i64| Ok::<i64, String>(x - y);
+        let apply_float = |x: f64, y: f64| Ok::<f64, String>(x - y);
+        let apply_string = |x: &String, y: &String| Ok::<String, String>(x.replace(y, ""));
+        self.apply(other, apply_int, apply_float, apply_string)
+            .map_err(|_| format!("Cannot subtract {:?} and {:?}", self, other))
+    }
+
+    fn multiply(&self, other: &Self) -> Result<JointValues, String> {
+        let apply_int = |x: i64, y: i64| Ok::<i64, String>(x * y);
+        let apply_float = |x: f64, y: f64| Ok::<f64, String>(x * y);
+        let apply_string = |x: &String, y: &String| {
+            let mut result = String::new();
+            for _ in 0..y
+                .parse::<i64>()
+                .map_err(|_| "Cannot multiply string by non-integer")?
+            {
+                result.push_str(x);
+            }
+            Ok::<String, String>(result)
+        };
+        self.apply(other, apply_int, apply_float, apply_string)
+            .map_err(|_| format!("Cannot multiply {:?} and {:?}", self, other))
+    }
+
+    fn divide(&self, other: &Self) -> Result<JointValues, String> {
+        let apply_int = |x: i64, y: i64| Ok::<i64, String>(x / y);
+        let apply_float = |x: f64, y: f64| Ok::<f64, String>(x / y);
+        let apply_string = |x: &String, y: &String| {
+            Err::<String, String>("Cannot divide string by string".to_string())
+        };
+        self.apply(other, apply_int, apply_float, apply_string)
+            .map_err(|_| format!("Cannot divide {:?} and {:?}", self, other))
+    }
+
+    fn apply(
+        &self,
+        other: &Self,
+        int_func: ApplyInt,
+        float_func: ApplyFloat,
+        string_func: ApplyString,
+    ) -> Result<JointValues, String> {
+        Ok(match (self, other) {
+            (Self::DBValue(l0), Self::DBValue(r0)) => match (l0, r0) {
+                (Value::I32(l), Value::I32(r)) => {
+                    JointValues::DBValue(Value::I32(int_func(*l as i64, *r as i64)? as i32))
+                }
+                (Value::Float(l), Value::Float(r)) => {
+                    JointValues::DBValue(Value::Float(float_func(*l as f64, *r as f64)? as f32))
+                }
+                (Value::I64(l), Value::I64(r)) => {
+                    JointValues::DBValue(Value::I64(int_func(*l, *r)?))
+                }
+                (Value::Double(l), Value::Double(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l, *r)?))
+                }
+
+                (Value::I32(l), Value::Float(r)) => {
+                    JointValues::DBValue(Value::Float(float_func(*l as f64, *r as f64)? as f32))
+                }
+                (Value::I32(l), Value::I64(r)) => {
+                    JointValues::DBValue(Value::I64(int_func(*l as i64, *r)?))
+                }
+                (Value::I32(l), Value::Double(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r)?))
+                }
+
+                (Value::Float(l), Value::I32(r)) => {
+                    JointValues::DBValue(Value::Float(float_func(*l as f64, *r as f64)? as f32))
+                }
+                (Value::Float(l), Value::I64(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                }
+                (Value::Float(l), Value::Double(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                }
+
+                (Value::I64(l), Value::I32(r)) => {
+                    JointValues::DBValue(Value::I64(int_func(*l, *r as i64)?))
+                }
+                (Value::I64(l), Value::Float(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                }
+                (Value::I64(l), Value::Double(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                }
+
+                (Value::Double(l), Value::I32(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l, *r as f64)?))
+                }
+                (Value::Double(l), Value::I64(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l, *r as f64)?))
+                }
+                (Value::Double(l), Value::Float(r)) => {
+                    JointValues::DBValue(Value::Double(float_func(*l, *r as f64)?))
+                }
+
+                (Value::Timestamp(l), Value::Timestamp(r)) => {
+                    Self::DBValue(Value::Timestamp(Timestamp {
+                        seconds: int_func(l.seconds, r.seconds)?,
+                        nanos: int_func(l.nanos as i64, r.nanos as i64)? as i32,
+                    }))
+                }
+                (Value::Timestamp(l), Value::I32(r)) => {
+                    Self::DBValue(Value::Timestamp(Timestamp {
+                        seconds: int_func(l.seconds, *r as i64)?,
+                        nanos: l.nanos,
+                    }))
+                }
+                (Value::Timestamp(l), Value::I64(r)) => {
+                    Self::DBValue(Value::Timestamp(Timestamp {
+                        seconds: int_func(l.seconds, *r)?,
+                        nanos: l.nanos,
+                    }))
+                }
+
+                (Value::String(l), Value::String(r)) => {
+                    Self::DBValue(Value::String(string_func(l, r)?))
+                }
+                (Value::String(l), Value::I32(r)) => {
+                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
+                }
+                (Value::String(l), Value::I64(r)) => {
+                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
+                }
+                (Value::String(l), Value::Float(r)) => {
+                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
+                }
+                (Value::String(l), Value::Double(r)) => {
+                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
+                }
+                _ => Err(format!("Cannot add {:?} and {:?} together", l0, r0))?,
+            },
+            // Convert these into DBValues and then apply the function
+            (Self::DBValue(x), Self::SQLValue(y)) => self.apply(
+                &Self::DBValue(x.get_coltype().from_sql_value(y)?),
+                int_func,
+                float_func,
+                string_func,
+            )?,
+            (Self::SQLValue(x), Self::DBValue(y)) => Self::DBValue(
+                y.get_coltype().from_sql_value(x)?,
+            )
+            .apply(other, int_func, float_func, string_func)?,
+            (Self::SQLValue(x), Self::SQLValue(y)) => {
+                let x = Value::from_sql_value(x)?;
+                let y = x.get_coltype().from_sql_value(y)?;
+                Self::DBValue(x).apply(&Self::DBValue(y), int_func, float_func, string_func)?
+            }
+            _ => Err(format!("Cannot add {:?} and {:?}", self, other))?,
+        })
     }
 }
 
