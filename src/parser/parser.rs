@@ -1,4 +1,4 @@
-use crate::fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME};
+use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
@@ -309,11 +309,14 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
         }
         "del" => {
             // GQL del branch or GQL del -f branch 
-            if (vec.len() != 3 && vec[2] != "-f") ||
-                    (vec.len() > 4) || 
-                        (vec.len() == 3 && vec[3] != "-f") {
-                // error message here
-                return Err("Invalid VC Command".to_string());
+            if (vec.len() == 2) ||
+                (vec.len() != 3 && vec[2] != "-f") ||
+                (vec.len() > 4) {
+                return Err("Invalid Delete Command".to_string());
+            }
+
+            if vec.len() == 3 && vec[2] == "-f" {
+                return Err("Invalid Delete Command".to_string());
             }
 
             let mut branch_exist = false;
@@ -336,21 +339,9 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Branch does not exist".to_string());
             }
 
-            // Check if the branch is the current branch. If so, return an error
-            // user.get_current_branch() is the name
-            if user.get_current_branch_name() == branch_name {
-                return Err("Cannot delete the current branch".to_string());
-            }
-
-            // Check if the branch is the master branch. If so, return an error
-            // MAIN_BRANCH_NAME is the name of the master branch
-            if branch_name == MAIN_BRANCH_NAME {
-                return Err("Cannot delete the master branch".to_string());
-            }
-
             let del_results = command::del_branch(user, &branch_name.clone(), flag)?;
 
-            if del_results.starts_with("Branch") {
+            if del_results.starts_with("ERROR:") {
                 return Err(del_results.to_string());
             }
 

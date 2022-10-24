@@ -1,4 +1,4 @@
-use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
+use crate::{fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME}, user::userdata::User};
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -70,11 +70,23 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
 
 /// This function deletes a branch from the database
 pub fn del_branch(user: &User, branch_name: &String, flag: bool) -> Result<String, String> {
+    // Check if the branch is the master branch. If so, return an error
+    // MAIN_BRANCH_NAME is the name of the master branch
+    if branch_name == MAIN_BRANCH_NAME {
+        return Err("ERROR: Cannot delete the master branch".to_string());
+    }
+    
+    // Check if the branch is the current branch. If so, return an error
+    // user.get_current_branch() is the name
+    if user.get_current_branch_name() == *branch_name {
+        return Err("ERROR: Cannot delete the current branch".to_string());
+    }
+
     let uncommitted= false;
     // Check if branch has uncommitted changes.
     
     if uncommitted && !flag {
-        return Ok("Branch has uncommitted changes. Use -f to force delete.".to_string());
+        return Err("ERROR: Branch has uncommitted changes. Use -f to force delete.".to_string());
     }
     // delete branch head
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
@@ -83,6 +95,12 @@ pub fn del_branch(user: &User, branch_name: &String, flag: bool) -> Result<Strin
     // delete all the rows where branch name = the branch head
     let branches_instance = get_db_instance()?.get_branch_file_mut();
     branches_instance.delete_branch_node(branch_name)?;
+
+    for things in &branch_heads_instance.get_all_branch_names()? {
+        println!("Branches: {}", things);
+    }
+
+    //get_db_instance()?.remove_unneeded_branch_directories(&branch_heads_instance.get_all_branch_names()?)?;
 
     let result_string = format!("Branch {} deleted", &branch_name);
     Ok(result_string.to_string())
