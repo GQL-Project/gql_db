@@ -945,13 +945,13 @@ mod tests {
         executor::query::create_table,
         fileio::{
             databaseio::{
-                create_db_instance, delete_db_instance, get_db_instance, MAIN_BRANCH_NAME,
+                delete_db_instance, get_db_instance, MAIN_BRANCH_NAME,
             },
             header::Schema,
             tableio::{create_table_in_dir, delete_table_in_dir},
         },
         user::userdata::User,
-        util::{dbtype::*, row::Row},
+        util::{dbtype::*, row::Row, bench::fcreate_db_instance},
         version_control::{commit::Commit, diff::Diff},
     };
 
@@ -2159,7 +2159,7 @@ mod tests {
         let table_name1: String = "table1".to_string();
 
         // Create a new database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a new user
         let mut user: User = User::new("test_user".to_string());
@@ -2388,7 +2388,7 @@ mod tests {
         let table_name1: String = "table1".to_string();
 
         // Create a new database
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Create a new user
         let mut user: User = User::new("test_user".to_string());
@@ -2737,7 +2737,7 @@ mod tests {
 
         // Create the database
         let db_name: String = "test_merge".to_string();
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         // Table names
         let table_name_1: String = "table1".to_string();
