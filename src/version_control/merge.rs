@@ -944,14 +944,12 @@ mod tests {
     use crate::{
         executor::query::create_table,
         fileio::{
-            databaseio::{
-                delete_db_instance, get_db_instance, MAIN_BRANCH_NAME,
-            },
+            databaseio::{delete_db_instance, get_db_instance, MAIN_BRANCH_NAME},
             header::Schema,
             tableio::{create_table_in_dir, delete_table_in_dir},
         },
         user::userdata::User,
-        util::{dbtype::*, row::Row, bench::fcreate_db_instance},
+        util::{bench::fcreate_db_instance, dbtype::*, row::Row},
         version_control::{commit::Commit, diff::Diff},
     };
 

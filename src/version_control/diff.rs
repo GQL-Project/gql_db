@@ -80,9 +80,9 @@ impl Diff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpdateDiff {
-    pub table_name: String,     // The name of the table that the rows were updated in
-    pub schema: Schema,         // The schema of the table
-    pub rows: Vec<RowInfo>,     // The rows that were updated.
+    pub table_name: String, // The name of the table that the rows were updated in
+    pub schema: Schema,     // The schema of the table
+    pub rows: Vec<RowInfo>, // The rows that were updated.
     pub old_rows: Vec<RowInfo>, // The old rows that were updated.
 }
 
@@ -336,8 +336,7 @@ mod tests {
             ("age".to_string(), Column::I32),
         ];
 
-        let (mut table, _) =
-            create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
+        let (mut table, _) = create_table_in_dir(&table_name, &schema, &dir_to_create_in).unwrap();
 
         // Insert rows
         let rows: Vec<Row> = vec![
@@ -362,17 +361,15 @@ mod tests {
         // Update rows
         let mut diffs: Vec<Diff> = Vec::new();
 
-        let row_updates: Vec<RowInfo> = vec![
-            RowInfo {
-                pagenum: 1,
-                rownum: 1,
-                row: vec![
-                    Value::I32(2),
-                    Value::String("JaneUpdated".to_string()),
-                    Value::I32(21),
-                ]
-            }
-        ];
+        let row_updates: Vec<RowInfo> = vec![RowInfo {
+            pagenum: 1,
+            rownum: 1,
+            row: vec![
+                Value::I32(2),
+                Value::String("JaneUpdated".to_string()),
+                Value::I32(21),
+            ],
+        }];
         let update_diff: UpdateDiff = table.rewrite_rows(row_updates).unwrap();
         diffs.push(Diff::Update(update_diff));
 
@@ -382,13 +379,49 @@ mod tests {
         // Read the table and check that the rows are correct
         let table: Table = Table::new(&dir_to_create_in, &table_name, None).unwrap();
 
-        let row1: Row = table.get_row(&RowLocation { pagenum: 1, rownum: 0 }).unwrap();
-        let row2: Row = table.get_row(&RowLocation { pagenum: 1, rownum: 1 }).unwrap();
-        let row3: Row = table.get_row(&RowLocation { pagenum: 1, rownum: 2 }).unwrap();
+        let row1: Row = table
+            .get_row(&RowLocation {
+                pagenum: 1,
+                rownum: 0,
+            })
+            .unwrap();
+        let row2: Row = table
+            .get_row(&RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            })
+            .unwrap();
+        let row3: Row = table
+            .get_row(&RowLocation {
+                pagenum: 1,
+                rownum: 2,
+            })
+            .unwrap();
 
-        assert_eq!(row1, vec![Value::I32(1), Value::String("John".to_string()), Value::I32(20)]);
-        assert_eq!(row2, vec![Value::I32(2), Value::String("Jane".to_string()), Value::I32(21)]);
-        assert_eq!(row3, vec![Value::I32(3), Value::String("Joe".to_string()), Value::I32(22)]);
+        assert_eq!(
+            row1,
+            vec![
+                Value::I32(1),
+                Value::String("John".to_string()),
+                Value::I32(20)
+            ]
+        );
+        assert_eq!(
+            row2,
+            vec![
+                Value::I32(2),
+                Value::String("Jane".to_string()),
+                Value::I32(21)
+            ]
+        );
+        assert_eq!(
+            row3,
+            vec![
+                Value::I32(3),
+                Value::String("Joe".to_string()),
+                Value::I32(22)
+            ]
+        );
 
         // Clean up directories
         std::fs::remove_dir_all(&dir_to_create_in).unwrap();

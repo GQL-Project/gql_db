@@ -457,7 +457,8 @@ impl CommitFile {
                             get_diff(&map, &update.table_name, UPDATE_TYPE)
                         {
                             // Update the old rows in newrows with the old rows in existing
-                            let mut old_rows: Vec<RowInfo> = update.old_rows
+                            let mut old_rows: Vec<RowInfo> = update
+                                .old_rows
                                 .clone()
                                 .iter()
                                 .map(|x| {
@@ -606,7 +607,6 @@ impl CommitFile {
                         if let Some(Diff::Update(update)) =
                             get_diff(&map, &remove.table_name, UPDATE_TYPE)
                         {
-                            
                             // Remove rows from update that are in remove
                             let rows = update
                                 .rows
@@ -630,7 +630,7 @@ impl CommitFile {
                                 })
                                 .cloned()
                                 .collect::<Vec<RowInfo>>();
-                            
+
                             // Update the update diff with the new rows
                             add_diff(
                                 &mut map,

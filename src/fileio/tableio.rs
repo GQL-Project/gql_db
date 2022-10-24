@@ -220,18 +220,16 @@ impl Table {
                 pagenum = row.pagenum;
                 load_page(row.pagenum, &self.path, page.as_mut())?;
             }
-            
+
             // Read in the old values
             let row_read_result: Option<Row> = read_row(&self.schema, &page, row.rownum);
             match row_read_result {
                 Some(row_read) => {
-                    diff.old_rows.push(
-                        RowInfo {
-                            pagenum: row.pagenum,
-                            rownum: row.rownum,
-                            row: row_read,
-                        }
-                    );
+                    diff.old_rows.push(RowInfo {
+                        pagenum: row.pagenum,
+                        rownum: row.rownum,
+                        row: row_read,
+                    });
                 }
                 None => {
                     return Err(format!(
