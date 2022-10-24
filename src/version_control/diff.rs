@@ -678,7 +678,7 @@ mod tests {
         let rows_to_change: Vec<RowInfo> = vec![
             RowInfo {
                 rownum: 0,
-                pagenum: 0,
+                pagenum: 1,
                 row: vec![
                     Value::I32(1),
                     Value::String("John2".to_string()),
@@ -687,7 +687,7 @@ mod tests {
             },
             RowInfo {
                 rownum: 2,
-                pagenum: 0,
+                pagenum: 1,
                 row: vec![
                     Value::I32(100),
                     Value::String("Joe Schmoe".to_string()),

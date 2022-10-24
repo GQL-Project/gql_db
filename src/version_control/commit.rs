@@ -347,12 +347,10 @@ impl CommitFile {
                 Diff::Update(update) => {
                     self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
                     self.swrite_schema(page, pagenum, offset, &update.schema)?;
-                    for row in &update.rows {
+                    for (row, old_row) in update.rows.iter().zip(update.old_rows.iter()) {
                         self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
-                    }
-                    for old_row in &update.old_rows {
                         self.swrite_row(page, pagenum, offset, &old_row.row, &update.schema)?;
                         self.swrite_type(page, pagenum, offset, old_row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, old_row.rownum)?;
