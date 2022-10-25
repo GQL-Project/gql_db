@@ -156,7 +156,7 @@ impl Column {
                 // If it does happen, this can mess up diffs.
                 println!("Warning: type mismatch: {:?} {:?}", self, row);
                 self.write(&self.coerce_type(row.clone())?, page, offset)
-            },
+            }
         }?;
         Ok(())
     }
@@ -181,7 +181,7 @@ impl Column {
             (Column::Nullable(x), _) => x.coerce_type(value),
             _ => Err(format!(
                 "Unexpected Type, could not promote value {:?} to type {:?}",
-                value, self, 
+                value, self,
             )),
         }
     }
