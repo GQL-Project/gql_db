@@ -253,8 +253,7 @@ pub fn insert(
     user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
-    let table_dir: String = database.get_current_working_branch_path(user);
-    let mut table = Table::new(&table_dir, &table_name, None)?;
+    let mut table = Table::from_user(user, database, &table_name, None)?;
     // Ensure that the number of values to be inserted matches the number of columns in the table
     let values = values
         .iter()
@@ -328,11 +327,10 @@ fn load_aliased_tables(
     user: &User,
     table_names: Vec<(String, String)>,
 ) -> Result<Vec<(Table, String)>, String> {
-    let table_dir: String = database.get_current_working_branch_path(user);
     let tables: Vec<(Table, String)> = table_names
         .iter()
         .map(|(table_name, alias)| {
-            let table = Table::new(&table_dir, &table_name, None)?;
+            let table = Table::from_user(user, database, table_name, None)?;
             if alias.is_empty() {
                 // If no alias is provided, use the table name as the alias
                 let alias = table_name.clone();

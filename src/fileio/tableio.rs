@@ -1,5 +1,5 @@
-use super::{header::*, pageio::*, rowio::*};
-use crate::{util::row::*, version_control::diff::*};
+use super::{databaseio::Database, header::*, pageio::*, rowio::*};
+use crate::{user::userdata::User, util::row::*, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -54,6 +54,18 @@ impl Table {
             row_num: 0,
             max_pages: header.num_pages,
         })
+    }
+
+    /// Wrapper that takes a user and database, and calls new
+    /// with the correct directory.
+    pub fn from_user(
+        user: &User,
+        database: &Database,
+        table_name: &String,
+        table_extension: Option<&String>,
+    ) -> Result<Table, String> {
+        let table_dir: String = database.get_current_working_branch_path(user);
+        Table::new(&table_dir, table_name, table_extension)
     }
 
     fn get_offset(&self) -> usize {
@@ -388,7 +400,6 @@ impl Table {
                 Some(row_read) => {
                     //Runs code if successfully deleted a row
                     clear_row(&self.schema, page.as_mut(), rownum)?;
-
                     // Add changes to the diff
                     diff.rows.push(RowInfo {
                         row: row_read,
@@ -397,10 +408,6 @@ impl Table {
                     });
                 }
                 None => {
-                    println!(
-                        "Error: Row not found at pagenum {} rownum {}",
-                        pagenum, rownum
-                    );
                     return Err(
                         format!(
                             "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!", pagenum, rownum
