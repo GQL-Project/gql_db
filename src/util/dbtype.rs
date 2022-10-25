@@ -161,6 +161,7 @@ impl Column {
         Ok(())
     }
 
+    // Convert a value to the correct type expected by this column.
     pub fn coerce_type(&self, value: Value) -> Result<Value, String> {
         match (self, &value) {
             (Column::I32, Value::I32(_)) => Ok(value),
@@ -175,6 +176,17 @@ impl Column {
             (Column::I64, Value::I32(x)) => Ok(Value::I64(*x as i64)),
             (Column::Float, Value::Double(x)) => Ok(Value::Float(*x as f32)),
             (Column::Double, Value::Float(x)) => Ok(Value::Double(*x as f64)),
+            // Floats to Ints
+            (Column::I32, Value::Float(x)) => Ok(Value::I32(*x as i32)),
+            (Column::I32, Value::Double(x)) => Ok(Value::I32(*x as i32)),
+            (Column::I64, Value::Float(x)) => Ok(Value::I64(*x as i64)),
+            (Column::I64, Value::Double(x)) => Ok(Value::I64(*x as i64)),
+            // Ints to Floats
+            (Column::Float, Value::I32(x)) => Ok(Value::Float(*x as f32)),
+            (Column::Float, Value::I64(x)) => Ok(Value::Float(*x as f32)),
+            (Column::Double, Value::I32(x)) => Ok(Value::Double(*x as f64)),
+            (Column::Double, Value::I64(x)) => Ok(Value::Double(*x as f64)),
+            // Time stamps
             (Column::Timestamp, Value::String(x)) => Ok(Value::Timestamp(parse_time(x)?)),
             // Null cases
             (Column::Nullable(_), Value::Null) => Ok(Value::Null),
