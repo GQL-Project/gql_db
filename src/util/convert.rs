@@ -1,6 +1,5 @@
 use super::dbtype::Value;
 use super::row::Row;
-use crate::fileio::header::Schema;
 use crate::server::server::db_connection::cell_value::CellType::*;
 use crate::server::server::db_connection::*;
 
@@ -9,9 +8,9 @@ pub fn to_connect_result(id: String) -> ConnectResult {
     ConnectResult { id }
 }
 
-pub fn to_query_result(schema: Schema, row_values: Vec<Row>) -> QueryResult {
+pub fn to_query_result(schema: Vec<String>, row_values: Vec<Row>) -> QueryResult {
     QueryResult {
-        column_names: schema.into_iter().map(|x| x.0).collect(),
+        column_names: schema.into_iter().map(|x| x).collect(),
         row_values: row_values.into_iter().map(to_row_value).collect(),
     }
 }
@@ -84,8 +83,6 @@ pub fn from_value(value: CellValue) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::dbtype::Column;
-
     use super::*;
 
     #[test]
@@ -97,10 +94,7 @@ mod tests {
 
     #[test]
     fn test_to_query_result() {
-        let column_names = vec![
-            ("a".to_string(), Column::I32),
-            ("b".to_string(), Column::I64),
-        ];
+        let column_names = vec!["a".to_string(), "b".to_string()];
         let row_values = vec![
             vec![
                 Value::String("a".to_string()),

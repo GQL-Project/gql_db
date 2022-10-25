@@ -457,7 +457,7 @@ impl CommitFile {
                             get_diff(&map, &update.table_name, UPDATE_TYPE)
                         {
                             // Update the old rows in newrows with the old rows in existing
-                            let mut old_rows: Vec<RowInfo> = update
+                            let old_rows: Vec<RowInfo> = update
                                 .old_rows
                                 .clone()
                                 .iter()
