@@ -105,7 +105,7 @@ pub fn execute_update(
                                 data.push(
                                     // We don't need any additional information to solve this, hence the empty vectors and maps
                                     // Here, we effectively convert the Expr's into our Value types
-                                    solve_value(&k, &vec![], &map)?(&vec![])?.to_value()?,
+                                    resolve_value(&solve_value(&k, &vec![], &map)?, &vec![])?,
                                 );
                             }
                             all_data.push(data);

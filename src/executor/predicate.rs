@@ -442,15 +442,6 @@ impl PartialOrd for JointValues {
     }
 }
 
-impl JointValues {
-    pub fn to_value(&self) -> Result<Value, String> {
-        match self {
-            Self::DBValue(x) => Ok(x.clone()),
-            Self::SQLValue(x) => Value::from_sql_value(x),
-        }
-    }
-}
-
 // Where (predicate) tests go here
 #[cfg(test)]
 mod tests {
