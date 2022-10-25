@@ -144,11 +144,6 @@ impl Column {
             (Column::String(size), Value::String(x)) => {
                 write_string(page, offset, &x, *size as usize)
             }
-            // Type conversions
-            (Column::I32, Value::I64(x)) => write_type(page, offset, *x as i32),
-            (Column::I64, Value::I32(x)) => write_type(page, offset, *x as i64),
-            (Column::Float, Value::Double(x)) => write_type(page, offset, *x as f32),
-            (Column::Double, Value::Float(x)) => write_type(page, offset, *x as f64),
             // Null cases
             (Column::Nullable(_), Value::Null) => write_type(page, offset, 0u8),
             (Column::Nullable(x), y) => {
@@ -156,11 +151,39 @@ impl Column {
                 x.write(y, page, offset + size_of::<u8>())?;
                 write_type(page, offset, 1u8)
             }
-            _ => Err(
-                "Unexpected Type, types must always map to their corresponding rows".to_string(),
-            ),
+            _ => {
+                // This should never happen, as types should already be coerced to the correct type at this point
+                // If it does happen, this can mess up diffs.
+                println!("Warning: type mismatch: {:?} {:?}", self, row);
+                self.write(&self.coerce_type(row.clone())?, page, offset)
+            },
         }?;
         Ok(())
+    }
+
+    pub fn coerce_type(&self, value: Value) -> Result<Value, String> {
+        match (self, &value) {
+            (Column::I32, Value::I32(_)) => Ok(value),
+            (Column::I64, Value::I64(_)) => Ok(value),
+            (Column::Float, Value::Float(_)) => Ok(value),
+            (Column::Double, Value::Double(_)) => Ok(value),
+            (Column::Bool, Value::Bool(_)) => Ok(value),
+            (Column::Timestamp, Value::Timestamp(_)) => Ok(value),
+            (Column::String(_), Value::String(_)) => Ok(value),
+            // Type conversions
+            (Column::I32, Value::I64(x)) => Ok(Value::I32(*x as i32)),
+            (Column::I64, Value::I32(x)) => Ok(Value::I64(*x as i64)),
+            (Column::Float, Value::Double(x)) => Ok(Value::Float(*x as f32)),
+            (Column::Double, Value::Float(x)) => Ok(Value::Double(*x as f64)),
+            (Column::Timestamp, Value::String(x)) => Ok(Value::Timestamp(parse_time(x)?)),
+            // Null cases
+            (Column::Nullable(_), Value::Null) => Ok(Value::Null),
+            (Column::Nullable(x), _) => x.coerce_type(value),
+            _ => Err(format!(
+                "Unexpected Type, could not promote value {:?} to type {:?}",
+                value, self, 
+            )),
+        }
     }
 
     pub fn size(&self) -> usize {
@@ -174,27 +197,6 @@ impl Column {
             Column::String(x) => (*x as usize) * size_of::<u8>(),
             // Add a single byte overhead for the null flag.
             Column::Nullable(x) => size_of::<u8>() + x.size(),
-        }
-    }
-
-    pub fn match_value(&self, val: &Value) -> bool {
-        match (self, val) {
-            (Column::I32, Value::I32(_)) => true,
-            (Column::I64, Value::I64(_)) => true,
-            (Column::Float, Value::Float(_)) => true,
-            (Column::Double, Value::Double(_)) => true,
-            (Column::Bool, Value::Bool(_)) => true,
-            (Column::Timestamp, Value::Timestamp(_)) => true,
-            (Column::String(_), Value::String(_)) => true,
-            // Type coercions
-            (Column::I64, Value::I32(_)) => true,
-            (Column::Double, Value::Float(_)) => true,
-            (Column::Float, Value::Double(_)) => true,
-            (Column::I32, Value::I64(x)) => i32::try_from(*x).is_ok(),
-            // Null cases
-            (Column::Nullable(_), Value::Null) => true,
-            (Column::Nullable(x), y) => x.match_value(y),
-            _ => false,
         }
     }
 

@@ -16,6 +16,7 @@ use super::query::resolve_reference;
 /// The SolvePredicate Function Type takes a row and returns a bool, used to filter rows
 pub type SolvePredicate = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// The SolveValue Function Type takes a row and returns a Value, which is used by SolvePredicate
+/// It's also used to resolve the value of a column in a row, such as in `select id + 5 from table`
 pub type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
@@ -328,96 +329,68 @@ impl JointValues {
         string_func: ApplyString,
     ) -> Result<JointValues, String> {
         Ok(match (self, other) {
-            (Self::DBValue(l0), Self::DBValue(r0)) => match (l0, r0) {
+            (Self::DBValue(l0), Self::DBValue(r0)) => Self::DBValue(match (l0, r0) {
                 (Value::I32(l), Value::I32(r)) => {
-                    JointValues::DBValue(Value::I32(int_func(*l as i64, *r as i64)? as i32))
+                    Value::I32(int_func(*l as i64, *r as i64)? as i32)
                 }
                 (Value::Float(l), Value::Float(r)) => {
-                    JointValues::DBValue(Value::Float(float_func(*l as f64, *r as f64)? as f32))
+                    Value::Float(float_func(*l as f64, *r as f64)? as f32)
                 }
-                (Value::I64(l), Value::I64(r)) => {
-                    JointValues::DBValue(Value::I64(int_func(*l, *r)?))
-                }
-                (Value::Double(l), Value::Double(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l, *r)?))
-                }
+                (Value::I64(l), Value::I64(r)) => Value::I64(int_func(*l, *r)?),
+                (Value::Double(l), Value::Double(r)) => Value::Double(float_func(*l, *r)?),
 
                 (Value::I32(l), Value::Float(r)) => {
-                    JointValues::DBValue(Value::Float(float_func(*l as f64, *r as f64)? as f32))
+                    Value::Float(float_func(*l as f64, *r as f64)? as f32)
                 }
-                (Value::I32(l), Value::I64(r)) => {
-                    JointValues::DBValue(Value::I64(int_func(*l as i64, *r)?))
-                }
-                (Value::I32(l), Value::Double(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r)?))
-                }
+                (Value::I32(l), Value::I64(r)) => Value::I64(int_func(*l as i64, *r)?),
+                (Value::I32(l), Value::Double(r)) => Value::Double(float_func(*l as f64, *r)?),
 
                 (Value::Float(l), Value::I32(r)) => {
-                    JointValues::DBValue(Value::Float(float_func(*l as f64, *r as f64)? as f32))
+                    Value::Float(float_func(*l as f64, *r as f64)? as f32)
                 }
                 (Value::Float(l), Value::I64(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                    Value::Double(float_func(*l as f64, *r as f64)?)
                 }
                 (Value::Float(l), Value::Double(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                    Value::Double(float_func(*l as f64, *r as f64)?)
                 }
 
-                (Value::I64(l), Value::I32(r)) => {
-                    JointValues::DBValue(Value::I64(int_func(*l, *r as i64)?))
-                }
+                (Value::I64(l), Value::I32(r)) => Value::I64(int_func(*l, *r as i64)?),
                 (Value::I64(l), Value::Float(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                    Value::Double(float_func(*l as f64, *r as f64)?)
                 }
                 (Value::I64(l), Value::Double(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l as f64, *r as f64)?))
+                    Value::Double(float_func(*l as f64, *r as f64)?)
                 }
 
-                (Value::Double(l), Value::I32(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l, *r as f64)?))
-                }
-                (Value::Double(l), Value::I64(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l, *r as f64)?))
-                }
-                (Value::Double(l), Value::Float(r)) => {
-                    JointValues::DBValue(Value::Double(float_func(*l, *r as f64)?))
-                }
+                (Value::Double(l), Value::I32(r)) => Value::Double(float_func(*l, *r as f64)?),
+                (Value::Double(l), Value::I64(r)) => Value::Double(float_func(*l, *r as f64)?),
+                (Value::Double(l), Value::Float(r)) => Value::Double(float_func(*l, *r as f64)?),
 
-                (Value::Timestamp(l), Value::Timestamp(r)) => {
-                    Self::DBValue(Value::Timestamp(Timestamp {
-                        seconds: int_func(l.seconds, r.seconds)?,
-                        nanos: int_func(l.nanos as i64, r.nanos as i64)? as i32,
-                    }))
-                }
-                (Value::Timestamp(l), Value::I32(r)) => {
-                    Self::DBValue(Value::Timestamp(Timestamp {
-                        seconds: int_func(l.seconds, *r as i64)?,
-                        nanos: l.nanos,
-                    }))
-                }
-                (Value::Timestamp(l), Value::I64(r)) => {
-                    Self::DBValue(Value::Timestamp(Timestamp {
-                        seconds: int_func(l.seconds, *r)?,
-                        nanos: l.nanos,
-                    }))
-                }
+                (Value::Timestamp(l), Value::Timestamp(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(l.seconds, r.seconds)?,
+                    nanos: int_func(l.nanos as i64, r.nanos as i64)? as i32,
+                }),
+                (Value::Timestamp(l), Value::I32(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(l.seconds, *r as i64)?,
+                    nanos: l.nanos,
+                }),
+                (Value::Timestamp(l), Value::I64(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(l.seconds, *r)?,
+                    nanos: l.nanos,
+                }),
 
-                (Value::String(l), Value::String(r)) => {
-                    Self::DBValue(Value::String(string_func(l, r)?))
-                }
-                (Value::String(l), Value::I32(r)) => {
-                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
-                }
-                (Value::String(l), Value::I64(r)) => {
-                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
-                }
+                (Value::String(l), Value::String(r)) => Value::String(string_func(l, r)?),
+                (Value::String(l), Value::I32(r)) => Value::String(string_func(l, &r.to_string())?),
+                (Value::String(l), Value::I64(r)) => Value::String(string_func(l, &r.to_string())?),
                 (Value::String(l), Value::Float(r)) => {
-                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
+                    Value::String(string_func(l, &r.to_string())?)
                 }
                 (Value::String(l), Value::Double(r)) => {
-                    Self::DBValue(Value::String(string_func(l, &r.to_string())?))
+                    Value::String(string_func(l, &r.to_string())?)
                 }
                 _ => Err(format!("Cannot apply {:?} and {:?} together", l0, r0))?,
-            },
+            }),
             // Convert these into DBValues and then apply the function
             (Self::DBValue(x), Self::SQLValue(y)) => self.apply(
                 &Self::DBValue(x.get_coltype().from_sql_value(y)?),
@@ -440,32 +413,7 @@ impl JointValues {
 
 impl PartialEq for JointValues {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::DBValue(l0), Self::DBValue(r0)) => l0.partial_cmp(r0) == Some(Ordering::Equal),
-            (Self::SQLValue(l0), Self::SQLValue(r0)) => {
-                let l = Value::from_sql_value(l0);
-                let r = Value::from_sql_value(r0);
-                if l.is_err() || r.is_err() {
-                    false
-                } else {
-                    l.unwrap().partial_cmp(&r.unwrap()) == Some(Ordering::Equal)
-                }
-            }
-            (Self::DBValue(l0), Self::SQLValue(r0)) => {
-                if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
-                    l0 == &r0
-                } else {
-                    false
-                }
-            }
-            (Self::SQLValue(r0), Self::DBValue(l0)) => {
-                if let Ok(r0) = l0.get_coltype().from_sql_value(r0) {
-                    l0 == &r0
-                } else {
-                    false
-                }
-            }
-        }
+        self.partial_cmp(other) == Some(Ordering::Equal)
     }
 }
 
@@ -490,6 +438,15 @@ impl PartialOrd for JointValues {
                     None
                 }
             }
+        }
+    }
+}
+
+impl JointValues {
+    pub fn to_value(&self) -> Result<Value, String> {
+        match self {
+            Self::DBValue(x) => Ok(x.clone()),
+            Self::SQLValue(x) => Value::from_sql_value(x),
         }
     }
 }

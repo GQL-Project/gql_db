@@ -93,31 +93,20 @@ pub fn execute_update(
                 ..
             } => {
                 let table_name = table_name.0[0].value.to_string();
-                let mut all_data = Vec::new();
+                // Keeping all_data as a vector of rows allows us to also easily integrate select later on
+                let mut all_data: Vec<Row> = Vec::new();
                 match *source.body.clone() {
                     SetExpr::Values(values) => {
                         let values_list = values.0;
                         for row in values_list {
                             let mut data = Vec::new();
                             for k in row {
-                                match k {
-                                    Expr::Value(sqlparser::ast::Value::SingleQuotedString(s)) => {
-                                        data.push(s);
-                                    }
-                                    Expr::Value(sqlparser::ast::Value::DoubleQuotedString(s)) => {
-                                        data.push(s);
-                                    }
-                                    Expr::Value(sqlparser::ast::Value::Number(s, _)) => {
-                                        data.push(s);
-                                    }
-                                    Expr::Value(sqlparser::ast::Value::Boolean(s)) => {
-                                        data.push(s.to_string());
-                                    }
-                                    Expr::Value(sqlparser::ast::Value::Null) => {
-                                        data.push("".to_string());
-                                    }
-                                    _ => println!("Unexpected Value"),
-                                }
+                                let map = HashMap::new();
+                                data.push(
+                                    // We don't need any additional information to solve this, hence the empty vectors and maps
+                                    // Here, we effectively convert the Expr's into our Value types
+                                    solve_value(&k, &vec![], &map)?(&vec![])?.to_value()?,
+                                );
                             }
                             all_data.push(data);
                         }
@@ -247,7 +236,7 @@ pub fn select(
 /// If the values to be inserted are not of the correct type, it returns an error.
 /// It appends the diff to the user passed in
 pub fn insert(
-    values: Vec<Vec<String>>,
+    values: Vec<Row>,
     table_name: String,
     database: &Database,
     user: &mut User,
@@ -256,7 +245,7 @@ pub fn insert(
     let mut table = Table::from_user(user, database, &table_name, None)?;
     // Ensure that the number of values to be inserted matches the number of columns in the table
     let values = values
-        .iter()
+        .into_iter()
         .map(|x| {
             if x.len() != table.schema.len() {
                 Err(format!(
@@ -264,36 +253,15 @@ pub fn insert(
                 , x.len(), table.schema.len()))
             } else {
                 Ok(x
-                    .iter()
+                    .into_iter()
                     .zip(table.schema.iter())
-                    .map(|(str, (_, col))| {
-                        col.parse(str).map_err(|e| format!("Error parsing value: {}", e))
+                    .map(|(val, (_, col))| {
+                        col.coerce_type(val).map_err(|e| format!("Error parsing value: {}", e))
                     })
                     .collect::<Result<Row, String>>()?)
             }
         })
         .collect::<Result<Vec<Row>, _>>().map_err(|x| x.to_string())?;
-    values.iter().try_for_each(|vec| {
-        if vec.len() != table.schema.len() {
-            return Err(format!(
-                "Error: Values Inserted did not match Schema {}",
-                table_name
-            ));
-        }
-        vec.iter()
-            .zip(table.schema.iter())
-            .try_for_each(|(val, (_, col_type))| {
-                if !col_type.match_value(&val) {
-                    return Err(format!(
-                        "Error: Value {} is not of type {}",
-                        val.to_string(),
-                        col_type.to_string()
-                    ));
-                }
-                Ok(())
-            })?;
-        Ok(())
-    })?;
     // Actually insert the values into the table
     let len: usize = values.len();
     let diff: InsertDiff = table.insert_rows(values)?;
@@ -520,8 +488,16 @@ pub mod tests {
 
         insert(
             [
-                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
+                vec![
+                    Value::I64(1),
+                    Value::String("Iron Man".to_string()),
+                    Value::I64(40),
+                ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Spiderman".to_string()),
+                    Value::I64(20),
+                ],
             ]
             .to_vec(),
             "test_table1".to_string(),
@@ -586,13 +562,16 @@ pub mod tests {
         // Write rows to first table
         insert(
             [
-                // Rewritten with all as strings
                 vec![
-                    "1".to_string(),
-                    "Robert Downey Jr.".to_string(),
-                    "40".to_string(),
+                    Value::I64(1),
+                    Value::String("Robert Downey Jr.".to_string()),
+                    Value::I64(40),
                 ],
-                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
+                vec![
+                    Value::I64(2),
+                    Value::String("Tom Holland".to_string()),
+                    Value::I64(20),
+                ],
             ]
             .to_vec(),
             "test_table1".to_string(),
@@ -604,8 +583,8 @@ pub mod tests {
         // Write rows to second table
         insert(
             [
-                vec!["1".to_string(), "United States".to_string()],
-                vec!["2".to_string(), "Britain".to_string()],
+                vec![Value::I64(1), Value::String("United States".to_string())],
+                vec![Value::I64(2), Value::String("Britain".to_string())],
             ]
             .to_vec(),
             "test_table2".to_string(),
@@ -688,12 +667,20 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         insert(
             vec![
-                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
                 vec![
-                    "3".to_string(),
-                    "Doctor Strange".to_string(),
-                    "35".to_string(),
+                    Value::I64(1),
+                    Value::String("Iron Man".to_string()),
+                    Value::I64(40),
+                ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Spiderman".to_string()),
+                    Value::I64(20),
+                ],
+                vec![
+                    Value::I64(3),
+                    Value::String("Doctor Strange".to_string()),
+                    Value::I64(35),
                 ],
             ],
             "test_table1".to_string(),
@@ -755,12 +742,20 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         insert(
             vec![
-                vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-                vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
                 vec![
-                    "3".to_string(),
-                    "Doctor Strange".to_string(),
-                    "35".to_string(),
+                    Value::I64(1),
+                    Value::String("Iron Man".to_string()),
+                    Value::I64(40),
+                ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Spiderman".to_string()),
+                    Value::I64(20),
+                ],
+                vec![
+                    Value::I64(3),
+                    Value::String("Doctor Strange".to_string()),
+                    Value::I64(35),
                 ],
             ],
             "test_table1".to_string(),
@@ -825,14 +820,19 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
-            vec![
+            [
                 vec![
-                    "1".to_string(),
-                    "Robert Downey Jr".to_string(),
-                    "40".to_string(),
+                    Value::I64(1),
+                    Value::String("Robert Downey Jr".to_string()),
+                    Value::I64(40),
                 ],
-                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-            ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Tom Holland".to_string()),
+                    Value::I64(20),
+                ],
+            ]
+            .to_vec(),
             "test_table1".to_string(),
             &new_db,
             &mut user,
@@ -847,10 +847,11 @@ pub mod tests {
         create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
 
         insert(
-            vec![
-                vec!["5".to_string(), "United States".to_string()],
-                vec!["6".to_string(), "Britain".to_string()],
-            ],
+            [
+                vec![Value::I64(1), Value::String("United States".to_string())],
+                vec![Value::I64(2), Value::String("Britain".to_string())],
+            ]
+            .to_vec(),
             "test_table2".to_string(),
             &new_db,
             &mut user,
@@ -917,14 +918,19 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
-            vec![
+            [
                 vec![
-                    "1".to_string(),
-                    "Robert Downey Jr".to_string(),
-                    "40".to_string(),
+                    Value::I64(1),
+                    Value::String("Robert Downey Jr.".to_string()),
+                    Value::I64(40),
                 ],
-                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-            ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Tom Holland".to_string()),
+                    Value::I64(20),
+                ],
+            ]
+            .to_vec(),
             "test_table1".to_string(),
             &new_db,
             &mut user,
@@ -939,10 +945,11 @@ pub mod tests {
         create_table(&"test_table2".to_string(), &schema2, &new_db, &mut user).unwrap();
 
         insert(
-            vec![
-                vec!["5".to_string(), "United States".to_string()],
-                vec!["6".to_string(), "Britain".to_string()],
-            ],
+            [
+                vec![Value::I64(5), Value::String("United States".to_string())],
+                vec![Value::I64(6), Value::String("Britain".to_string())],
+            ]
+            .to_vec(),
             "test_table2".to_string(),
             &new_db,
             &mut user,
@@ -984,14 +991,19 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
-            vec![
+            [
                 vec![
-                    "1".to_string(),
-                    "Robert Downey Jr".to_string(),
-                    "40".to_string(),
+                    Value::I64(1),
+                    Value::String("Robert Downey Jr.".to_string()),
+                    Value::I64(40),
                 ],
-                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-            ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Tom Holland".to_string()),
+                    Value::I64(20),
+                ],
+            ]
+            .to_vec(),
             "test_table1".to_string(),
             &new_db,
             &mut user,
@@ -1039,14 +1051,19 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema1, &new_db, &mut user).unwrap();
 
         insert(
-            vec![
+            [
                 vec![
-                    "1".to_string(),
-                    "Robert Downey Jr".to_string(),
-                    "40".to_string(),
+                    Value::I64(1),
+                    Value::String("Robert Downey Jr.".to_string()),
+                    Value::I64(40),
                 ],
-                vec!["2".to_string(), "Tom Holland".to_string(), "20".to_string()],
-            ],
+                vec![
+                    Value::I64(2),
+                    Value::String("Tom Holland".to_string()),
+                    Value::I64(20),
+                ],
+            ]
+            .to_vec(),
             "test_table1".to_string(),
             &new_db,
             &mut user,
@@ -1109,22 +1126,8 @@ pub mod tests {
                 Value::I32(1000),
             ],
         ];
-        let newrows = vec![
-            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-            vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
-            ],
-            vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
-            ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
-        ];
-        let (_, diff) = insert(newrows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let (_, diff) =
+            insert(rows.clone(), "test_table1".to_string(), &new_db, &mut user).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 5);
@@ -1191,13 +1194,21 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
 
         let newrows = vec![
-            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
-            vec!["3".to_string(), "35".to_string()],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(1),
+                Value::String("Iron Man".to_string()),
+                Value::I64(40),
+            ],
+            vec![
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
+            ],
+            vec![Value::I64(3), Value::I64(35)],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(35),
             ],
         ];
 
@@ -1247,30 +1258,9 @@ pub mod tests {
                 Value::Double(12.456),
             ],
         ];
-        let new_rows = vec![
-            vec![
-                "100".to_string(), // Can only insert I32
-                "Iron Man".to_string(),
-                "3.456".to_string(),
-            ],
-            vec![
-                "2".to_string(),
-                "Spiderman".to_string(),
-                "3.43456".to_string(),
-            ],
-            vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "322.456".to_string(),
-            ],
-            vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "12.456".to_string(),
-            ],
-        ];
 
-        let (_, diff) = insert(new_rows, "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let (_, diff) =
+            insert(rows.clone(), "test_table1".to_string(), &new_db, &mut user).unwrap();
 
         // Verify that the insert was successful by looking at the diff first
         assert_eq!(diff.rows.len(), 4);
@@ -1332,24 +1322,24 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
-                "100".to_string(), // Can only insert I32
-                "Iron Man".to_string(),
-                "Robert Downey".to_string(),
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::String("Robert Downey".to_string()),
             ],
             vec![
-                "2".to_string(),
-                "Spiderman".to_string(),
-                "3.43456".to_string(),
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
             ],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "322.456".to_string(),
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Double(322.456),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "12.456".to_string(),
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::Float(12.456),
             ],
         ];
 
@@ -1405,24 +1395,24 @@ pub mod tests {
         ];
         let new_rows = vec![
             vec![
-                "100".to_string(), // Can only insert I32
-                "Iron Man".to_string(),
-                "3.456".to_string(),
+                Value::I32(100),
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
             ],
             vec![
-                "".to_string(),
-                "Spiderman".to_string(),
-                "3.43456".to_string(),
+                Value::Null,
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
             ],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "".to_string(),
+                Value::I32(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::Null,
             ],
             vec![
-                "".to_string(),
-                "Captain America".to_string(),
-                "".to_string(),
+                Value::Null,
+                Value::String("Captain America".to_string()),
+                Value::Null,
             ],
         ];
 
@@ -1491,16 +1481,20 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
-                "".to_string(), // Nulled
-                "Iron Man".to_string(),
-                "Robert Downey".to_string(),
+                Value::Null, // Nulled
+                Value::String("Iron Man".to_string()),
+                Value::String("Robert Downey".to_string()),
             ],
-            vec!["2".to_string(), "Spiderman".to_string(), "".to_string()],
-            vec!["3".to_string(), "".to_string(), "322.456".to_string()],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::String("".to_string()),
+            ],
+            vec![Value::I64(3), Value::Null, Value::Float(322.456)],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::Null,
             ],
         ];
 
