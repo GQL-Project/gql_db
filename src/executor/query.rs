@@ -276,10 +276,19 @@ pub fn select(
             }
         }
     }
-
     Ok((selected_schema, selected_rows))
 }
 
+/* 
+pub fn update(
+    values: Vec<Vec<String>>,
+    table_name: String,
+    database: &Database,
+    user: &mut User,
+) -> Result<(String, InsertDiff), String> {
+
+}
+*/
 /// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
 /// into the table. It returns a string containing the number of rows inserted.
 /// If the table does not exist, it returns an error.
