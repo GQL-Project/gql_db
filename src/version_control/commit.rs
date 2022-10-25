@@ -862,19 +862,31 @@ mod tests {
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
-            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
+                Value::I64(1),
+                Value::String("Iron Man".to_string()),
+                Value::I64(40),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
             ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
@@ -940,19 +952,31 @@ mod tests {
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
-            vec!["1".to_string(), "Nick Fury".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
+                Value::I64(1),
+                Value::String("Nick Fury".to_string()),
+                Value::I64(40),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
             ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
@@ -1016,19 +1040,31 @@ mod tests {
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
-            vec!["1".to_string(), "Nick Fury".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
+                Value::I64(1),
+                Value::String("Nick Fury".to_string()),
+                Value::I64(40),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
             ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
