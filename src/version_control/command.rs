@@ -1,4 +1,6 @@
-use crate::{fileio::databaseio::get_db_instance, user::userdata::User};
+use crate::{fileio::databaseio::*, user::userdata::User};
+use crate::fileio::databaseio::*;
+//use crate::fileio::databaseio::Database::get_diffs_between_nodes;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -144,6 +146,74 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
     };
     branches.update_branch_node(&squash_node)?;
     Ok(squash_commit)
+}
+
+/// Takes a commit hash, and checks if it exists in the current branch
+/// If the commit exists in the user's branch,
+///  the branch is reverted to the desired commit
+/// All changes are undone and this revert is saved as another commit
+// TODO: Add a result
+pub fn revert(user: &User, commit_hash: &String) -> Result<Commit, String> {
+    let branch_name: String = user.get_current_branch_name();
+    let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
+
+    // seperate to make debug easier
+    let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+
+    // If there are no commits, return an empty vector
+    if branch_heads_instance.get_all_branch_heads()?.len() == 0 {
+        return Err("No Commits!".to_string());
+    }
+
+    //Grabbing the branch node from the head
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&branch_name, &branches_from_head)?;
+
+    //Traversing the nodes to find the argument commit hash
+    let branch_nodes: Vec<BranchNode> = get_db_instance()?
+        .get_branch_file()
+        .traverse_branch_nodes(&branch_node)?;
+
+    // If the commit hash is not in the current branch, return an error
+    let mut match_counter = 0;
+    let mut match_node: BranchNode = BranchNode {
+        commit_hash: "".to_string(),
+        branch_name: "".to_string(),
+        prev_pagenum: 0,
+        prev_rownum: 0,
+        curr_pagenum: 0,
+        curr_rownum: 0,
+        num_kids: 0,
+        is_head: false,
+    };
+    //Looking for the commit hash in the branch nodes
+    for node in branch_nodes {
+        if node.commit_hash == *commit_hash {
+            match_counter += 1;
+            //Storing the matched commit's information 
+            match_node = node;   
+        }
+    }
+
+    // If the commit hash is not in the current branch, return an error
+    if (match_counter == 0) {
+        return Err("Commit doesn't exist in the current branch!".to_string());
+    }
+    else if (match_counter > 1) {
+        return Err("Commit exists multiple times in branch! Something is seriously wrong!".to_string());
+    }
+
+    // Extracting the diffs between the two nodes
+    let diffs = get_diffs_between_nodes(get_db_instance(), &match_node, &branch_node)?;
+
+    let temp_commit: Commit = Commit {
+        hash: "temp".to_string(),
+        message: "temp".to_string(),
+        timestamp: "temp".to_string(),
+        command: "temp-".to_string(),
+        diffs: vec![],
+    };
+    Ok(temp_commit)
 }
 
 #[cfg(test)]
