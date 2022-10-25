@@ -74,6 +74,17 @@ pub fn execute_update(
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
+            Statement::Update {
+                table,
+                assignments,
+                from,
+                selection
+            } => {
+                // your code here
+                //let table_name = table_name.0[0].value.to_string();
+                //let mut all_data = Vec::new();
+
+            }
             Statement::CreateTable { name, columns, .. } => {
                 let table_name = name.0[0].value.to_string();
                 let mut schema = Schema::new();
@@ -279,6 +290,8 @@ pub fn select(
     Ok((selected_schema, selected_rows))
 }
 
+/// This method implements the SQL update statement
+/// 
 /* 
 pub fn update(
     values: Vec<Vec<String>>,
@@ -287,8 +300,12 @@ pub fn update(
     user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
 
+
+    //user.append_diff(&Diff::Insert(diff.clone()));
+    //Ok((format!("{} rows were successfully inserted.", len), diff))
 }
 */
+
 /// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
 /// into the table. It returns a string containing the number of rows inserted.
 /// If the table does not exist, it returns an error.
