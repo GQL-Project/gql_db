@@ -4,6 +4,7 @@ use crate::fileio::databaseio::*;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
+use super::diff::revert_tables_from_diffs;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
@@ -153,7 +154,7 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
 ///  the branch is reverted to the desired commit
 /// All changes are undone and this revert is saved as another commit
 // TODO: Add a result
-pub fn revert(user: &User, commit_hash: &String) -> Result<Commit, String> {
+pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
@@ -204,16 +205,21 @@ pub fn revert(user: &User, commit_hash: &String) -> Result<Commit, String> {
     }
 
     // Extracting the diffs between the two nodes
-    let diffs = get_diffs_between_nodes(get_db_instance(), &match_node, &branch_node)?;
+    let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&match_node), &branch_node)?;
 
-    let temp_commit: Commit = Commit {
-        hash: "temp".to_string(),
-        message: "temp".to_string(),
-        timestamp: "temp".to_string(),
-        command: "temp-".to_string(),
-        diffs: vec![],
-    };
-    Ok(temp_commit)
+    // Obtaining the directory of all tables
+    let branch_path: String = get_db_instance()?.get_current_branch_path(user);
+
+    // Reverting the diffs
+    revert_tables_from_diffs(&branch_path, &diffs)?;
+
+    // Creating a revert commit
+    let revert_message = format!("Reverted to commit {}", commit_hash);
+    let revert_command = format!("revert");
+    let revert_commit_and_node = get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
+    let revert_commit = revert_commit_and_node.1;
+
+    Ok(revert_commit)
 }
 
 #[cfg(test)]
