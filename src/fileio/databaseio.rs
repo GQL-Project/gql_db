@@ -1312,6 +1312,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::{
+        executor::query::tests::to_selectitems,
         executor::query::{create_table, select},
         fileio::header::Schema,
         util::{
@@ -1732,12 +1733,13 @@ mod tests {
         assert_eq!(std::path::Path::new(&tmp_branch_dir).exists(), true);
 
         // Select from the temp branch directory
-        let select_result: (Schema, Vec<Row>) = select(
-            vec![
+        let select_result: (Vec<String>, Vec<Row>) = select(
+            to_selectitems(vec![
                 "T.id".to_string(),
                 "T.name".to_string(),
                 "T.age".to_string(),
-            ],
+            ]),
+            None,
             vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
@@ -1745,7 +1747,7 @@ mod tests {
         .unwrap();
 
         // Make sure the select result is correct
-        assert_eq!(select_result.0, schema);
+        assert_eq!(select_result.0, vec!["T.id", "T.name", "T.age"]);
         assert_eq!(select_result.1.len(), 3);
 
         // Make sure each row of the select result is correct
@@ -1865,12 +1867,13 @@ mod tests {
         table.insert_rows(rows2).unwrap();
 
         // Select from the temp branch table
-        let select_result: (Schema, Vec<Row>) = select(
-            vec![
+        let select_result: (Vec<String>, Vec<Row>) = select(
+            to_selectitems(vec![
                 "T.id".to_string(),
                 "T.name".to_string(),
                 "T.age".to_string(),
-            ],
+            ]),
+            None,
             vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
@@ -1878,7 +1881,7 @@ mod tests {
         .unwrap();
 
         // Make sure the select result is correct
-        assert_eq!(select_result.0, schema);
+        assert_eq!(select_result.0, vec!["T.id", "T.name", "T.age"]);
         assert_eq!(select_result.1.len(), 4);
 
         // Make sure each row of the select result is correct
@@ -1915,12 +1918,13 @@ mod tests {
         assert_eq!(user.is_on_temp_commit(), false);
 
         // Select from the main branch table
-        let select_result: (Schema, Vec<Row>) = select(
-            vec![
+        let select_result: (Vec<String>, Vec<Row>) = select(
+            to_selectitems(vec![
                 "T.id".to_string(),
                 "T.name".to_string(),
                 "T.age".to_string(),
-            ],
+            ]),
+            None,
             vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
@@ -1928,7 +1932,7 @@ mod tests {
         .unwrap();
 
         // Make sure the select result is correct
-        assert_eq!(select_result.0, schema);
+        assert_eq!(select_result.0, vec!["T.id", "T.name", "T.age"]);
         assert_eq!(select_result.1.len(), 3);
 
         // Make sure each row of the select result is correct

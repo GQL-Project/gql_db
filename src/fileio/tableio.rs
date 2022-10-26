@@ -1,5 +1,5 @@
-use super::{header::*, pageio::*, rowio::*};
-use crate::{util::row::*, version_control::diff::*};
+use super::{databaseio::Database, header::*, pageio::*, rowio::*};
+use crate::{user::userdata::User, util::row::*, version_control::diff::*};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -54,6 +54,18 @@ impl Table {
             row_num: 0,
             max_pages: header.num_pages,
         })
+    }
+
+    /// Wrapper that takes a user and database, and calls new
+    /// with the correct directory.
+    pub fn from_user(
+        user: &User,
+        database: &Database,
+        table_name: &String,
+        table_extension: Option<&String>,
+    ) -> Result<Table, String> {
+        let table_dir: String = database.get_current_working_branch_path(user);
+        Table::new(&table_dir, table_name, table_extension)
     }
 
     fn get_offset(&self) -> usize {
@@ -198,12 +210,12 @@ impl Table {
     /// It allows us to rewrite a specific row from the table.
     /// It returns a diff of the rows that were updated.
     pub fn rewrite_rows(&self, mut rows: Vec<RowInfo>) -> Result<UpdateDiff, String> {
-        //TODO: Update rewrite rows to account for the revert commit case
         // Keep track of how the rows have changed.
         let mut diff: UpdateDiff = UpdateDiff {
             table_name: self.name.clone(),
             schema: self.schema.clone(),
             rows: Vec::new(),
+            old_rows: Vec::new(),
         };
 
         if rows.len() < 1 {
@@ -220,6 +232,25 @@ impl Table {
                 pagenum = row.pagenum;
                 load_page(row.pagenum, &self.path, page.as_mut())?;
             }
+
+            // Read in the old values
+            let row_read_result: Option<Row> = read_row(&self.schema, &page, row.rownum);
+            match row_read_result {
+                Some(row_read) => {
+                    diff.old_rows.push(RowInfo {
+                        pagenum: row.pagenum,
+                        rownum: row.rownum,
+                        row: row_read,
+                    });
+                }
+                None => {
+                    return Err(format!(
+                        "rewrite_rows: Could not read row {} from page {}",
+                        row.rownum, row.pagenum
+                    ));
+                }
+            }
+
             write_row(&self.schema, &mut page, &row.row, row.rownum)?;
             // Add the row to the diff
             diff.rows.push(row.clone());
@@ -369,7 +400,6 @@ impl Table {
                 Some(row_read) => {
                     //Runs code if successfully deleted a row
                     clear_row(&self.schema, page.as_mut(), rownum)?;
-
                     // Add changes to the diff
                     diff.rows.push(RowInfo {
                         row: row_read,
@@ -378,10 +408,6 @@ impl Table {
                     });
                 }
                 None => {
-                    println!(
-                        "Error: Row not found at pagenum {} rownum {}",
-                        pagenum, rownum
-                    );
                     return Err(
                         format!(
                             "Tableio::remove_rows: The provided Row: (pagenum: {}, rownum: {}) doesn't exist!", pagenum, rownum

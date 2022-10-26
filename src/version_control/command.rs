@@ -152,10 +152,7 @@ mod tests {
 
     use crate::{
         executor::query::create_table,
-        fileio::{
-            databaseio::{create_db_instance, delete_db_instance},
-            header::Schema,
-        },
+        fileio::{databaseio::delete_db_instance, header::Schema},
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
