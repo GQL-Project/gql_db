@@ -8,8 +8,6 @@ use prost_types::Timestamp;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
 
-use super::query::resolve_reference;
-
 /// Basically, these are pointers to functions that can take a row and return a bool
 /// We could also encounter an invalid operation, like 1 + 'a' or 'a' + 'b'
 /// They have to be done this way, as the actual function itself is not known until runtime
@@ -17,6 +15,8 @@ use super::query::resolve_reference;
 pub type SolvePredicate = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// The SolveValue Function Type takes a row and returns a Value, which is used by SolvePredicate
 /// It's also used to resolve the value of a column in a row, such as in `select id + 5 from table`
+/// Think of both of these functions as a 'solver' given a row, it will reduce the row to a value,
+/// as defined by the expression in the query.
 pub type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
@@ -30,10 +30,11 @@ pub enum JointValues {
 pub fn resolve_predicate(pred: &Option<SolvePredicate>, row: &Row) -> Result<bool, String> {
     match pred {
         Some(pred) => pred(row),
-        None => Ok(true),
+        None => Ok(true), // If there's no predicate, then it's always true
     }
 }
 
+/// Converts the type into a 'Proper' Value, which is used by the database
 pub fn resolve_value(solver: &SolveValue, row: &Row) -> Result<Value, String> {
     match solver(row)? {
         JointValues::DBValue(v) => Ok(v),
@@ -41,7 +42,11 @@ pub fn resolve_value(solver: &SolveValue, row: &Row) -> Result<Value, String> {
     }
 }
 
-// Currently, this is implemented recursively, see if we can do it iteratively
+/// We know a lot of information already about the expression, so we can 'reduce' it
+/// into just a function that takes a row and outputs true or false. This way, we don't
+/// have to re-parse the function every time, and we have a direct function to call
+/// when we need to filter rows.
+/// Currently, this is implemented recursively, see if we can do it iteratively
 pub fn solve_predicate(
     pred: &Expr,
     column_names: &Vec<(String, Column, String)>,
@@ -51,6 +56,7 @@ pub fn solve_predicate(
         Expr::Identifier(_) => {
             let solve_value = solve_value(pred, column_names, index_refs)?;
             Ok(Box::new(move |row| {
+                // Figure out the whether the value of the column cell is a boolean or not.
                 let value = solve_value(row)?;
                 match value {
                     JointValues::DBValue(Value::Bool(x)) => Ok(x),
@@ -86,6 +92,8 @@ pub fn solve_predicate(
             }))
         }
         Expr::BinaryOp { left, op, right } => match op {
+            // Resolve values from the two sides of the expression, and then perform
+            // the comparison on the two values
             BinaryOperator::Gt => {
                 let left = solve_value(left, column_names, index_refs)?;
                 let right = solve_value(right, column_names, index_refs)?;
@@ -140,6 +148,9 @@ pub fn solve_predicate(
                     Ok(left.ne(&right))
                 }))
             }
+            // Create functions for the LHS and RHS of the 'and' operation, and then
+            // combine them into a single function that returns true if both functions return true
+            // Note how this would also indirectly handle short-circuiting
             BinaryOperator::And => {
                 let left = solve_predicate(left, column_names, index_refs)?;
                 let right = solve_predicate(right, column_names, index_refs)?;
@@ -164,25 +175,33 @@ pub fn solve_predicate(
     }
 }
 
+/// Similar to solve_predicate, this is another function that takes a Row and reduces it to the
+/// value described by the expression. In the most simple case, if we have an Expression just
+/// referencing a column name, we just take a row and then apply the index on that row.
+/// The main difference between this and solve_predicate is that we can return a Value, instead of
+/// a boolean.
 pub fn solve_value(
     pred: &Expr,
     column_names: &Vec<(String, Column, String)>,
     index_refs: &HashMap<String, usize>,
 ) -> Result<SolveValue, String> {
     match pred {
+        // This would mean that we're referencing a column name, so we just need to figure out the
+        // index of that column name in the row, and then return a function that references this index
+        // in the provided row.
         Expr::Identifier(x) => {
             let x = resolve_reference(x.value.to_string(), column_names)?;
             let index = *index_refs
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
-            // Force the closure to take `index` ownership
+            // Force the closure to take `index` ownership (the index value is copied into the function below)
             // Then, create a closure that takes in a row and returns the value at the index
             Ok(Box::new(move |row: &Row| {
                 Ok(JointValues::DBValue(row[index].clone()))
             }))
         }
         Expr::CompoundIdentifier(list) => {
-            // Join all the identifiers in the list with a dot
+            // Join all the identifiers in the list with a dot, perform the same step as above
             let x = resolve_reference(
                 list.iter()
                     .map(|x| x.value.to_string())
@@ -199,7 +218,10 @@ pub fn solve_value(
         }
         Expr::Nested(x) => solve_value(x, column_names, index_refs),
         Expr::Value(x) => {
+            // Create a copy of the value
             let val = x.clone();
+            // Move a reference of this value into the closure, so that we can reference
+            // it when we wish to respond with a Value.
             Ok(Box::new(move |_| Ok(JointValues::SQLValue(val.clone()))))
         }
         Expr::BinaryOp { left, op, right } => match op {
@@ -267,12 +289,54 @@ pub fn solve_value(
                     JointValues::DBValue(Value::I32(0)).subtract(&val)
                 }))
             }
+            UnaryOperator::Not => {
+                // Solve the inner value, expecting it's return type to be a boolean, and negate it.
+                let binary = solve_predicate(expr, column_names, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let pred = binary(row)?;
+                    Ok(JointValues::DBValue(Value::Bool(!pred)))
+                }))
+            }
             _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
         },
         _ => Err(format!("Unexpected Value Clause: {}", pred)),
     }
 }
 
+// Given a column name, it figures out which table it belongs to and returns the
+// unambiguous column name. For example, if we have a table called "users" with
+// a column called "id", this would return "users.id". If "users" has an alias
+// already, like 'U', it would return "U.id".
+pub fn resolve_reference(
+    column_name: String,
+    table_column_names: &Vec<(String, Column, String)>,
+) -> Result<String, String> {
+    if column_name.contains(".") {
+        // We know this works, as the parser does not allow for '.' in column names
+        Ok(column_name)
+    } else {
+        let matches: Vec<&String> = table_column_names
+            .iter()
+            .filter_map(|(col_name, _, name)| {
+                if name == &column_name {
+                    Some(col_name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if matches.len() == 1 {
+            Ok(matches[0].clone())
+        } else if matches.len() != 0 {
+            Err(format!("Column name {} is ambiguous.", column_name))
+        } else {
+            Err(format!("Column name {} does not exist.", column_name))
+        }
+    }
+}
+
+/// When applying some function to two values, we need to know how to treat the
+/// two values.
 type ApplyInt = fn(i64, i64) -> Result<i64, String>;
 type ApplyFloat = fn(f64, f64) -> Result<f64, String>;
 type ApplyString = fn(&String, &String) -> Result<String, String>;
@@ -321,6 +385,8 @@ impl JointValues {
             .map_err(|_| format!("Cannot divide {:?} and {:?}", self, other))
     }
 
+    /// This function applies a function to two values of similar types, casting when necessary.
+    /// This takes in three functions, telling us how to treat integers, floats and strings.
     fn apply(
         &self,
         other: &Self,

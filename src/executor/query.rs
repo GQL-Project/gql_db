@@ -415,36 +415,6 @@ fn resolve_selects(
         .collect::<Result<Vec<SolveValue>, String>>()
 }
 
-// Given a column name, it figures out which table it belongs to and returns the
-// unambiguous column name
-pub fn resolve_reference(
-    column_name: String,
-    table_column_names: &Vec<(String, Column, String)>,
-) -> Result<String, String> {
-    if column_name.contains(".") {
-        // We know this works, as the parser does not allow for '.' in column names
-        Ok(column_name)
-    } else {
-        let matches: Vec<&String> = table_column_names
-            .iter()
-            .filter_map(|(col_name, _, name)| {
-                if name == &column_name {
-                    Some(col_name)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if matches.len() == 1 {
-            Ok(matches[0].clone())
-        } else if matches.len() != 0 {
-            Err(format!("Column name {} is ambiguous.", column_name))
-        } else {
-            Err(format!("Column name {} does not exist.", column_name))
-        }
-    }
-}
-
 pub fn to_ident(s: String) -> Expr {
     Expr::Identifier(Ident {
         value: s.to_string(),
