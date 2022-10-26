@@ -80,9 +80,34 @@ pub fn execute_update(
                 from,
                 selection
             } => {
-                // your code here
-                //let table_name = table_name.0[0].value.to_string();
+                println!("table: {:?}", table);
+                println!("assignments: {:?}", assignments);
+                println!("from: {:?}", from);
+                println!("selection: {:?}", selection);
+                /* TODO: 1. Get Table name //
+                         2. Parse assignments into Vector
+                 */
+                let mut final_table = String::from("test"); // What is the best way to do this?
                 //let mut all_data = Vec::new();
+
+                match table.relation.clone() {
+                    sqlparser::ast::TableFactor::Table{
+                        name: table_name,
+                        alias: alias,
+                        args: args,
+                        with_hints: with_hints
+                    } => {
+                        // Now you have the table
+                        final_table = table_name.to_string();
+                    },
+                    _ => {
+                        // Not a table inside the TableFactor enum
+                    }
+                }
+                //println!("table: {:?}", table_name);
+                println!("Table: {:?}", final_table);
+                
+
 
             }
             Statement::CreateTable { name, columns, .. } => {
@@ -129,6 +154,7 @@ pub fn execute_update(
                                 }
                             }
                             all_data.push(data);
+                            println!("data: {:?}", all_data);
                         }
                     }
                     _ => {
