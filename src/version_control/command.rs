@@ -235,26 +235,6 @@ pub fn discard(user: &mut User) -> Result<(), String> {
 
     //Deleting the temp copy of the branch
     fs::remove_dir(branch_path + "-temp");
-
-    //Get the path to where the new branch will be
-    let new_branch_path: String = get_db_instance()?.get_branch_path_from_name(&user.get_current_branch_name());
-
-    // Create the branch directory
-    std::fs::create_dir_all(&new_branch_path).map_err(|e| {
-        "Command::discard() Error: Failed to create directory for given branch path: "
-            .to_owned()
-           + &e.to_string()
-    })?;
-
-    // Copy all the tables from the main branch to the new branch directory
-    let mut options = fs_extra::dir::CopyOptions::new();
-    options.content_only = true;
-    fs_extra::dir::copy(
-        &(new_branch_path),
-        &(new_branch_path.clone() + "-temp"),
-        &options,
-    )
-    .map_err(|e| "Command::discard() Error: ".to_owned() + &e.to_string())?;
     
     Ok(())
 }
