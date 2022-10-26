@@ -255,6 +255,8 @@ impl Database {
 
         // Clear the diffs for the user
         user.set_diffs(&Vec::new());
+        // Clear the commands for the user
+        user.set_commands(&Vec::new());
 
         Ok((node, commit))
     }
