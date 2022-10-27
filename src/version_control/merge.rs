@@ -6,6 +6,7 @@ use crate::{
 use super::diff::*;
 use std::collections::HashMap;
 
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum MergeConflictResolutionAlgo {
     NoConflicts, // Fails if there are conflicts. This is a 'clean' merge
     UseTarget,   // Uses the target's version of any conflicting cases
@@ -76,9 +77,19 @@ pub fn create_merge_diffs(
                         });
 
                     // If we don't create the table in the source diffs, that means the table was deleted in the target branch
-                    // So we don't need to do anything
+                    // This is a merge conflict if our algorithm is NoConflicts
                     if create_table_diff_option.is_none() {
-                        continue;
+                        if conflict_res_algo == MergeConflictResolutionAlgo::NoConflicts {
+                            return Err(
+                                format!(
+                                    "Merge Conflict: Table {} has been deleted in target branch, but is updated in the source branch", 
+                                    insert_source_diff.table_name
+                                )
+                            );
+                        }
+                        else {
+                            continue;
+                        }
                     }
                     // Otherwise, we just insert the rows into the table since we are creating it in the source branch
                     else {
@@ -153,6 +164,41 @@ pub fn create_merge_diffs(
                 }
             }
             Diff::Update(mut update_source_diff) => {
+                // If the table does not exist in the target branch
+                if get_db_instance()?
+                    .get_table_path_from_dir(&update_source_diff.table_name, target_table_dir)
+                    .is_err()
+                {
+                    // Check if we have a create table in the source diffs
+                    let create_table_diff_option =
+                        source_diffs.iter().find_map(|diff| match diff {
+                            Diff::TableCreate(create_table_diff) => {
+                                if create_table_diff.table_name == update_source_diff.table_name {
+                                    Some(create_table_diff)
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        });
+
+                    // If we don't create the table in the source diffs, that means the table was deleted in the target branch
+                    // This is a merge conflict if our algorithm is NoConflicts
+                    if create_table_diff_option.is_none() {
+                        if conflict_res_algo == MergeConflictResolutionAlgo::NoConflicts {
+                            return Err(
+                                format!(
+                                    "Merge Conflict: Table {} has been deleted in target branch, but is updated in the source branch", 
+                                    update_source_diff.table_name
+                                )
+                            );
+                        }
+                        else {
+                            continue;
+                        }
+                    }
+                }
+
                 // We need to map the rows in update_source_diff to the rows in the target
                 for row in update_source_diff.rows.iter_mut() {
                     // If it is mapped to the target, use the mapped row location
@@ -198,6 +244,41 @@ pub fn create_merge_diffs(
                     .append(&mut update_source_diff.rows);
             }
             Diff::Remove(mut remove_source_diff) => {
+                // If the table does not exist in the target branch
+                if get_db_instance()?
+                    .get_table_path_from_dir(&remove_source_diff.table_name, target_table_dir)
+                    .is_err()
+                {
+                    // Check if we have a create table in the source diffs
+                    let create_table_diff_option =
+                        source_diffs.iter().find_map(|diff| match diff {
+                            Diff::TableCreate(create_table_diff) => {
+                                if create_table_diff.table_name == remove_source_diff.table_name {
+                                    Some(create_table_diff)
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        });
+
+                    // If we don't create the table in the source diffs, that means the table was deleted in the target branch
+                    // This is a merge conflict if our algorithm is NoConflicts
+                    if create_table_diff_option.is_none() {
+                        if conflict_res_algo == MergeConflictResolutionAlgo::NoConflicts {
+                            return Err(
+                                format!(
+                                    "Table {} has been deleted in target branch, but has rows removed from it in the source branch", 
+                                    remove_source_diff.table_name
+                                )
+                            );
+                        }
+                        else {
+                            continue;
+                        }
+                    }
+                }
+
                 // We need to map the rows in remove_source_diff to the rows in the target
                 for row in remove_source_diff.rows.iter_mut() {
                     // If it is mapped to the target, use the mapped row location
@@ -326,7 +407,7 @@ pub fn create_merge_diffs(
 /// Returns a tuple:
 ///    - The diffs that should be applied to the target as a prerequisite to get the source merged in
 ///    - The diffs that should be applied to the target to complete the merge
-pub fn handle_merge_conflicts(
+fn handle_merge_conflicts(
     processed_source_diffs: &mut SquashDiffs, // The source diffs to merge into the target diffs
     target_diffs: &Vec<Diff>,                 // The target diffs to merge the source diff into
     target_table_dir: &String, // The directory where the target branch tables are located.
@@ -370,8 +451,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source,
-                                                   but row was also inserted at the same location in the target", 
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, but row was also inserted at the same location in the target", 
                                                    res_insert_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -403,8 +483,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, 
-                                                   but row was also updated at the same location in the target", 
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, but row was also updated at the same location in the target", 
                                                    res_insert_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -436,8 +515,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, 
-                                                   but row was also removed at the same location in the target", 
+                                return Err(format!("Merge Conflict: Inserted row at location {:?} in table {} in source, but row was also removed at the same location in the target", 
                                                    res_insert_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -477,8 +555,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, 
-                                                   but row was also inserted at the same location in the target", 
+                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, but row was also inserted at the same location in the target", 
                                                    res_update_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -510,8 +587,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, 
-                                                   but row was also updated at the same location in the target", 
+                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, but row was also updated at the same location in the target", 
                                                    res_update_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -543,13 +619,14 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, 
-                                                   but row was also removed at the same location in the target", 
+                                return Err(format!("Merge Conflict: Updated row at location {:?} in table {} in source, but row was also removed at the same location in the target", 
                                                    res_update_row.get_row_location(),
                                                    res_table_name));
                             }
                             MergeConflictResolutionAlgo::UseSource => {
-                                // Overwrite the target row with the source row by keeping the source row
+                                // Overwrite the target row with the source row by changing the source row from an update to an insert
+                                res_table_diff.insert_diff.rows.push(res_update_row.clone());
+                                res_table_diff.update_diff.rows.remove(idx);
                             }
                             MergeConflictResolutionAlgo::UseTarget => {
                                 // Remove the row from the source by removing it from the res_table_diff.update_diff
@@ -584,8 +661,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, 
-                                                   but row was also inserted at the same location in the target", 
+                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, but row was also inserted at the same location in the target", 
                                                    res_remove_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -617,8 +693,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, 
-                                                   but row was also updated at the same location in the target", 
+                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, but row was also updated at the same location in the target", 
                                                    res_remove_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -650,8 +725,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, 
-                                                   but row was also removed at the same location in the target", 
+                                return Err(format!("Merge Conflict: Removed row at location {:?} in table {} in source, but row was also removed at the same location in the target", 
                                                    res_remove_row.get_row_location(),
                                                    res_table_name));
                             }
@@ -741,8 +815,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Removed table {} in source, 
-                                                    but rows were also inserted into the same table in the target", 
+                                return Err(format!("Merge Conflict: Removed table {} in source, but rows were also inserted into the same table in the target", 
                                                     res_table_remove_diff.table_name,
                                                     ));
                             }
@@ -783,8 +856,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Removed table {} in source, 
-                                                    but rows were also updated in the same table in the target", 
+                                return Err(format!("Merge Conflict: Removed table {} in source, but rows were also updated in the same table in the target", 
                                                     res_table_remove_diff.table_name,
                                                     ));
                             }
@@ -825,8 +897,7 @@ pub fn handle_merge_conflicts(
                         match conflict_res_algo {
                             MergeConflictResolutionAlgo::NoConflicts => {
                                 // We don't want to handle merge conflicts, so just throw error
-                                return Err(format!("Merge Conflict: Removed table {} in source, 
-                                                    but rows were also removed from the same table in the target", 
+                                return Err(format!("Merge Conflict: Removed table {} in source, but rows were also removed from the same table in the target", 
                                                     res_table_remove_diff.table_name,
                                                     ));
                             }
@@ -986,7 +1057,7 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::{create_table, drop_table},
+        executor::query::create_table,
         fileio::{
             databaseio::{delete_db_instance, get_db_instance, MAIN_BRANCH_NAME},
             header::Schema,
@@ -2685,35 +2756,6 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_bench_db_merge() {
-        // Create a demo database
-        let mut user: User = create_demo_db("test_bench_db_merge");
-
-        // Switch to main branch
-        get_db_instance()
-            .unwrap()
-            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
-            .unwrap();
-
-        // Merge test_branch1 into main
-        let _merge_commit: Commit = get_db_instance()
-            .unwrap()
-            .merge_branches(
-                &"test_branch1".to_string(),
-                &mut user,
-                &"Merged Branches".to_string(),
-                true,
-                MergeConflictResolutionAlgo::NoConflicts,
-                false,
-            )
-            .unwrap();
-
-        // Delete the db instance
-        delete_db_instance().unwrap();
-    }
-
-    #[test]
-    #[serial]
     fn test_table_create_and_insert_merge() {
         // Create the database
         let db_name: String = "test_merge".to_string();
@@ -3212,6 +3254,228 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_remove_insert_case_merge() {
+        // Create the database
+        let db_name: String = "test_merge".to_string();
+        fcreate_db_instance(&db_name);
+
+        // Table names
+        let table_name_1: String = "table1".to_string();
+
+        // Branch name
+        let branch1_name: String = "test_branch1".to_string();
+        let branch2_name: String = "test_branch2".to_string();
+
+        // Diffs applied to the branches
+        let mut main_branch_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch1_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch2_diffs: Vec<Diff> = Vec::new();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table_create_diff1) = create_table(
+            &table_name_1,
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        main_branch_diffs.push(Diff::TableCreate(table_create_diff1));
+
+        // Insert some rows into the first table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(100), Value::String("First".to_string())],
+            vec![Value::I32(200), Value::String("Second".to_string())],
+            vec![Value::I32(300), Value::String("Third".to_string())],
+        ];
+        let insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        main_branch_diffs.push(Diff::Insert(insert_diff));
+
+        // Create a commit on the main branch
+        user.set_diffs(&main_branch_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create 2 Tables".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        main_branch_diffs.clear();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch1_name, &mut user)
+            .unwrap();
+
+        // Remove the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch1_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let table1_test_branch1: Table =
+            Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
+        test_branch1_diffs.push(Diff::Remove(remove_diff));
+
+        // Create a commit on the new branch
+        user.set_diffs(&test_branch1_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch1".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch1_diffs.clear();
+
+        // Switch to the main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch2_name, &mut user)
+            .unwrap();
+
+        // Update the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch2_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let table2_test_branch1: Table =
+            Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
+        let update_diff: UpdateDiff = table2_test_branch1
+            .rewrite_rows(vec![RowInfo {
+                pagenum: 1,
+                rownum: 1,
+                row: vec![Value::I32(200), Value::String("SecondUpdated".to_string())],
+            }])
+            .unwrap();
+        test_branch2_diffs.push(Diff::Update(update_diff));
+
+        // Create a commit on the 2nd new branch
+        user.set_diffs(&test_branch2_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch2".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch2_diffs.clear();
+
+        // Switch to the main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+
+        // Merge the first new branch into the main branch
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch1_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+        let merge_diffs: Vec<Diff> = merge_commit.diffs;
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+
+        // Assert that the merge diff is a remove diff
+        match &merge_diffs[0] {
+            Diff::Remove(remove_diff) => {
+                // Assert that the remove diff is correct
+                assert_eq!(remove_diff.table_name, table_name_1);
+                assert_eq!(remove_diff.rows.len(), 1);
+                assert_eq!(remove_diff.rows[0].pagenum, 1);
+                assert_eq!(remove_diff.rows[0].rownum, 1);
+            }
+            _ => panic!("Expected a remove diff"),
+        }
+
+        // Try merging the second new branch into the main branch
+        assert_eq!(
+            get_db_instance()
+                .unwrap()
+                .merge_branches(
+                    &branch2_name,
+                    &mut user,
+                    &"Merged Branches".to_string(),
+                    true,
+                    MergeConflictResolutionAlgo::NoConflicts,
+                    false,
+                )
+                .is_err(),
+            true
+        );
+
+        // Merge the second new branch using the source branch's changes
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch2_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::UseSource,
+                false,
+            )
+            .unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_commit.diffs.len(), 1);
+
+        // Assert that the merge diff is an insert diff
+        match &merge_commit.diffs[0] {
+            Diff::Insert(insert_diff) => {
+                // Assert that the insert diff is correct
+                assert_eq!(insert_diff.table_name, table_name_1);
+                assert_eq!(insert_diff.rows.len(), 1);
+                assert_eq!(insert_diff.rows[0].pagenum, 1);
+                assert_eq!(insert_diff.rows[0].rownum, 1);
+                assert_eq!(insert_diff.rows[0].row.len(), 2);
+                assert_eq!(insert_diff.rows[0].row[0], Value::I32(200));
+                assert_eq!(
+                    insert_diff.rows[0].row[1],
+                    Value::String("SecondUpdated".to_string())
+                );
+            }
+            _ => panic!("Expected an insert diff"),
+        }
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
     fn test_dual_remove_tables_on_different_branches_merge() {
         // Create the database
         let db_name: String = "test_merge".to_string();
@@ -3414,6 +3678,184 @@ mod tests {
         delete_db_instance().unwrap();
     }
 
+    #[test]
+    #[serial]
+    fn test_bench_db_merge() {
+        // Create a demo database
+        let mut user: User = create_demo_db("test_bench_db_merge");
+
+        // Switch to main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+
+        // Merge test_branch2 into main
+        let merge_commit1: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &"test_branch2".to_string(),
+                &mut user,
+                &"Merged Branches test_branch2 & main".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_commit1.diffs.len(), 1);
+
+        // Assert that the merge diff is a TableRemove
+        let table_remove_diff: &TableRemoveDiff = match &merge_commit1.diffs[0] {
+            Diff::TableRemove(table_remove_diff) => table_remove_diff,
+            _ => panic!("Expected a TableRemoveDiff"),
+        };
+        assert_eq!(table_remove_diff.table_name, "locations");
+        assert_rows_are_correct_no_order(
+            table_remove_diff.rows_removed.iter().map(|rowinfo| rowinfo.row.clone()).collect(), 
+            vec![
+                vec![Value::I32(1), Value::String("Home".to_string()), Value::Bool(true)],
+                vec![Value::I32(2), Value::String("Work".to_string()), Value::Bool(false)],
+                vec![Value::I32(21), Value::String("Gym".to_string()), Value::Bool(true)],
+                vec![Value::I32(4), Value::String("Gymnasium".to_string()), Value::Bool(true)],
+                vec![Value::I32(22), Value::String("Garden".to_string()), Value::Bool(false)],
+                vec![Value::I32(6), Value::String("Restaurant".to_string()), Value::Bool(true)],
+                vec![Value::I32(23), Value::String("Gallery".to_string()), Value::Bool(false)],
+                vec![Value::I32(8), Value::String("Garden".to_string()), Value::Bool(false)],
+                vec![Value::I32(9), Value::String("Library".to_string()), Value::Bool(false)],
+                vec![Value::I32(10), Value::String("Gallery".to_string()), Value::Bool(false)],
+                vec![Value::I32(24), Value::String("Gymnasium".to_string()), Value::Bool(true)],
+                vec![Value::I32(25), Value::String("University".to_string()), Value::Bool(true)],
+                vec![Value::I32(27), Value::String("Dubai".to_string()), Value::Bool(false)],
+                vec![Value::I32(28), Value::String("London".to_string()), Value::Bool(true)],
+                vec![Value::I32(29), Value::String("New York".to_string()), Value::Bool(true)],
+                vec![Value::I32(30), Value::String("Paris".to_string()), Value::Bool(false)],
+                vec![Value::I32(31), Value::String("Tokyo".to_string()), Value::Bool(true)],
+            ]
+        );
+
+        // Try merging test_branch1 into main
+        assert_eq!(
+            get_db_instance()
+                .unwrap()
+                .merge_branches(
+                    &"test_branch1".to_string(),
+                    &mut user,
+                    &"Merged Branches test_branch1 & main".to_string(),
+                    true,
+                    MergeConflictResolutionAlgo::NoConflicts,
+                    false,
+                ).is_err(), 
+            true
+        );
+
+        // Merge test_branch1 into main using the target branch's changes
+        let merge_commit2: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &"test_branch1".to_string(),
+                &mut user,
+                &"Merged Branches test_branch1 & main".to_string(),
+                true,
+                MergeConflictResolutionAlgo::UseTarget,
+                false,
+            )
+            .unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_commit2.diffs.len(), 1);
+
+        // Assert that the merge diff is an Insert
+        let insert_diff: &InsertDiff = match &merge_commit2.diffs[0] {
+            Diff::Insert(insert_diff) => insert_diff,
+            _ => panic!("Expected an InsertDiff"),
+        };
+        assert_eq!(insert_diff.table_name, "personal_info");
+
+        // Assert that the rows are correct
+        assert_rows_are_correct_no_order(
+            insert_diff.rows.iter().map(|rowinfo| rowinfo.row.clone()).collect(), 
+            vec![
+                vec![
+                    Value::I32(19), 
+                    Value::String("Dwayne".to_string()), 
+                    Value::String("Johnson".to_string()), 
+                    Value::I64(30), Value::Float(5.8), 
+                    Value::Timestamp(
+                        parse_time(&"2020-01-08 00:00:11".to_string()
+                    ).unwrap())
+                ],
+                vec![
+                    Value::I32(20), 
+                    Value::String("Chris".to_string()), 
+                    Value::String("Hemsworth".to_string()), 
+                    Value::I64(28), 
+                    Value::Null, 
+                    Value::Timestamp(
+                        parse_time(&"2020-01-09 12:00:23".to_string()
+                    ).unwrap())
+                ],
+                vec![
+                    Value::I32(21), 
+                    Value::String("Chris".to_string()), 
+                    Value::String("Evans".to_string()), 
+                    Value::I64(35), 
+                    Value::Float(5.9), 
+                    Value::Timestamp(
+                        parse_time(&"2020-01-20 00:00:11".to_string()
+                    ).unwrap())
+                ],
+                vec![
+                    Value::I32(15), 
+                    Value::String("Wanda".to_string()), 
+                    Value::String("Vision".to_string()), 
+                    Value::I64(28), 
+                    Value::Float(5.6), 
+                    Value::Timestamp(
+                        parse_time(&"2020-01-01 12:00:23".to_string()
+                    ).unwrap())
+                ],
+                vec![
+                    Value::I32(17), 
+                    Value::String("Scottish".to_string()), 
+                    Value::String("Language".to_string()), 
+                    Value::I64(35), 
+                    Value::Float(5.9), 
+                    Value::Timestamp(
+                        parse_time(&"2020-01-06 00:00:11".to_string()
+                    ).unwrap())
+                ],
+            ]
+        );
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    /// Asserts that the given rows are correct, but doesn't matter what order
+    fn assert_rows_are_correct_no_order(rows: Vec<Row>, mut expected_rows: Vec<Row>) {
+        // Assert we have the correct number of rows
+        assert_eq!(rows.len(), expected_rows.len());
+        for i in 0..rows.len() {
+            // Check which row from expected_rows matches the current row
+            let mut is_row_present: i32 = -1;
+
+            for j in 0..expected_rows.len() {
+                // Check to see if any row is correct
+                if is_row_is_correct(&rows[i], expected_rows[j].clone()) {
+                    is_row_present = j as i32;
+                    break;
+                }
+            }
+
+            assert!(is_row_present != -1, "Row not found: {:?}", rows[i]);
+
+            // Remove the row from expected_rows
+            expected_rows.remove(is_row_present as usize);
+        }
+    }
+
     /// Asserts that the given rows are correct.
     fn assert_rows_are_correct(rows: Vec<Row>, expected_rows: Vec<Row>) {
         // Assert we have the correct number of rows
@@ -3432,6 +3874,24 @@ mod tests {
             // Assert the values are correct
             assert_eq!(row[i], expected_row[i]);
         }
+    }
+
+    /// Checks that a single row is correct by matching it to the expected row.
+    fn is_row_is_correct(row: &Row, expected_row: Row) -> bool {
+        // Assert that the row has the correct number of values
+        if row.len() == expected_row.len() {
+            for i in 0..row.len() {
+                // Check the values are correct
+                if row[i] != expected_row[i] {
+                    return false;
+                }
+            }
+        }
+        else {
+            return false;
+        }
+
+        return true;
     }
 
     /// Gets the insert Diff from within the vector of Diffs
