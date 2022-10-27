@@ -82,13 +82,13 @@ pub fn execute_update(
             } => {
                 println!("table: {:?}", table);
                 println!("assignments: {:?}", assignments);
-                println!("from: {:?}", from);
+                println!("from: {:?}", from); // This value is unimportant
                 println!("selection: {:?}", selection);
                 /* TODO: 1. Get Table name //
                          2. Parse assignments into Vector
                  */
                 let mut final_table = String::from("test"); // What is the best way to do this?
-                //let mut all_data = Vec::new();
+                let mut all_data: Vec<(String, String)> = Vec::new();
 
                 match table.relation.clone() {
                     sqlparser::ast::TableFactor::Table{
@@ -107,7 +107,27 @@ pub fn execute_update(
                 //println!("table: {:?}", table_name);
                 println!("Table: {:?}", final_table);
                 
+                // Iterate through and build vector of assignments to pass to update
+                for assignment in assignments {
+                    let mut column_name = String::new();
+                    let mut insert_value = String::new();
+                    column_name = assignment.id[0].value.clone();
 
+                    match assignment.value.clone() {
+                        Expr::Value(value) => {
+                            insert_value = value.to_string();
+                        },
+                        _ => {
+                            // Not a value
+                        }
+                    }
+                    all_data.push((column_name, insert_value)); 
+                }
+
+                // Now we have the table name and the assignments
+                println!("Updated assignments: {:?}", all_data);
+
+                //results.push(update(all_data, final_table, get_db_instance()?, user)?);
 
             }
             Statement::CreateTable { name, columns, .. } => {
@@ -320,18 +340,18 @@ pub fn select(
 /// 
 /* 
 pub fn update(
-    values: Vec<Vec<String>>,
+    values: Vec<(String, String)>,
     table_name: String,
     database: &Database,
+    selection : Option<Expr>,
     user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
 
 
     //user.append_diff(&Diff::Insert(diff.clone()));
-    //Ok((format!("{} rows were successfully inserted.", len), diff))
+    Ok((format!("{} rows were successfully inserted.", len), diff))
 }
 */
-
 /// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
 /// into the table. It returns a string containing the number of rows inserted.
 /// If the table does not exist, it returns an error.
