@@ -305,7 +305,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 // error message here
                 return Err(format!("Invalid VC Command: {}", vec.join(" ")));
             }
-            return Ok("Valid Status Command".to_string());
+            return Ok(user.get_status());
         }
         "del" => {
             // GQL del branch or GQL del -f branch 

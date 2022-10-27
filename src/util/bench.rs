@@ -1,5 +1,5 @@
 use crate::fileio::header::Schema;
-use crate::fileio::tableio::delete_table_in_dir;
+use crate::fileio::tableio::{delete_table_in_dir, Table};
 use crate::util::{
     dbtype::{Column, Value},
     row::{Row, RowInfo},
@@ -184,6 +184,10 @@ pub fn create_demo_db(name: &str) -> User {
 
     db.create_branch(&"test_branch1".to_string(), &mut user)
         .unwrap();
+    db.switch_branch(&"test_branch1".to_string(), &mut user)
+        .unwrap();
+    table1 = Table::from_user(&user, &db, &"personal_info".to_string(), None).unwrap();
+    table2 = Table::from_user(&user, &db, &"locations".to_string(), None).unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -278,7 +282,14 @@ pub fn create_demo_db(name: &str) -> User {
             create_row1(20, "Chris", "Hemsworth", 28, -1.0, "2020-01-09 12:00:23"),
             create_row1(21, "Chris", "Evans", 35, 5.9, "2020-01-20 00:00:11"),
             create_row1(22, "Mark", "Ruffalo", 32, 5.7, "2020-01-21 00:00:00"),
-            create_row1(23, "Benedict", "Cumberba", 30, 5.8, "2020-01-22 00:00:11"),
+            create_row1(
+                23,
+                "Benedict",
+                "Cumberbatch",
+                30,
+                5.8,
+                "2020-01-22 00:00:11",
+            ),
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
@@ -331,6 +342,9 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
 
     db.switch_branch(&"main".to_string(), &mut user).unwrap();
+    table1 = Table::from_user(&user, &db, &"personal_info".to_string(), None).unwrap();
+    table2 = Table::from_user(&user, &db, &"locations".to_string(), None).unwrap();
+
     let diff = table1
         .insert_rows(vec![
             create_row1(24, "Tom", "Holland", 28, -1.0, "2020-01-23 12:00:23"),
@@ -401,6 +415,9 @@ pub fn create_demo_db(name: &str) -> User {
 
     db.create_branch(&"test_branch2".to_string(), &mut user)
         .unwrap();
+    db.switch_branch(&"test_branch2".to_string(), &mut user)
+        .unwrap();
+    table2 = Table::from_user(&user, &db, &"locations".to_string(), None).unwrap();
 
     let diff =
         delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user)).unwrap();
