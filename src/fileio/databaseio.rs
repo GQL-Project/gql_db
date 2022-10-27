@@ -347,7 +347,16 @@ impl Database {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        let mut table_path: String = self.get_current_working_branch_path(user);
+        let mut table_dir: String = self.get_current_working_branch_path(user);
+        self.get_table_path_from_dir(table_name, &table_dir)
+    }
+
+    /// Returns the file path to the table if it exists within table_dir
+    pub fn get_table_path_from_dir(&self, table_name: &String, table_dir: &String) -> Result<String, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let mut table_path: String = table_dir.clone();
         table_path.push(std::path::MAIN_SEPARATOR);
         table_path.push_str(table_name.as_str());
         table_path.push_str(TABLE_FILE_EXTENSION);
