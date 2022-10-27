@@ -61,7 +61,7 @@ impl Connection {
     }
 
     /// Gets the list of clients, but cloned in a non-mutable way.
-    fn get_clients_readonly(&self) -> Vec<User> {
+    pub fn get_clients_readonly(&self) -> Vec<User> {
         self.clients.lock().unwrap().clone()
     }
 }

@@ -339,6 +339,8 @@ pub fn parse_vc_cmd(query: &str, user: &mut User) -> Result<String, String> {
                 return Err("Branch does not exist".to_string());
             }
 
+            println!("flag is {}", flag);
+
             let del_results = command::del_branch(user, &branch_name.clone(), flag)?;
 
             if del_results.starts_with("ERROR:") {
