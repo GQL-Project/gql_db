@@ -708,12 +708,19 @@ impl CommitFile {
 
                                 // If it contained a remove diff, we need to also add those removed rows to the table remove diff
                                 if let Some(remove_rows_diff) = value.get(&diff::REMOVE_TYPE) {
-                                    let mut rows_removed_to_append: Vec<RowInfo> = remove_rows_diff.get_rows()?;
-                                    new_remove_diff.rows_removed.append(&mut rows_removed_to_append);
+                                    let mut rows_removed_to_append: Vec<RowInfo> =
+                                        remove_rows_diff.get_rows()?;
+                                    new_remove_diff
+                                        .rows_removed
+                                        .append(&mut rows_removed_to_append);
                                 }
 
                                 map.remove(&remove.table_name);
-                                add_diff(&mut map, Diff::TableRemove(new_remove_diff), remove.table_name.clone());
+                                add_diff(
+                                    &mut map,
+                                    Diff::TableRemove(new_remove_diff),
+                                    remove.table_name.clone(),
+                                );
                             }
                         }
                         // Otherwise, just add the diff like normal

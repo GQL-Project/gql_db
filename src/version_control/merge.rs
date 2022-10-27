@@ -58,22 +58,23 @@ pub fn create_merge_diffs(
                 }
 
                 // If the table does not exist in the target branch
-                if get_db_instance()?.get_table_path_from_dir(&insert_source_diff.table_name, target_table_dir).is_err() {
+                if get_db_instance()?
+                    .get_table_path_from_dir(&insert_source_diff.table_name, target_table_dir)
+                    .is_err()
+                {
                     // Check if we have a create table in the source diffs
-                    let create_table_diff_option = source_diffs
-                        .iter()
-                        .find_map(|diff| match diff {
+                    let create_table_diff_option =
+                        source_diffs.iter().find_map(|diff| match diff {
                             Diff::TableCreate(create_table_diff) => {
                                 if create_table_diff.table_name == insert_source_diff.table_name {
                                     Some(create_table_diff)
-                                }
-                                else {
+                                } else {
                                     None
                                 }
-                            },
+                            }
                             _ => None,
                         });
-                    
+
                     // If we don't create the table in the source diffs, that means the table was deleted in the target branch
                     // So we don't need to do anything
                     if create_table_diff_option.is_none() {
@@ -100,11 +101,12 @@ pub fn create_merge_diffs(
                 else {
                     // We need to map the rows in insert_source_diff to open rows in the target
                     // Find the open rows in the target
-                    let open_rows: Vec<EmptyRowLocation> = get_db_instance()?.get_open_rows_in_table(
-                        &insert_source_diff.table_name,
-                        target_table_dir,
-                        insert_source_diff.rows.len(),
-                    )?;
+                    let open_rows: Vec<EmptyRowLocation> = get_db_instance()?
+                        .get_open_rows_in_table(
+                            &insert_source_diff.table_name,
+                            target_table_dir,
+                            insert_source_diff.rows.len(),
+                        )?;
 
                     // Convert the EmptyRowLocations to a list of RowLocations
                     let free_row_locations: Vec<RowLocation> = open_rows
@@ -991,7 +993,11 @@ mod tests {
             tableio::{create_table_in_dir, delete_table_in_dir},
         },
         user::userdata::User,
-        util::{bench::{fcreate_db_instance, create_demo_db}, dbtype::*, row::Row},
+        util::{
+            bench::{create_demo_db, fcreate_db_instance},
+            dbtype::*,
+            row::Row,
+        },
         version_control::{commit::Commit, diff::Diff},
     };
 
@@ -2684,7 +2690,10 @@ mod tests {
         let mut user: User = create_demo_db("test_bench_db_merge");
 
         // Switch to main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Merge test_branch1 into main
         let _merge_commit: Commit = get_db_instance()
@@ -2698,7 +2707,6 @@ mod tests {
                 false,
             )
             .unwrap();
-
 
         // Delete the db instance
         delete_db_instance().unwrap();
@@ -2758,7 +2766,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        
+
         main_branch_diffs.clear();
 
         // Create a branch off of the first commit
@@ -2829,9 +2837,12 @@ mod tests {
                 None,
             )
             .unwrap();
-        
+
         // Switch to the main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Merge the new branch into the main branch
         let merge_commit: Commit = get_db_instance()
@@ -2862,8 +2873,8 @@ mod tests {
 
             // Assert that the rows are correct
             assert_rows_are_correct(
-                insert_diff.rows.iter().map(|x| x.row.clone()).collect(), 
-                rows
+                insert_diff.rows.iter().map(|x| x.row.clone()).collect(),
+                rows,
             );
         } else {
             panic!("Expected insert diff");
@@ -2940,10 +2951,14 @@ mod tests {
         let test_branch1_dir: String = get_db_instance()
             .unwrap()
             .get_current_working_branch_path(&user);
-        let table1_test_branch1: Table = Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
-        let remove_diff: RemoveDiff = table1_test_branch1.remove_rows(vec![
-            RowLocation{ pagenum: 1, rownum: 1},
-        ]).unwrap();
+        let table1_test_branch1: Table =
+            Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
         test_branch1_diffs.push(Diff::Remove(remove_diff));
 
         // Create a commit on the new branch
@@ -2958,14 +2973,20 @@ mod tests {
             )
             .unwrap();
         test_branch1_diffs.clear();
-        
+
         // Switch to the main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Remove the 2nd row from the first table
-        let remove_diff: RemoveDiff = table1.remove_rows(vec![
-            RowLocation{ pagenum: 1, rownum: 1},
-        ]).unwrap();
+        let remove_diff: RemoveDiff = table1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
         main_branch_diffs.push(Diff::Remove(remove_diff));
 
         // Create a commit on the main
@@ -3071,10 +3092,14 @@ mod tests {
         let test_branch1_dir: String = get_db_instance()
             .unwrap()
             .get_current_working_branch_path(&user);
-        let table1_test_branch1: Table = Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
-        let remove_diff: RemoveDiff = table1_test_branch1.remove_rows(vec![
-            RowLocation{ pagenum: 1, rownum: 1},
-        ]).unwrap();
+        let table1_test_branch1: Table =
+            Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
         test_branch1_diffs.push(Diff::Remove(remove_diff));
 
         // Create a commit on the new branch
@@ -3089,9 +3114,12 @@ mod tests {
             )
             .unwrap();
         test_branch1_diffs.clear();
-        
+
         // Switch to the main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Create a branch off of the first commit
         get_db_instance()
@@ -3104,10 +3132,14 @@ mod tests {
         let test_branch2_dir: String = get_db_instance()
             .unwrap()
             .get_current_working_branch_path(&user);
-        let table2_test_branch1: Table = Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
-        let remove_diff: RemoveDiff = table2_test_branch1.remove_rows(vec![
-            RowLocation{ pagenum: 1, rownum: 1},
-        ]).unwrap();
+        let table2_test_branch1: Table =
+            Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table2_test_branch1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
         test_branch2_diffs.push(Diff::Remove(remove_diff));
 
         // Create a commit on the 2nd new branch
@@ -3122,9 +3154,12 @@ mod tests {
             )
             .unwrap();
         test_branch2_diffs.clear();
-        
+
         // Switch to the main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Merge the first new branch into the main branch
         let merge_commit: Commit = get_db_instance()
@@ -3244,10 +3279,14 @@ mod tests {
         let test_branch1_dir: String = get_db_instance()
             .unwrap()
             .get_current_working_branch_path(&user);
-        let table1_test_branch1: Table = Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
-        let remove_diff: RemoveDiff = table1_test_branch1.remove_rows(vec![
-            RowLocation{ pagenum: 1, rownum: 1},
-        ]).unwrap();
+        let table1_test_branch1: Table =
+            Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
         test_branch1_diffs.push(Diff::Remove(remove_diff));
 
         // Remove the first table
@@ -3267,9 +3306,12 @@ mod tests {
             )
             .unwrap();
         test_branch1_diffs.clear();
-        
+
         // Switch to the main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Create a branch off of the first commit
         get_db_instance()
@@ -3282,16 +3324,18 @@ mod tests {
         let test_branch2_dir: String = get_db_instance()
             .unwrap()
             .get_current_working_branch_path(&user);
-        let mut table1_test_branch2: Table = Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
-        let remove_diff: RemoveDiff = table1_test_branch2.remove_rows(vec![
-            RowLocation{ pagenum: 1, rownum: 1},
-        ]).unwrap();
+        let mut table1_test_branch2: Table =
+            Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch2
+            .remove_rows(vec![RowLocation {
+                pagenum: 1,
+                rownum: 1,
+            }])
+            .unwrap();
         test_branch2_diffs.push(Diff::Remove(remove_diff));
 
         // Insert a new row into the first table
-        let rows2: Vec<Row> = vec![
-            vec![Value::I32(400), Value::String("Fourth".to_string())],
-        ];
+        let rows2: Vec<Row> = vec![vec![Value::I32(400), Value::String("Fourth".to_string())]];
         let insert_diff: InsertDiff = table1_test_branch2.insert_rows(rows2).unwrap();
         test_branch2_diffs.push(Diff::Insert(insert_diff));
 
@@ -3307,9 +3351,12 @@ mod tests {
             )
             .unwrap();
         test_branch2_diffs.clear();
-        
+
         // Switch to the main branch
-        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
 
         // Merge the first new branch into the main branch
         let merge_commit: Commit = get_db_instance()
@@ -3327,7 +3374,7 @@ mod tests {
 
         // Assert that the merge diffs are correct
         assert_eq!(merge_diffs.len(), 1);
-        
+
         // Assert that the merge diff is a TableRemove
         let table_remove_diff: &TableRemoveDiff = match &merge_diffs[0] {
             Diff::TableRemove(table_remove_diff) => table_remove_diff,
@@ -3335,7 +3382,11 @@ mod tests {
         };
         assert_eq!(table_remove_diff.table_name, table_name_1);
         assert_rows_are_correct(
-            table_remove_diff.rows_removed.iter().map(|rowinfo| rowinfo.row.clone()).collect(),
+            table_remove_diff
+                .rows_removed
+                .iter()
+                .map(|rowinfo| rowinfo.row.clone())
+                .collect(),
             vec![
                 vec![Value::I32(100), Value::String("First".to_string())],
                 vec![Value::I32(300), Value::String("Third".to_string())],

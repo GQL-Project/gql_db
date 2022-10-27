@@ -352,7 +352,11 @@ impl Database {
     }
 
     /// Returns the file path to the table if it exists within table_dir
-    pub fn get_table_path_from_dir(&self, table_name: &String, table_dir: &String) -> Result<String, String> {
+    pub fn get_table_path_from_dir(
+        &self,
+        table_name: &String,
+        table_dir: &String,
+    ) -> Result<String, String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
