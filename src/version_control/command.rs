@@ -1,6 +1,7 @@
 use crate::{fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME}, user::userdata::User};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use tonic::transport::Server;
 
 use super::{
     branches::{BranchNode, Branches},
@@ -69,7 +70,7 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
 }
 
 /// This function deletes a branch from the database
-pub fn del_branch(user: &User, branch_name: &String, flag: bool) -> Result<String, String> {
+pub fn del_branch(user: &User, branch_name: &String, flag: bool, all_users: Vec<User>) -> Result<String, String> {
     // Check if the branch is the master branch. If so, return an error
     // MAIN_BRANCH_NAME is the name of the master branch
     if branch_name == MAIN_BRANCH_NAME {
@@ -85,18 +86,13 @@ pub fn del_branch(user: &User, branch_name: &String, flag: bool) -> Result<Strin
     // checks if there are uncommited changes, if not, delete no matter what
     if !flag {
         // Check if branch has uncommitted changes.
-        println!("Checking for uncommitted changes...");
-        // let mut cli: DatabaseConnectionClient<Channel> = query_for_ip_port().await?;
-        // let clients = Server::connnect_db()?.get_clients_readonly();
-        // println!("clients: {:?}", clients);
-        // for client in clients {
-        //     println!("client: {:?}", client);
-        //     if client.get_current_branch_name() == *branch_name {
-        //         if client.is_on_temp_commit() {
-        //             return Err("ERROR: Branch has uncommitted changes. Use -f to force delete.".to_string());
-        //         }
-        //     }
-        // }
+        for client in all_users {
+            if client.get_current_branch_name() == *branch_name {
+                if client.is_on_temp_commit() {
+                    return Err("ERROR: Branch has uncommitted changes. Use -f to force delete.".to_string());
+                }
+            }
+        }
     }
     // delete branch head
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
