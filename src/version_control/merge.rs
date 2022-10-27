@@ -3336,7 +3336,11 @@ mod tests {
         assert_eq!(table_remove_diff.table_name, table_name_1);
         assert_rows_are_correct(
             table_remove_diff.rows_removed.iter().map(|rowinfo| rowinfo.row.clone()).collect(),
-            rows.clone()
+            vec![
+                vec![Value::I32(100), Value::String("First".to_string())],
+                vec![Value::I32(300), Value::String("Third".to_string())],
+                vec![Value::I32(200), Value::String("Second".to_string())],
+            ],
         );
 
         // Merge the second new branch into the main branch
