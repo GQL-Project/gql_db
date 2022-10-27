@@ -984,7 +984,7 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::create_table,
+        executor::query::{create_table, drop_table},
         fileio::{
             databaseio::{delete_db_instance, get_db_instance, MAIN_BRANCH_NAME},
             header::Schema,
@@ -2687,7 +2687,7 @@ mod tests {
         get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
 
         // Merge test_branch1 into main
-        let merge_commit: Commit = get_db_instance()
+        let _merge_commit: Commit = get_db_instance()
             .unwrap()
             .merge_branches(
                 &"test_branch1".to_string(),
@@ -2868,6 +2868,492 @@ mod tests {
         } else {
             panic!("Expected insert diff");
         }
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_dual_removes_merge() {
+        // Create the database
+        let db_name: String = "test_merge".to_string();
+        fcreate_db_instance(&db_name);
+
+        // Table names
+        let table_name_1: String = "table1".to_string();
+
+        // Branch name
+        let branch_name: String = "test_branch1".to_string();
+
+        // Diffs applied to the branches
+        let mut main_branch_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch1_diffs: Vec<Diff> = Vec::new();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table_create_diff1) = create_table(
+            &table_name_1,
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        main_branch_diffs.push(Diff::TableCreate(table_create_diff1));
+
+        // Insert some rows into the first table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(100), Value::String("First".to_string())],
+            vec![Value::I32(200), Value::String("Second".to_string())],
+            vec![Value::I32(300), Value::String("Third".to_string())],
+        ];
+        let insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        main_branch_diffs.push(Diff::Insert(insert_diff));
+
+        // Create a commit on the main branch
+        user.set_diffs(&main_branch_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create 2 Tables".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        main_branch_diffs.clear();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch_name, &mut user)
+            .unwrap();
+
+        // Remove the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch1_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let table1_test_branch1: Table = Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1.remove_rows(vec![
+            RowLocation{ pagenum: 1, rownum: 1},
+        ]).unwrap();
+        test_branch1_diffs.push(Diff::Remove(remove_diff));
+
+        // Create a commit on the new branch
+        user.set_diffs(&test_branch1_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch1".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch1_diffs.clear();
+        
+        // Switch to the main branch
+        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+
+        // Remove the 2nd row from the first table
+        let remove_diff: RemoveDiff = table1.remove_rows(vec![
+            RowLocation{ pagenum: 1, rownum: 1},
+        ]).unwrap();
+        main_branch_diffs.push(Diff::Remove(remove_diff));
+
+        // Create a commit on the main
+        user.set_diffs(&main_branch_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"2nd Commit on main branch".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        main_branch_diffs.clear();
+
+        // Merge the new branch into the main branch
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+        let merge_diffs: Vec<Diff> = merge_commit.diffs;
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 0);
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_dual_removes_on_different_branches_merge() {
+        // Create the database
+        let db_name: String = "test_merge".to_string();
+        fcreate_db_instance(&db_name);
+
+        // Table names
+        let table_name_1: String = "table1".to_string();
+
+        // Branch name
+        let branch1_name: String = "test_branch1".to_string();
+        let branch2_name: String = "test_branch2".to_string();
+
+        // Diffs applied to the branches
+        let mut main_branch_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch1_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch2_diffs: Vec<Diff> = Vec::new();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table_create_diff1) = create_table(
+            &table_name_1,
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        main_branch_diffs.push(Diff::TableCreate(table_create_diff1));
+
+        // Insert some rows into the first table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(100), Value::String("First".to_string())],
+            vec![Value::I32(200), Value::String("Second".to_string())],
+            vec![Value::I32(300), Value::String("Third".to_string())],
+        ];
+        let insert_diff: InsertDiff = table1.insert_rows(rows).unwrap();
+        main_branch_diffs.push(Diff::Insert(insert_diff));
+
+        // Create a commit on the main branch
+        user.set_diffs(&main_branch_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create 2 Tables".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        main_branch_diffs.clear();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch1_name, &mut user)
+            .unwrap();
+
+        // Remove the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch1_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let table1_test_branch1: Table = Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1.remove_rows(vec![
+            RowLocation{ pagenum: 1, rownum: 1},
+        ]).unwrap();
+        test_branch1_diffs.push(Diff::Remove(remove_diff));
+
+        // Create a commit on the new branch
+        user.set_diffs(&test_branch1_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch1".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch1_diffs.clear();
+        
+        // Switch to the main branch
+        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch2_name, &mut user)
+            .unwrap();
+
+        // Remove the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch2_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let table2_test_branch1: Table = Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table2_test_branch1.remove_rows(vec![
+            RowLocation{ pagenum: 1, rownum: 1},
+        ]).unwrap();
+        test_branch2_diffs.push(Diff::Remove(remove_diff));
+
+        // Create a commit on the 2nd new branch
+        user.set_diffs(&test_branch2_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch2".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch2_diffs.clear();
+        
+        // Switch to the main branch
+        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+
+        // Merge the first new branch into the main branch
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch1_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+        let merge_diffs: Vec<Diff> = merge_commit.diffs;
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+
+        // Assert that the merge diff is a remove diff
+        match &merge_diffs[0] {
+            Diff::Remove(remove_diff) => {
+                // Assert that the remove diff is correct
+                assert_eq!(remove_diff.table_name, table_name_1);
+                assert_eq!(remove_diff.rows.len(), 1);
+                assert_eq!(remove_diff.rows[0].pagenum, 1);
+                assert_eq!(remove_diff.rows[0].rownum, 1);
+            }
+            _ => panic!("Expected a remove diff"),
+        }
+
+        // Merge the second new branch into the main branch
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch2_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_commit.diffs.len(), 0);
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_dual_remove_tables_on_different_branches_merge() {
+        // Create the database
+        let db_name: String = "test_merge".to_string();
+        fcreate_db_instance(&db_name);
+
+        // Table names
+        let table_name_1: String = "table1".to_string();
+
+        // Branch name
+        let branch1_name: String = "test_branch1".to_string();
+        let branch2_name: String = "test_branch2".to_string();
+
+        // Diffs applied to the branches
+        let mut main_branch_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch1_diffs: Vec<Diff> = Vec::new();
+        let mut test_branch2_diffs: Vec<Diff> = Vec::new();
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let (mut table1, table_create_diff1) = create_table(
+            &table_name_1,
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+        main_branch_diffs.push(Diff::TableCreate(table_create_diff1));
+
+        // Insert some rows into the first table
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(100), Value::String("First".to_string())],
+            vec![Value::I32(200), Value::String("Second".to_string())],
+            vec![Value::I32(300), Value::String("Third".to_string())],
+        ];
+        let insert_diff: InsertDiff = table1.insert_rows(rows.clone()).unwrap();
+        main_branch_diffs.push(Diff::Insert(insert_diff));
+
+        // Create a commit on the main branch
+        user.set_diffs(&main_branch_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create 2 Tables".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        main_branch_diffs.clear();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch1_name, &mut user)
+            .unwrap();
+
+        // Remove the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch1_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let table1_test_branch1: Table = Table::new(&test_branch1_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch1.remove_rows(vec![
+            RowLocation{ pagenum: 1, rownum: 1},
+        ]).unwrap();
+        test_branch1_diffs.push(Diff::Remove(remove_diff));
+
+        // Remove the first table
+        let table_remove_diff: TableRemoveDiff =
+            delete_table_in_dir(&table_name_1, &test_branch1_dir).unwrap();
+        test_branch1_diffs.push(Diff::TableRemove(table_remove_diff));
+
+        // Create a commit on the new branch
+        user.set_diffs(&test_branch1_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch1".to_string(),
+                &"Removed row 2, and removed table1".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch1_diffs.clear();
+        
+        // Switch to the main branch
+        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+
+        // Create a branch off of the first commit
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch2_name, &mut user)
+            .unwrap();
+
+        // Remove the 2nd row from the first table
+        // Get the table on the new branch
+        let test_branch2_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+        let mut table1_test_branch2: Table = Table::new(&test_branch2_dir, &table_name_1, None).unwrap();
+        let remove_diff: RemoveDiff = table1_test_branch2.remove_rows(vec![
+            RowLocation{ pagenum: 1, rownum: 1},
+        ]).unwrap();
+        test_branch2_diffs.push(Diff::Remove(remove_diff));
+
+        // Insert a new row into the first table
+        let rows2: Vec<Row> = vec![
+            vec![Value::I32(400), Value::String("Fourth".to_string())],
+        ];
+        let insert_diff: InsertDiff = table1_test_branch2.insert_rows(rows2).unwrap();
+        test_branch2_diffs.push(Diff::Insert(insert_diff));
+
+        // Create a commit on the 2nd new branch
+        user.set_diffs(&test_branch2_diffs);
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on test_branch2".to_string(),
+                &"Removed row 2".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        test_branch2_diffs.clear();
+        
+        // Switch to the main branch
+        get_db_instance().unwrap().switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user).unwrap();
+
+        // Merge the first new branch into the main branch
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch1_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+        let merge_diffs: Vec<Diff> = merge_commit.diffs;
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_diffs.len(), 1);
+        
+        // Assert that the merge diff is a TableRemove
+        let table_remove_diff: &TableRemoveDiff = match &merge_diffs[0] {
+            Diff::TableRemove(table_remove_diff) => table_remove_diff,
+            _ => panic!("Expected a TableRemoveDiff"),
+        };
+        assert_eq!(table_remove_diff.table_name, table_name_1);
+        assert_rows_are_correct(
+            table_remove_diff.rows_removed.iter().map(|rowinfo| rowinfo.row.clone()).collect(),
+            rows.clone()
+        );
+
+        // Merge the second new branch into the main branch
+        let merge_commit: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &branch2_name,
+                &mut user,
+                &"Merged Branches".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_commit.diffs.len(), 0);
 
         // Delete the db instance
         delete_db_instance().unwrap();
