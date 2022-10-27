@@ -86,8 +86,7 @@ pub fn create_merge_diffs(
                                     insert_source_diff.table_name
                                 )
                             );
-                        }
-                        else {
+                        } else {
                             continue;
                         }
                     }
@@ -192,8 +191,7 @@ pub fn create_merge_diffs(
                                     update_source_diff.table_name
                                 )
                             );
-                        }
-                        else {
+                        } else {
                             continue;
                         }
                     }
@@ -272,8 +270,7 @@ pub fn create_merge_diffs(
                                     remove_source_diff.table_name
                                 )
                             );
-                        }
-                        else {
+                        } else {
                             continue;
                         }
                     }
@@ -3713,26 +3710,98 @@ mod tests {
         };
         assert_eq!(table_remove_diff.table_name, "locations");
         assert_rows_are_correct_no_order(
-            table_remove_diff.rows_removed.iter().map(|rowinfo| rowinfo.row.clone()).collect(), 
+            table_remove_diff
+                .rows_removed
+                .iter()
+                .map(|rowinfo| rowinfo.row.clone())
+                .collect(),
             vec![
-                vec![Value::I32(1), Value::String("Home".to_string()), Value::Bool(true)],
-                vec![Value::I32(2), Value::String("Work".to_string()), Value::Bool(false)],
-                vec![Value::I32(21), Value::String("Gym".to_string()), Value::Bool(true)],
-                vec![Value::I32(4), Value::String("Gymnasium".to_string()), Value::Bool(true)],
-                vec![Value::I32(22), Value::String("Garden".to_string()), Value::Bool(false)],
-                vec![Value::I32(6), Value::String("Restaurant".to_string()), Value::Bool(true)],
-                vec![Value::I32(23), Value::String("Gallery".to_string()), Value::Bool(false)],
-                vec![Value::I32(8), Value::String("Garden".to_string()), Value::Bool(false)],
-                vec![Value::I32(9), Value::String("Library".to_string()), Value::Bool(false)],
-                vec![Value::I32(10), Value::String("Gallery".to_string()), Value::Bool(false)],
-                vec![Value::I32(24), Value::String("Gymnasium".to_string()), Value::Bool(true)],
-                vec![Value::I32(25), Value::String("University".to_string()), Value::Bool(true)],
-                vec![Value::I32(27), Value::String("Dubai".to_string()), Value::Bool(false)],
-                vec![Value::I32(28), Value::String("London".to_string()), Value::Bool(true)],
-                vec![Value::I32(29), Value::String("New York".to_string()), Value::Bool(true)],
-                vec![Value::I32(30), Value::String("Paris".to_string()), Value::Bool(false)],
-                vec![Value::I32(31), Value::String("Tokyo".to_string()), Value::Bool(true)],
-            ]
+                vec![
+                    Value::I32(1),
+                    Value::String("Home".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(2),
+                    Value::String("Work".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(21),
+                    Value::String("Gym".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(4),
+                    Value::String("Gymnasium".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(22),
+                    Value::String("Garden".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(6),
+                    Value::String("Restaurant".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(23),
+                    Value::String("Gallery".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(8),
+                    Value::String("Garden".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(9),
+                    Value::String("Library".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(10),
+                    Value::String("Gallery".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(24),
+                    Value::String("Gymnasium".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(25),
+                    Value::String("University".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(27),
+                    Value::String("Dubai".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(28),
+                    Value::String("London".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(29),
+                    Value::String("New York".to_string()),
+                    Value::Bool(true),
+                ],
+                vec![
+                    Value::I32(30),
+                    Value::String("Paris".to_string()),
+                    Value::Bool(false),
+                ],
+                vec![
+                    Value::I32(31),
+                    Value::String("Tokyo".to_string()),
+                    Value::Bool(true),
+                ],
+            ],
         );
 
         // Try merging test_branch1 into main
@@ -3746,7 +3815,8 @@ mod tests {
                     true,
                     MergeConflictResolutionAlgo::NoConflicts,
                     false,
-                ).is_err(), 
+                )
+                .is_err(),
             true
         );
 
@@ -3775,58 +3845,53 @@ mod tests {
 
         // Assert that the rows are correct
         assert_rows_are_correct_no_order(
-            insert_diff.rows.iter().map(|rowinfo| rowinfo.row.clone()).collect(), 
+            insert_diff
+                .rows
+                .iter()
+                .map(|rowinfo| rowinfo.row.clone())
+                .collect(),
             vec![
                 vec![
-                    Value::I32(19), 
-                    Value::String("Dwayne".to_string()), 
-                    Value::String("Johnson".to_string()), 
-                    Value::I64(30), Value::Float(5.8), 
-                    Value::Timestamp(
-                        parse_time(&"2020-01-08 00:00:11".to_string()
-                    ).unwrap())
+                    Value::I32(19),
+                    Value::String("Dwayne".to_string()),
+                    Value::String("Johnson".to_string()),
+                    Value::I64(30),
+                    Value::Float(5.8),
+                    Value::Timestamp(parse_time(&"2020-01-08 00:00:11".to_string()).unwrap()),
                 ],
                 vec![
-                    Value::I32(20), 
-                    Value::String("Chris".to_string()), 
-                    Value::String("Hemsworth".to_string()), 
-                    Value::I64(28), 
-                    Value::Null, 
-                    Value::Timestamp(
-                        parse_time(&"2020-01-09 12:00:23".to_string()
-                    ).unwrap())
+                    Value::I32(20),
+                    Value::String("Chris".to_string()),
+                    Value::String("Hemsworth".to_string()),
+                    Value::I64(28),
+                    Value::Null,
+                    Value::Timestamp(parse_time(&"2020-01-09 12:00:23".to_string()).unwrap()),
                 ],
                 vec![
-                    Value::I32(21), 
-                    Value::String("Chris".to_string()), 
-                    Value::String("Evans".to_string()), 
-                    Value::I64(35), 
-                    Value::Float(5.9), 
-                    Value::Timestamp(
-                        parse_time(&"2020-01-20 00:00:11".to_string()
-                    ).unwrap())
+                    Value::I32(21),
+                    Value::String("Chris".to_string()),
+                    Value::String("Evans".to_string()),
+                    Value::I64(35),
+                    Value::Float(5.9),
+                    Value::Timestamp(parse_time(&"2020-01-20 00:00:11".to_string()).unwrap()),
                 ],
                 vec![
-                    Value::I32(15), 
-                    Value::String("Wanda".to_string()), 
-                    Value::String("Vision".to_string()), 
-                    Value::I64(28), 
-                    Value::Float(5.6), 
-                    Value::Timestamp(
-                        parse_time(&"2020-01-01 12:00:23".to_string()
-                    ).unwrap())
+                    Value::I32(15),
+                    Value::String("Wanda".to_string()),
+                    Value::String("Vision".to_string()),
+                    Value::I64(28),
+                    Value::Float(5.6),
+                    Value::Timestamp(parse_time(&"2020-01-01 12:00:23".to_string()).unwrap()),
                 ],
                 vec![
-                    Value::I32(17), 
-                    Value::String("Scottish".to_string()), 
-                    Value::String("Language".to_string()), 
-                    Value::I64(35), 
-                    Value::Float(5.9), 
-                    Value::Timestamp(
-                        parse_time(&"2020-01-06 00:00:11".to_string()
-                    ).unwrap())
+                    Value::I32(17),
+                    Value::String("Scottish".to_string()),
+                    Value::String("Language".to_string()),
+                    Value::I64(35),
+                    Value::Float(5.9),
+                    Value::Timestamp(parse_time(&"2020-01-06 00:00:11".to_string()).unwrap()),
                 ],
-            ]
+            ],
         );
 
         // Delete the db instance
@@ -3886,8 +3951,7 @@ mod tests {
                     return false;
                 }
             }
-        }
-        else {
+        } else {
             return false;
         }
 
