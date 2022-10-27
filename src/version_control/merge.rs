@@ -226,12 +226,13 @@ pub fn create_merge_diffs(
                         })
                     });
                 }
-                
+
                 // Retain the old rows
                 update_source_diff.old_rows.retain(|x| {
-                    update_source_diff.rows.iter().any(|y| {
-                        x.pagenum == y.pagenum && x.rownum == y.rownum
-                    })
+                    update_source_diff
+                        .rows
+                        .iter()
+                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
                 });
 
                 // Add the new mapped rows to the result_diffs
@@ -247,7 +248,7 @@ pub fn create_merge_diffs(
                     .update_diff
                     .rows
                     .append(&mut update_source_diff.rows);
-                    
+
                 result_diffs
                     .table_diffs
                     .entry(update_source_diff.table_name.clone())
@@ -3945,7 +3946,7 @@ mod tests {
 
         // Assert that the merge diffs are correct
         assert_eq!(merge_commit1.diffs.len(), 4);
-        
+
         // Delete the db instance
         delete_db_instance().unwrap();
     }
