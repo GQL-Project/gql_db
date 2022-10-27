@@ -418,6 +418,7 @@ impl CommitFile {
                 match diff {
                     Diff::Update(update) => {
                         let mut newrows = update.rows.clone();
+                        let mut oldrows = update.old_rows.clone();
                         // An Insert and an Update just become an Insert
                         if let Some(Diff::Insert(insert)) =
                             get_diff(&map, &update.table_name, INSERT_TYPE)
@@ -442,6 +443,12 @@ impl CommitFile {
                                 .collect();
                             // Retain the rows that were not updated
                             newrows.retain(|x| {
+                                !insert
+                                    .rows
+                                    .iter()
+                                    .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                            });
+                            oldrows.retain(|x| {
                                 !insert
                                     .rows
                                     .iter()
@@ -512,7 +519,7 @@ impl CommitFile {
                                     table_name: update.table_name.clone(),
                                     schema: update.schema.clone(),
                                     rows: newrows,
-                                    old_rows: update.old_rows.clone(),
+                                    old_rows: oldrows,
                                 }),
                                 update.table_name.clone(),
                             );
