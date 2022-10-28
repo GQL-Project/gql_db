@@ -1,16 +1,15 @@
-use std::f32::consts::E;
-
 use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
 use crate::version_control::merge::MergeConflictResolutionAlgo;
-use clap::Parser as ArgParser;
-use clap::Subcommand;
 
+use clap::Parser as ClapParser;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
+
+use super::parse_command::{VersionControl, VersionControlSubCommand};
 
 /// A parse function, that starts with a string and returns an AST representation of the query.
 /// If an error happens, an Err(msg) is returned.
@@ -27,65 +26,11 @@ pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
     return ast.map_err(|e| e.to_string());
 }
 
-// vec[0] = "GQL"
-// vec[1] = <command>
-// vec[2] = <flags> (optional) or <args> (optional)
-// vec[3 and more] = <args>
-#[derive(ArgParser, Debug)]
-#[clap(author, version, about, long_about = "None")]
-struct VersionControl {
-    #[command(subcommand)]
-    subcmd: VersionControlSubCommand,
-}
-
-#[derive(Subcommand, Debug)]
-enum VersionControlSubCommand {
-    Commit {
-        #[arg(long, short)]
-        message: String,
-    },
-    Log {
-        #[arg(long, short, default_value = "false")]
-        json: bool,
-    },
-    Status,
-    CreateBranch {
-        branch_name: String,
-    },
-    ListBranch {
-        #[arg(long, short, default_value = "false")]
-        current: bool,
-    },
-    SwitchBranch {
-        branch_name: String,
-    },
-    MergeBranch {
-        src_branch: String,
-        dest_branch: String,
-        message: String,
-        #[arg(long, short, default_value = "false")]
-        delete_src: bool,
-        #[arg(long, short, default_value = "clean")]
-        strategy: String,
-    },
-    DeleteBranch {
-        branch_name: String,
-        #[arg(long, short, default_value = "false")]
-        force: bool,
-    },
-    SquashCommits {
-        src_commit: String,
-        dest_commit: String,
-    },
-    RevertCommit {
-        commit: String,
-    },
-}
-
 /// This method parses a version control command's query string into the individual components.
 /// Format "GQL <command> <flags> <args>"
 pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Result<String, String> {
-    let command = query.split_whitespace();
+    let command = shellwords::split(query)
+        .map_err(|e| format!("Mismatched quotes while parsing query: {}", e))?;
     let parse = VersionControl::try_parse_from(command);
     match parse {
         Ok(parse) => {
@@ -192,7 +137,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                         command::del_branch(user, &branch_name.clone(), force, all_users)?;
                     Ok(del_results)
                 }
-                VersionControlSubCommand::SquashCommits {
+                VersionControlSubCommand::SquashCommit {
                     src_commit,
                     dest_commit,
                 } => {
@@ -203,7 +148,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     ))
                 }
                 VersionControlSubCommand::RevertCommit { commit } => {
-                    Ok("Valid Revert Command".to_string())
+                    Ok(format!("Reverted Commit at hash: {}", commit))
                 }
             }
         }
