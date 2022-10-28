@@ -4,7 +4,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
-use tonic::transport::Server;
 
 use super::{
     branches::{BranchNode, Branches},
@@ -94,7 +93,7 @@ pub fn list_branches(user: &User) -> Result<String, String> {
 pub fn del_branch(
     user: &User,
     branch_name: &String,
-    flag: bool,
+    force: bool,
     all_users: Vec<User>,
 ) -> Result<String, String> {
     // Check if the branch is the master branch. If so, return an error
@@ -110,7 +109,7 @@ pub fn del_branch(
     }
 
     // checks if there are uncommited changes, if not, delete no matter what
-    if !flag {
+    if !force {
         // Check if branch has uncommitted changes.
         for client in all_users {
             if client.get_current_branch_name() == *branch_name {
@@ -218,12 +217,12 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::{create_table, execute_query},
+        executor::query::create_table,
         fileio::{
             databaseio::{delete_db_instance, Database},
             header::Schema,
         },
-        parser::parser::{parse, parse_vc_cmd},
+        parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
