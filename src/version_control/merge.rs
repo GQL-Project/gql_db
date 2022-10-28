@@ -227,6 +227,14 @@ pub fn create_merge_diffs(
                     });
                 }
 
+                // Retain the old rows
+                update_source_diff.old_rows.retain(|x| {
+                    update_source_diff
+                        .rows
+                        .iter()
+                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                });
+
                 // Add the new mapped rows to the result_diffs
                 result_diffs
                     .table_diffs
@@ -240,6 +248,19 @@ pub fn create_merge_diffs(
                     .update_diff
                     .rows
                     .append(&mut update_source_diff.rows);
+
+                result_diffs
+                    .table_diffs
+                    .entry(update_source_diff.table_name.clone())
+                    .or_insert_with(|| {
+                        TableSquashDiff::new(
+                            &update_source_diff.table_name,
+                            &update_source_diff.schema,
+                        )
+                    })
+                    .update_diff
+                    .old_rows
+                    .append(&mut update_source_diff.old_rows);
             }
             Diff::Remove(mut remove_source_diff) => {
                 // If the table does not exist in the target branch
@@ -3893,6 +3914,38 @@ mod tests {
                 ],
             ],
         );
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_bench_db_2_merge() {
+        // Create a demo database
+        let mut user: User = create_demo_db("test_bench_db_merge");
+
+        // Switch to main branch
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&MAIN_BRANCH_NAME.to_string(), &mut user)
+            .unwrap();
+
+        // Merge test_branch1 into main
+        let merge_commit1: Commit = get_db_instance()
+            .unwrap()
+            .merge_branches(
+                &"test_branch1".to_string(),
+                &mut user,
+                &"Merged Branches test_branch1 & main".to_string(),
+                true,
+                MergeConflictResolutionAlgo::NoConflicts,
+                false,
+            )
+            .unwrap();
+
+        // Assert that the merge diffs are correct
+        assert_eq!(merge_commit1.diffs.len(), 4);
 
         // Delete the db instance
         delete_db_instance().unwrap();
