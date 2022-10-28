@@ -1,4 +1,7 @@
-use crate::{fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME}, user::userdata::User};
+use crate::{
+    fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME},
+    user::userdata::User,
+};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tonic::transport::Server;
@@ -70,13 +73,18 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
 }
 
 /// This function deletes a branch from the database
-pub fn del_branch(user: &User, branch_name: &String, flag: bool, all_users: Vec<User>) -> Result<String, String> {
+pub fn del_branch(
+    user: &User,
+    branch_name: &String,
+    flag: bool,
+    all_users: Vec<User>,
+) -> Result<String, String> {
     // Check if the branch is the master branch. If so, return an error
     // MAIN_BRANCH_NAME is the name of the master branch
     if branch_name == MAIN_BRANCH_NAME {
         return Err("ERROR: Cannot delete the master branch".to_string());
     }
-    
+
     // Check if the branch is the current branch. If so, return an error
     // user.get_current_branch() is the name
     if user.get_current_branch_name() == *branch_name {
@@ -87,10 +95,12 @@ pub fn del_branch(user: &User, branch_name: &String, flag: bool, all_users: Vec<
     if !flag {
         // Check if branch has uncommitted changes.
         for client in all_users {
-
             if client.get_current_branch_name() == *branch_name {
                 if client.is_on_temp_commit() {
-                    return Err("ERROR: Branch has uncommitted changes. Use -f to force delete.".to_string());
+                    return Err(
+                        "ERROR: Branch has uncommitted changes. Use -f to force delete."
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -207,12 +217,16 @@ mod tests {
 
     use crate::{
         executor::query::{create_table, execute_query},
-        fileio::{databaseio::{delete_db_instance, Database}, header::Schema},
+        fileio::{
+            databaseio::{delete_db_instance, Database},
+            header::Schema,
+        },
+        parser::parser::{parse, parse_vc_cmd},
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
         },
-        version_control::{commit::Commit, diff::Diff}, parser::parser::{parse_vc_cmd, parse},
+        version_control::{commit::Commit, diff::Diff},
     };
 
     use super::*;
@@ -508,7 +522,13 @@ mod tests {
 
         // second user makes an uncommitted change
         let load_db = Database::load_db("gql_del_test".to_string()).unwrap();
-        create_table(&"testing".to_string(), &vec![("id".to_string(), Column::I32)], &load_db, &mut user1).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user1,
+        )
+        .unwrap();
         user1.set_is_on_temp_commit(true);
 
         // first user makes a new branch and moves there
@@ -525,7 +545,6 @@ mod tests {
         delete_db_instance().unwrap();
         // new_db.delete_database().unwrap();
     }
-    
 
     // Tries to delete the branch with an uncommitted change with -f
     #[test]
@@ -549,7 +568,13 @@ mod tests {
 
         // second user makes an uncommitted change
         let load_db = Database::load_db("gql_del_test".to_string()).unwrap();
-        create_table(&"testing".to_string(), &vec![("id".to_string(), Column::I32)], &load_db, &mut user1).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user1,
+        )
+        .unwrap();
         user1.set_is_on_temp_commit(true);
 
         // first user makes a new branch and moves there

@@ -308,10 +308,8 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
             return Ok(user.get_status());
         }
         "del" => {
-            // GQL del branch or GQL del -f branch 
-            if (vec.len() == 2) ||
-                (vec.len() != 3 && vec[2] != "-f") ||
-                (vec.len() > 4) {
+            // GQL del branch or GQL del -f branch
+            if (vec.len() == 2) || (vec.len() != 3 && vec[2] != "-f") || (vec.len() > 4) {
                 return Err("Invalid Delete Command".to_string());
             }
 
@@ -323,18 +321,17 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
             let mut flag = false;
             let mut branch_name = String::new();
             let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
-            
+
             if vec[2] == "-f" {
                 flag = true;
                 branch_name = vec[3].to_string();
                 branch_exist = branch_heads_instance.does_branch_exist(branch_name.clone())?;
-            }
-            else {
+            } else {
                 flag = false;
                 branch_name = vec[2].to_string();
                 branch_exist = branch_heads_instance.does_branch_exist(branch_name.clone())?;
             }
-            
+
             if !branch_exist {
                 return Err("Branch does not exist".to_string());
             }
