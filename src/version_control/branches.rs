@@ -275,15 +275,12 @@ impl Branches {
     }
 
     /// Deletes the branch node with the given branch name
-    pub fn delete_branch_node(
-        &mut self,
-        branch_name: &String,
-    ) -> Result<(), String> {
+    pub fn delete_branch_node(&mut self, branch_name: &String) -> Result<(), String> {
         // Get the branch node
         // let branch_node: BranchNode = self.get_branch_node(branch_name)?;
         for row_info in self.branches_table.by_ref().into_iter().clone() {
             let row: Row = row_info.clone().row;
-            
+
             let row_node_name: String;
 
             // Get the branch name
@@ -291,7 +288,7 @@ impl Branches {
                 Some(Value::String(br_name)) => row_node_name = br_name.to_string(),
                 _ => return Err("Error: Branch name not found".to_string()),
             }
-            
+
             if row_node_name == *branch_name {
                 self.branches_table.remove_rows(vec![RowLocation {
                     pagenum: row_info.pagenum,
