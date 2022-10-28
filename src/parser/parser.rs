@@ -349,6 +349,17 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
 
             return Ok(del_results.to_string());
         }
+        "info" => {
+            // "gql info <commit hash>" returns the list of changes made in that commit
+            // info (NO FLAGS OR ARGS)
+            if vec.len() != 3 {
+                // error message here
+                return Err("Invalid VC Command. Enter \"GQL info <commit hash>\"".to_string());
+            }
+            let info_results = command::info(&vec[2].to_string())?;
+
+            return Ok(info_results.to_string());
+        }
         _ => {
             // error message here
             return Err(format!("Invalid VC Command: {}", vec.join(" ")));

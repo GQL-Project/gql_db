@@ -185,6 +185,22 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
     Ok(squash_commit)
 }
 
+/// This function is used to get the commits from a specific hash
+pub fn info(hash: &String) -> Result<String, String> {
+    let commit_file = get_db_instance()?.get_commit_file_mut();
+    let commit = commit_file.fetch_commit(hash)?;
+
+    let mut log_string: String = String::new();
+
+    log_string = format!("{}\n-----------------------", log_string);
+    log_string = format!("{}\nCommit: {}", log_string, commit.hash);
+    log_string = format!("{}\nMessage: {}", log_string, commit.message);
+    log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
+    log_string = format!("{}\n-----------------------\n", log_string);
+
+    return Ok(log_string.to_string());
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -549,5 +565,63 @@ mod tests {
         assert!(result.is_ok());
         delete_db_instance().unwrap();
         // new_db.delete_database().unwrap();
+    }
+
+    // Tries to get the info without the commit hash
+    #[test]
+    #[serial]
+    fn test_info_commit() {
+        let query = "GQL info";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_info_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_err());
+    }
+
+    //Tries to get the info with an invalid commit hash
+    #[test]
+    #[serial]
+    fn test_info_commit1() {
+        let query = "GQL info 123456789";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_info_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_err());
+    }
+
+    // Tries to get the info with a valid commit hash
+    #[test]
+    #[serial]
+    fn test_info_commit2() {
+        let query0 = "GQL commit -m test";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_info_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+
+        let mut load_db = Database::load_db("gql_info_test".to_string()).unwrap();
+        create_table(&"testing".to_string(), &vec![("id".to_string(), Column::I32)], &load_db, &mut user).unwrap();
+        
+        parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
+
+        let commit_file = load_db.get_commit_file_mut();
+        let commit = commit_file.read_commit(1) ;
+        let query1 = format!("GQL info {}", commit.unwrap().hash);
+
+        let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_ok());
     }
 }

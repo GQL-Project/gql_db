@@ -219,7 +219,7 @@ impl CommitFile {
         Ok(())
     }
 
-    fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
+    pub fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
         // Read the commit information first
         let page = &mut read_page(pagenum, &self.delta_path)?;
         let pagenum = &mut pagenum;
