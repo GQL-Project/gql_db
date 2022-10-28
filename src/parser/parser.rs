@@ -346,6 +346,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
 
             return Ok(del_results.to_string());
         }
+        "list_branch" => {
+            if vec.len() != 2 {
+                return Err(format!("Invalid VC Command: {}", vec.join(" ")));
+            }
+            return command::list_branches(user);
+        }
         _ => {
             // error message here
             return Err(format!("Invalid VC Command: {}", vec.join(" ")));

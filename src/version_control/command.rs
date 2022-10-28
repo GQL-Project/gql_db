@@ -72,6 +72,24 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     Ok((log_string, log_strings, json))
 }
 
+/// Lists all the available branches, and a * next to the current branch
+/// for the given user.
+pub fn list_branches(user: &User) -> Result<String, String> {
+    let branch_heads = get_db_instance()?.get_branch_heads_file_mut();
+
+    let mut branch_string = String::new();
+
+    for name in branch_heads.get_all_branch_names()? {
+        if name == user.get_current_branch_name() {
+            branch_string = format!("{}{}*\n", branch_string, name);
+        } else {
+            branch_string = format!("{}{}\n", branch_string, name);
+        }
+    }
+
+    Ok(branch_string)
+}
+
 /// This function deletes a branch from the database
 pub fn del_branch(
     user: &User,
