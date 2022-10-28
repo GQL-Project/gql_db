@@ -27,6 +27,11 @@ pub enum VersionControlSubCommand {
         #[arg(long, short, default_value = "false")]
         json: bool,
     },
+    /// Retrieves changes made in the referenced commit
+    Info {
+        /// The commit hash
+        commit: String,
+    },
     /// Tells if there are any uncommitted changes
     Status,
     /// Joins all the commits between the two given commits into a single commit
