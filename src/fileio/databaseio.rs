@@ -347,7 +347,7 @@ impl Database {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
-        let mut table_dir: String = self.get_current_working_branch_path(user);
+        let table_dir: String = self.get_current_working_branch_path(user);
         self.get_table_path_from_dir(table_name, &table_dir)
     }
 

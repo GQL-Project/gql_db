@@ -4,7 +4,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
-use tonic::transport::Server;
 
 use super::{
     branches::{BranchNode, Branches},
@@ -72,11 +71,29 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     Ok((log_string, log_strings, json))
 }
 
+/// Lists all the available branches, and a * next to the current branch
+/// for the given user.
+pub fn list_branches(user: &User) -> Result<String, String> {
+    let branch_heads = get_db_instance()?.get_branch_heads_file_mut();
+
+    let mut branch_string = String::new();
+
+    for name in branch_heads.get_all_branch_names()? {
+        if name == user.get_current_branch_name() {
+            branch_string = format!("{}{}*\n", branch_string, name);
+        } else {
+            branch_string = format!("{}{}\n", branch_string, name);
+        }
+    }
+
+    Ok(branch_string)
+}
+
 /// This function deletes a branch from the database
 pub fn del_branch(
     user: &User,
     branch_name: &String,
-    flag: bool,
+    force: bool,
     all_users: Vec<User>,
 ) -> Result<String, String> {
     // Check if the branch is the master branch. If so, return an error
@@ -92,7 +109,7 @@ pub fn del_branch(
     }
 
     // checks if there are uncommited changes, if not, delete no matter what
-    if !flag {
+    if !force {
         // Check if branch has uncommitted changes.
         for client in all_users {
             if client.get_current_branch_name() == *branch_name {
@@ -216,12 +233,12 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::{create_table, execute_query},
+        executor::query::create_table,
         fileio::{
             databaseio::{delete_db_instance, Database},
             header::Schema,
         },
-        parser::parser::{parse, parse_vc_cmd},
+        parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
@@ -452,7 +469,7 @@ mod tests {
     fn test_del_branch0() {
         let query0 = "GQL branch branch_name";
         let query01 = "GQL branch branch_name1";
-        let query2 = "GQL del branch_name";
+        let query2 = "GQL delete branch_name";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -470,7 +487,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_del_branch1() {
-        let query = "GQL del branch_name1";
+        let query = "GQL delete branch_name1";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -487,7 +504,7 @@ mod tests {
     #[serial]
     fn test_del_branch2() {
         let query0 = "GQL branch branch_name";
-        let query1 = "GQL del branch_name";
+        let query1 = "GQL delete branch_name";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -507,7 +524,7 @@ mod tests {
         let query0 = "GQL branch test";
         let query1 = "GQL switch_branch test";
         let query2 = "GQL branch test1";
-        let query3 = "GQL del test";
+        let query3 = "GQL delete test";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -553,7 +570,7 @@ mod tests {
         let query0 = "GQL branch test";
         let query1 = "GQL switch_branch test";
         let query2 = "GQL branch test1";
-        let query3 = "GQL del -f test";
+        let query3 = "GQL delete -f test";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
