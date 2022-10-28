@@ -636,12 +636,18 @@ mod tests {
         all_users.push(user.clone());
 
         let mut load_db = Database::load_db("gql_info_test".to_string()).unwrap();
-        create_table(&"testing".to_string(), &vec![("id".to_string(), Column::I32)], &load_db, &mut user).unwrap();
-        
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user,
+        )
+        .unwrap();
+
         parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
 
         let commit_file = load_db.get_commit_file_mut();
-        let commit = commit_file.read_commit(1) ;
+        let commit = commit_file.read_commit(1);
         let query1 = format!("GQL info {}", commit.unwrap().hash);
 
         let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
