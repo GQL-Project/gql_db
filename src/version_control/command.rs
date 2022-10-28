@@ -453,7 +453,7 @@ mod tests {
     fn test_del_branch0() {
         let query0 = "GQL branch branch_name";
         let query01 = "GQL branch branch_name1";
-        let query2 = "GQL del branch_name";
+        let query2 = "GQL delete branch_name";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_del_branch1() {
-        let query = "GQL del branch_name1";
+        let query = "GQL delete branch_name1";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -488,7 +488,7 @@ mod tests {
     #[serial]
     fn test_del_branch2() {
         let query0 = "GQL branch branch_name";
-        let query1 = "GQL del branch_name";
+        let query1 = "GQL delete branch_name";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -508,7 +508,7 @@ mod tests {
         let query0 = "GQL branch test";
         let query1 = "GQL switch_branch test";
         let query2 = "GQL branch test1";
-        let query3 = "GQL del test";
+        let query3 = "GQL delete test";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());
@@ -554,7 +554,7 @@ mod tests {
         let query0 = "GQL branch test";
         let query1 = "GQL switch_branch test";
         let query2 = "GQL branch test1";
-        let query3 = "GQL del -f test";
+        let query3 = "GQL delete -f test";
         // Create a new user on the main branch
         fcreate_db_instance("gql_del_test");
         let mut user: User = User::new("test_user".to_string());

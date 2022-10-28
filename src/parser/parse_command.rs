@@ -6,13 +6,14 @@ use clap::Subcommand;
 // vec[2] = <flags> (optional) or <args> (optional)
 // vec[3 and more] = <args>
 #[derive(ArgParser, Debug)]
-#[clap(author, version, about, long_about = "None", rename_all = "snake_case")]
+#[clap(author, version, about, long_about = "None")]
 pub struct VersionControl {
     #[command(subcommand)]
     pub subcmd: VersionControlSubCommand,
 }
 
 #[derive(Subcommand, Debug)]
+#[clap(rename_all = "snake_case")]
 pub enum VersionControlSubCommand {
     /// Creates a new commit with the given message, at the current branch
     Commit {
@@ -73,10 +74,7 @@ pub enum VersionControlSubCommand {
         /// Whether to delete the source branch after the merge (default is false)
         #[arg(long, short, default_value = "false")]
         delete_src: bool,
-        /// The algorithm to use for resolving merge conflicts (default is "clean")
-        /// "clean" - only merges if there are no conflicts
-        /// "ours" - always uses the current branch's version
-        /// "theirs" - always uses the source branch's version
+        /// The algorithm to use for resolving merge conflicts (options: "ours", "theirs", "clean")
         #[arg(long, short, default_value = "clean")]
         strategy: String,
     },
