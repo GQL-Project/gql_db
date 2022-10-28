@@ -1,2 +1,2 @@
 pub mod parser;
-pub mod parse_command;
+pub mod vc_commands;

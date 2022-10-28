@@ -9,7 +9,7 @@ use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use super::parse_command::{VersionControl, VersionControlSubCommand};
+use super::vc_commands::{VersionControl, VersionControlSubCommand};
 
 /// A parse function, that starts with a string and returns an AST representation of the query.
 /// If an error happens, an Err(msg) is returned.
