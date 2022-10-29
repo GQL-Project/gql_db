@@ -106,8 +106,8 @@ pub fn execute_update(
                         // Not a table inside the TableFactor enum
                     }
                 }
-                //println!("table: {:?}", table_name);
-                println!("Table: {:?}", final_table);
+                
+                //println!("Table: {:?}", final_table);
                 
                 // Iterate through and build vector of assignments to pass to update
                 for assignment in assignments {
@@ -125,12 +125,9 @@ pub fn execute_update(
                     }
                     all_data.push((column_name, insert_value)); 
                 }
-
                 // Now we have the table name and the assignments
                 println!("Updated assignments: {:?}", all_data);
-
-                //results.push(update(all_data, final_table, get_db_instance()?, user)?);
-
+                //results.push(update(all_data, final_table, get_db_instance()?, selection.clone(), user)?.0);
             }
             Statement::CreateTable { name, columns, .. } => {
                 let table_name = name.0[0].value.to_string();
@@ -296,8 +293,11 @@ pub fn update(
     selection : Option<Expr>,
     user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
-
-
+    database.get_table_path(&table_name, user)?;
+    let mut table = Table::from_user(user, database, &table_name, None)?;
+    for (String, String) in values {
+    
+    }
     //user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
 }
