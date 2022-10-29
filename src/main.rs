@@ -17,11 +17,9 @@ mod version_control;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = "None")]
 struct Args {
+    // Run the terminal client
     #[clap(short, long)]
     client: bool,
-
-    #[clap(short, long)]
-    gui: bool,
 
     // IP Address
     #[clap(short, long, default_value = "[::1]")]

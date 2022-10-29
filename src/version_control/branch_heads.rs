@@ -132,6 +132,17 @@ impl BranchHEADs {
         Ok(branch_names)
     }
 
+    /// Returns if the branch exists in the database
+    pub fn does_branch_exist(&mut self, name: String) -> Result<bool, String> {
+        let vec_name = self.get_all_branch_names()?;
+        for branch_name in vec_name {
+            if branch_name == name {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Read the branch heads file and return a vector of BranchHead objects
     pub fn get_all_branch_heads(&mut self) -> Result<Vec<BranchHead>, String> {
         let mut branch_heads: Vec<BranchHead> = Vec::new();

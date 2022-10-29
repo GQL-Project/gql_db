@@ -1,7 +1,7 @@
 use super::{header::*, pageio::*};
 use crate::util::row::Row;
 
-// Here, instead of returning an Error if the row is too large, we just return None
+// Here, instead of returning an Error if the row is not found, we return None
 pub fn read_row(schema: &Schema, page: &Page, rownum: u16) -> Option<Row> {
     let mut row = Row::new();
     let mut offset = (rownum as usize) * schema_size(schema);

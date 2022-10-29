@@ -76,4 +76,25 @@ impl User {
     pub fn set_is_on_temp_commit(&mut self, is_on_temp_commit: bool) {
         self.is_on_temp_commit = is_on_temp_commit;
     }
+
+    pub fn get_status(&self) -> String {
+        let mut status = String::new();
+        status.push_str(&format!("On branch {}\n", self.branch_name));
+        status.push_str(&format!(
+            "Your branch is up to date with {}\n\n",
+            self.branch_name
+        ));
+        if self.commands.len() > 0 {
+            status.push_str(&format!(
+                "You have {} uncommitted changes:\n\n",
+                self.commands.len()
+            ));
+            for command in &self.commands {
+                status.push_str(&format!("{}\n", command));
+            }
+        } else {
+            status.push_str("Nothing to commit, working tree clean\n");
+        }
+        status
+    }
 }
