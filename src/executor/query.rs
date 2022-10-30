@@ -82,13 +82,11 @@ pub fn execute_update(
                 from,
                 selection
             } => {
-                println!("table: {:?}", table);
-                println!("assignments: {:?}", assignments);
-                println!("from: {:?}", from); // This value is unimportant
-                println!("selection: {:?}", selection);
-                /* TODO: 1. Get Table name //
-                         2. Parse assignments into Vector
-                 */
+                //println!("table: {:?}", table);
+                //println!("assignments: {:?}", assignments);
+                //println!("from: {:?}", from); // This value is unimportant
+                //println!("selection: {:?}", selection);
+               
                 let mut final_table = String::from("test"); // What is the best way to do this?
                 let mut all_data: Vec<(String, String)> = Vec::new();
 
@@ -106,9 +104,8 @@ pub fn execute_update(
                         // Not a table inside the TableFactor enum
                     }
                 }
-                
                 //println!("Table: {:?}", final_table);
-                
+
                 // Iterate through and build vector of assignments to pass to update
                 for assignment in assignments {
                     let mut column_name = String::new();
@@ -128,6 +125,27 @@ pub fn execute_update(
                 // Now we have the table name and the assignments
                 println!("Updated assignments: {:?}", all_data);
                 //results.push(update(all_data, final_table, get_db_instance()?, selection.clone(), user)?.0);
+            }
+            Statement::Delete { 
+                table_name,
+                using,
+                selection 
+            } => {
+                let mut final_table = String::from("test"); // What is the best way to do this?
+                match table_name.clone() {
+                    sqlparser::ast::TableFactor::Table {
+                        name: table_name,
+                        alias: alias,
+                        args: args,
+                        with_hints: with_hints
+                    } => {
+                        // Now you have the table
+                        final_table = table_name.to_string();
+                    },
+                    _ => {
+                        // Not a table inside the TableFactor enum
+                    }
+                }
             }
             Statement::CreateTable { name, columns, .. } => {
                 let table_name = name.0[0].value.to_string();
