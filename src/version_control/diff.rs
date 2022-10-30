@@ -26,6 +26,29 @@ pub enum Diff {
     TableRemove(TableRemoveDiff),
 }
 
+impl ToString for Diff {
+    fn to_string(&self) -> String {
+        match self {
+            Diff::Insert(diff) =>
+                format!("In table {}\nWith Schemas {:?}\nRow {:?} Was Inserted",
+                diff.table_name.clone(), diff.schema.clone(), diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone()),
+            Diff::Update(diff) =>
+                format!("In table {}\nWith Schemas {:?}\n{:?} Was Replaced by {:?}",
+                diff.table_name.clone(), diff.schema.clone(),
+                diff.old_rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone(),
+                diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone()),
+            Diff::Remove(diff) =>
+                format!("In table {}\nWith Schemas {:?}\nRow {:?} Was Deleted",
+                diff.table_name.clone(), diff.schema.clone(), diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone()),
+            Diff::TableCreate(diff) =>
+                format!("Created Table Named: {} \nWith Schemas {:?}",
+                diff.table_name.clone(), diff.schema.clone()),
+            Diff::TableRemove(diff) =>
+                format!("Removed Table {}", diff.table_name.clone()),
+        }
+    }
+}
+
 impl Diff {
     pub fn get_table_name(&self) -> String {
         match self {
