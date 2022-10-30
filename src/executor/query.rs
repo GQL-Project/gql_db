@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use super::predicate::{
     resolve_predicate, resolve_value, solve_predicate, solve_value, SolvePredicate, SolveValue,
 };
-use crate::fileio::{
+use crate::{fileio::{
     databaseio::*,
     header::*,
     tableio::{self, *},
-};
+}, util::row::RowLocation};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::Row;
@@ -80,26 +80,26 @@ pub fn execute_update(
                 table,
                 assignments,
                 from,
-                selection
+                selection,
             } => {
                 //println!("table: {:?}", table);
                 //println!("assignments: {:?}", assignments);
                 //println!("from: {:?}", from); // This value is unimportant
                 //println!("selection: {:?}", selection);
-               
+
                 let mut final_table = String::from("test"); // What is the best way to do this?
                 let mut all_data: Vec<(String, String)> = Vec::new();
 
                 match table.relation.clone() {
-                    sqlparser::ast::TableFactor::Table{
+                    sqlparser::ast::TableFactor::Table {
                         name: table_name,
                         alias: alias,
                         args: args,
-                        with_hints: with_hints
+                        with_hints: with_hints,
                     } => {
                         // Now you have the table
                         final_table = table_name.to_string();
-                    },
+                    }
                     _ => {
                         // Not a table inside the TableFactor enum
                     }
@@ -115,37 +115,65 @@ pub fn execute_update(
                     match assignment.value.clone() {
                         Expr::Value(value) => {
                             insert_value = value.to_string();
-                        },
+                        }
                         _ => {
                             // Not a value
                         }
                     }
-                    all_data.push((column_name, insert_value)); 
+                    all_data.push((column_name, insert_value));
                 }
                 // Now we have the table name and the assignments
                 println!("Updated assignments: {:?}", all_data);
-                //results.push(update(all_data, final_table, get_db_instance()?, selection.clone(), user)?.0);
+                results.push(
+                    update(
+                        all_data,
+                        final_table,
+                        get_db_instance()?,
+                        selection.clone(),
+                        user,
+                    )?
+                    .0,
+                );
             }
-            Statement::Delete { 
+            Statement::Delete {
                 table_name,
                 using,
-                selection 
+                selection,
             } => {
                 let mut final_table = String::from("test"); // What is the best way to do this?
+                let mut final_alias;
                 match table_name.clone() {
                     sqlparser::ast::TableFactor::Table {
                         name: table_name,
                         alias: alias,
                         args: args,
-                        with_hints: with_hints
+                        with_hints: with_hints,
                     } => {
                         // Now you have the table
+                        match alias {
+                            Some(x) => (final_alias = x.to_string()),
+                            None => (final_alias = "".to_string()),
+                        };
                         final_table = table_name.to_string();
-                    },
+                    }
                     _ => {
                         // Not a table inside the TableFactor enum
+                        return Err("Error parsing".to_string());
                     }
                 }
+
+                let table_names = vec![(final_table.clone(), final_alias)];
+
+                let pred: Option<SolvePredicate> = match selection {
+                    Some(pred) => Some(where_clause(
+                        pred,
+                        table_names.clone(),
+                        get_db_instance()?,
+                        user,
+                    )?),
+                    None => None,
+                };
+                results.push(delete(final_table, pred, get_db_instance()?, user)?.0);
             }
             Statement::CreateTable { name, columns, .. } => {
                 let table_name = name.0[0].value.to_string();
@@ -302,24 +330,59 @@ pub fn select(
 }
 
 /// This method implements the SQL update statement
-/// 
-/* 
 pub fn update(
     values: Vec<(String, String)>,
     table_name: String,
     database: &Database,
-    selection : Option<Expr>,
+    selection: Option<Expr>,
     user: &mut User,
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
     let mut table = Table::from_user(user, database, &table_name, None)?;
-    for (String, String) in values {
-    
+
+    // Call where_clause to get the rows that we want to update
+    match selection {
+        Some(selection) => {
+            where_clause(
+                &selection,
+                vec![(table_name, "".to_string())],
+                database,
+                user,
+            )?;
+        }
+        None => {}
     }
+
     //user.append_diff(&Diff::Insert(diff.clone()));
-    Ok((format!("{} rows were successfully inserted.", len), diff))
+    //Ok((format!("{} rows were successfully inserted.", len), diff))
+    return Err("Error".to_string());
 }
-*/
+
+pub fn delete(
+    table_name: String,
+    selection: Option<SolvePredicate>,
+    database: &Database,
+    user: &mut User,
+) -> Result<(String, RemoveDiff), String> {
+    
+    let table = Table::from_user(user, database, &table_name, None)?;
+    let mut selected_rows: Vec<RowLocation> = Vec::new();
+
+    for row_info in table.clone() {
+        if resolve_predicate(&selection, &row_info.row)? {
+            // Append the selected_cells row to our result
+            selected_rows.push(row_info.get_row_location());
+        }
+    }
+
+    let len: usize = selected_rows.len();
+    let diff: RemoveDiff = table.remove_rows(selected_rows)?;
+    user.append_diff(&Diff::Remove(diff.clone()));
+
+    Ok((format!("{} Rows were deleted.", len), diff))
+    //return Err("Error".to_string());
+}
+
 /// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
 /// into the table. It returns a string containing the number of rows inserted.
 /// If the table does not exist, it returns an error.
