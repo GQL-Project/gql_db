@@ -292,11 +292,7 @@ pub fn select(
         .cloned()
         .multi_cartesian_product();
 
-    let index_refs = table_column_names
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _, _))| (name.clone(), i))
-        .collect::<HashMap<String, usize>>();
+    let index_refs = get_index_refs(&table_column_names);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
     let column_funcs = resolve_columns(
@@ -434,11 +430,7 @@ pub fn where_clause(
 ) -> Result<SolvePredicate, String> {
     let tables = load_aliased_tables(database, user, table_names)?;
     let col_names = gen_column_aliases(&tables);
-    let index_refs = col_names
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _, _))| (name.clone(), i))
-        .collect::<HashMap<String, usize>>();
+    let index_refs = get_index_refs(&col_names);
     solve_predicate(pred, &col_names, &index_refs)
 }
 
@@ -488,6 +480,15 @@ fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, Str
         })
         .flatten()
         .collect::<Vec<(String, Column, String)>>()
+}
+
+/// Hashmap from column names to index in the row
+fn get_index_refs(col_names: &Vec<(String, Column, String)>) -> HashMap<String, usize> {
+    col_names
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _, _))| (name.clone(), i))
+        .collect::<HashMap<String, usize>>()
 }
 
 /// Given a set of Columns, this creates a vector to reference these columns and apply relevant operations
