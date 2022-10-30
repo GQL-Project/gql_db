@@ -80,26 +80,26 @@ pub fn execute_update(
                 table,
                 assignments,
                 from,
-                selection
+                selection,
             } => {
                 //println!("table: {:?}", table);
                 //println!("assignments: {:?}", assignments);
                 //println!("from: {:?}", from); // This value is unimportant
                 //println!("selection: {:?}", selection);
-               
+
                 let mut final_table = String::from("test"); // What is the best way to do this?
                 let mut all_data: Vec<(String, String)> = Vec::new();
 
                 match table.relation.clone() {
-                    sqlparser::ast::TableFactor::Table{
+                    sqlparser::ast::TableFactor::Table {
                         name: table_name,
                         alias: alias,
                         args: args,
-                        with_hints: with_hints
+                        with_hints: with_hints,
                     } => {
                         // Now you have the table
                         final_table = table_name.to_string();
-                    },
+                    }
                     _ => {
                         // Not a table inside the TableFactor enum
                     }
@@ -115,21 +115,21 @@ pub fn execute_update(
                     match assignment.value.clone() {
                         Expr::Value(value) => {
                             insert_value = value.to_string();
-                        },
+                        }
                         _ => {
                             // Not a value
                         }
                     }
-                    all_data.push((column_name, insert_value)); 
+                    all_data.push((column_name, insert_value));
                 }
                 // Now we have the table name and the assignments
                 println!("Updated assignments: {:?}", all_data);
                 //results.push(update(all_data, final_table, get_db_instance()?, selection.clone(), user)?.0);
             }
-            Statement::Delete { 
+            Statement::Delete {
                 table_name,
                 using,
-                selection 
+                selection,
             } => {
                 let mut final_table = String::from("test"); // What is the best way to do this?
                 match table_name.clone() {
@@ -137,11 +137,11 @@ pub fn execute_update(
                         name: table_name,
                         alias: alias,
                         args: args,
-                        with_hints: with_hints
+                        with_hints: with_hints,
                     } => {
                         // Now you have the table
                         final_table = table_name.to_string();
-                    },
+                    }
                     _ => {
                         // Not a table inside the TableFactor enum
                     }
@@ -264,11 +264,7 @@ pub fn select(
         .cloned()
         .multi_cartesian_product();
 
-    let index_refs = table_column_names
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _, _))| (name.clone(), i))
-        .collect::<HashMap<String, usize>>();
+    let index_refs = get_index_refs(&table_column_names);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
     let column_funcs = resolve_columns(
@@ -302,8 +298,8 @@ pub fn select(
 }
 
 /// This method implements the SQL update statement
-/// 
-/* 
+///
+/*
 pub fn update(
     values: Vec<(String, String)>,
     table_name: String,
@@ -314,7 +310,7 @@ pub fn update(
     database.get_table_path(&table_name, user)?;
     let mut table = Table::from_user(user, database, &table_name, None)?;
     for (String, String) in values {
-    
+
     }
     //user.append_diff(&Diff::Insert(diff.clone()));
     Ok((format!("{} rows were successfully inserted.", len), diff))
@@ -371,11 +367,7 @@ pub fn where_clause(
 ) -> Result<SolvePredicate, String> {
     let tables = load_aliased_tables(database, user, table_names)?;
     let col_names = gen_column_aliases(&tables);
-    let index_refs = col_names
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _, _))| (name.clone(), i))
-        .collect::<HashMap<String, usize>>();
+    let index_refs = get_index_refs(&col_names);
     solve_predicate(pred, &col_names, &index_refs)
 }
 
@@ -425,6 +417,15 @@ fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, Str
         })
         .flatten()
         .collect::<Vec<(String, Column, String)>>()
+}
+
+/// Hashmap from column names to index in the row
+fn get_index_refs(col_names: &Vec<(String, Column, String)>) -> HashMap<String, usize> {
+    col_names
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _, _))| (name.clone(), i))
+        .collect::<HashMap<String, usize>>()
 }
 
 /// Given a set of Columns, this creates a vector to reference these columns and apply relevant operations
