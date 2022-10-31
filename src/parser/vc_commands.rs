@@ -92,4 +92,7 @@ pub enum VersionControlSubCommand {
         #[arg(long, short, default_value = "false")]
         force: bool,
     },
+    /// Returns all of tables in the current branch
+    #[clap(aliases = &["tables", "schema", "scehma_table"])]
+    SchemaTable,
 }

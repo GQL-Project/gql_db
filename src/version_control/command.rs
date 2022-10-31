@@ -232,6 +232,11 @@ pub fn info(hash: &String) -> Result<String, String> {
     return Ok(log_string.to_string());
 }
 
+/// This function outputs all of the possible tables and Schemas in the current branch
+pub fn schema_table() -> Result<String, String> {
+    Ok("test".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;

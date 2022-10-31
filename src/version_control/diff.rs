@@ -30,21 +30,22 @@ impl ToString for Diff {
     fn to_string(&self) -> String {
         match self {
             Diff::Insert(diff) =>
-                format!("In table {}\nWith Schemas {:?}\nRow {:?} Was Inserted",
-                diff.table_name.clone(), diff.schema.clone(), diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone()),
+                format!("\nROW INSERTED\nRow {:?} was Inserted in table {} with schemas {:?}",
+                diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone(), diff.table_name.clone(), diff.schema.clone()),
             Diff::Update(diff) =>
-                format!("In table {}\nWith Schemas {:?}\n{:?} Was Replaced by {:?}",
-                diff.table_name.clone(), diff.schema.clone(),
+                format!("\nROW UPDATE\nRow {:?} was Replaced by {:?} in table {} with Schemas {:?}",
                 diff.old_rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone(),
-                diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone()),
+                diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone(),
+                diff.table_name.clone(), diff.schema.clone()),
             Diff::Remove(diff) =>
-                format!("In table {}\nWith Schemas {:?}\nRow {:?} Was Deleted",
-                diff.table_name.clone(), diff.schema.clone(), diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone()),
+                format!("\nDELETE ROW\nRow {:?} was Deleted in table {} with schemas {:?}",
+                diff.rows.iter().map(|rowinfo| rowinfo.pagenum).collect::<Vec<u32>>().clone(),
+                diff.table_name.clone(), diff.schema.clone()),
             Diff::TableCreate(diff) =>
-                format!("Created Table Named: {} \nWith Schemas {:?}",
+                format!("\nCREATED TABLE\nCreated Table Named: {} with Schemas {:?}",
                 diff.table_name.clone(), diff.schema.clone()),
             Diff::TableRemove(diff) =>
-                format!("Removed Table {}", diff.table_name.clone()),
+                format!("\nREMOVED TABLE\nRemoved Table {}", diff.table_name.clone()),
         }
     }
 }
