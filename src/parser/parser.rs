@@ -1,8 +1,8 @@
+use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
 use crate::version_control::merge::MergeConflictResolutionAlgo;
-use crate::{fileio::databaseio::get_db_instance};
 
 use clap::Parser as ClapParser;
 use sqlparser::ast::Statement;
