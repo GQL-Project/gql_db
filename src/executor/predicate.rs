@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
 use prost_types::Timestamp;
-use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
+use sqlparser::ast::{OrderByExpr, Value as SqlValue};
 
 use super::query::ColumnAliases;
 use super::query::IndexRefs;
@@ -19,6 +19,11 @@ pub type PredicateSolver = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// Think of both of these functions as a 'solver' given a row, it will reduce the row to a value,
 /// as defined by the expression in the query.
 pub type ValueSolver = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
+
+/// A comparator between two Rows, used to sort rows in a ORDER BY clause
+/// The comparator is a function that takes two rows and returns an Ordering
+/// Ordering is an enum that can be Less, Equal, or Greater
+pub type ComparisonSolver = Box<dyn Fn(&Row, &Row) -> Result<Ordering, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
 #[derive(Debug)]
@@ -40,6 +45,18 @@ pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
     match solver(row)? {
         JointValues::DBValue(v) => Ok(v),
         JointValues::SQLValue(v) => Value::from_sql_value(&v),
+    }
+}
+
+/// Given a ComparisonSolver and two rows, return an Ordering or an error
+pub fn resolve_comparison(
+    comp: &Option<ComparisonSolver>,
+    row1: &Row,
+    row2: &Row,
+) -> Result<Ordering, String> {
+    match comp {
+        Some(comp) => comp(row1, row2),
+        None => Ok(Ordering::Equal), // If there's no comparison, then it's always equal
     }
 }
 
@@ -302,6 +319,49 @@ pub fn solve_value(
         },
         _ => Err(format!("Unexpected Value Clause: {}", expr)),
     }
+}
+
+/// Creates a comparator between two rows, given a series of Expr's to use as the comparison
+/// between the two rows.
+pub fn solve_comparison(
+    order_bys: &Vec<OrderByExpr>,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<ComparisonSolver, String> {
+    let comparators = order_bys
+        .iter()
+        .map(|order_by| {
+            let asc = match order_by.asc {
+                Some(asc) => asc,
+                None => true, // Default to ascending
+            };
+            let expr = &order_by.expr;
+            let solver = solve_value(expr, column_aliases, index_refs)?;
+            let result: ComparisonSolver = Box::new(move |a: &Row, b: &Row| {
+                let a = solver(a)?;
+                let b = solver(b)?;
+                let ordering = a
+                    .partial_cmp(&b)
+                    .ok_or(format!("Cannot compare {:?} and {:?}", a, b))?;
+                if asc {
+                    Ok(ordering)
+                } else {
+                    Ok(ordering.reverse())
+                }
+            });
+            Ok(result)
+        })
+        .collect::<Result<Vec<ComparisonSolver>, String>>()?;
+
+    Ok(Box::new(move |a: &Row, b: &Row| {
+        for comparator in &comparators {
+            let order = comparator(a, b)?;
+            if order != Ordering::Equal {
+                return Ok(order);
+            }
+        }
+        Ok(Ordering::Equal)
+    }))
 }
 
 // Given a column name, it figures out which table it belongs to and returns the

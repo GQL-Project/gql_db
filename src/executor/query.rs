@@ -56,7 +56,7 @@ pub fn execute_query(
                     user.append_command(&command);
                     let pred: Option<PredicateSolver> = match &s.selection {
                         Some(pred) => {
-                            where_clause(pred, &table_names, get_db_instance()?, user).ok()
+                            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
                         }
                         None => None,
                     };
@@ -132,7 +132,7 @@ pub fn execute_update(
                 // println!("Updated assignments: {:?}", all_data);
 
                 let pred: Option<PredicateSolver> = match selection {
-                    Some(pred) => where_clause(pred, &table_names, get_db_instance()?, user).ok(),
+                    Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
                     None => None,
                 };
 
@@ -178,7 +178,7 @@ pub fn execute_update(
                 let table_names = vec![(final_table.clone(), final_alias)];
 
                 let pred: Option<PredicateSolver> = match selection {
-                    Some(pred) => where_clause(pred, &table_names, get_db_instance()?, user).ok(),
+                    Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
                     None => None,
                 };
                 results.push(delete(final_table, pred, get_db_instance()?, user)?.0);
