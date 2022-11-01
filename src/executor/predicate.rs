@@ -1,23 +1,24 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
-use crate::util::dbtype::Column;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
 use prost_types::Timestamp;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
 
+use super::query::ColumnAliases;
+use super::query::IndexRefs;
+
 /// Basically, these are pointers to functions that can take a row and return a bool
 /// We could also encounter an invalid operation, like 1 + 'a' or 'a' + 'b'
 /// They have to be done this way, as the actual function itself is not known until runtime
 /// The SolvePredicate Function Type takes a row and returns a bool, used to filter rows
-pub type SolvePredicate = Box<dyn Fn(&Row) -> Result<bool, String>>;
+pub type PredicateSolver = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// The SolveValue Function Type takes a row and returns a Value, which is used by SolvePredicate
 /// It's also used to resolve the value of a column in a row, such as in `select id + 5 from table`
 /// Think of both of these functions as a 'solver' given a row, it will reduce the row to a value,
 /// as defined by the expression in the query.
-pub type SolveValue = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
+pub type ValueSolver = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
 #[derive(Debug)]
@@ -27,7 +28,7 @@ pub enum JointValues {
 }
 
 /// Given a predicate and a row, return a bool or an error
-pub fn resolve_predicate(pred: &Option<SolvePredicate>, row: &Row) -> Result<bool, String> {
+pub fn resolve_predicate(pred: &Option<PredicateSolver>, row: &Row) -> Result<bool, String> {
     match pred {
         Some(pred) => pred(row),
         None => Ok(true), // If there's no predicate, then it's always true
@@ -35,7 +36,7 @@ pub fn resolve_predicate(pred: &Option<SolvePredicate>, row: &Row) -> Result<boo
 }
 
 /// Converts the type into a 'Proper' Value, which is used by the database
-pub fn resolve_value(solver: &SolveValue, row: &Row) -> Result<Value, String> {
+pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
     match solver(row)? {
         JointValues::DBValue(v) => Ok(v),
         JointValues::SQLValue(v) => Value::from_sql_value(&v),
@@ -49,12 +50,12 @@ pub fn resolve_value(solver: &SolveValue, row: &Row) -> Result<Value, String> {
 /// Currently, this is implemented recursively, see if we can do it iteratively
 pub fn solve_predicate(
     pred: &Expr,
-    column_names: &Vec<(String, Column, String)>,
-    index_refs: &HashMap<String, usize>,
-) -> Result<SolvePredicate, String> {
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<PredicateSolver, String> {
     match pred {
         Expr::Identifier(_) => {
-            let solve_value = solve_value(pred, column_names, index_refs)?;
+            let solve_value = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| {
                 // Figure out the whether the value of the column cell is a boolean or not.
                 let value = solve_value(row)?;
@@ -66,17 +67,17 @@ pub fn solve_predicate(
             }))
         }
         Expr::IsFalse(pred) => {
-            let pred = solve_predicate(pred, column_names, index_refs)?;
+            let pred = solve_predicate(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| Ok(!pred(row)?)))
         }
-        Expr::IsNotFalse(pred) => solve_predicate(pred, column_names, index_refs),
-        Expr::IsTrue(pred) => solve_predicate(pred, column_names, index_refs),
+        Expr::IsNotFalse(pred) => solve_predicate(pred, column_aliases, index_refs),
+        Expr::IsTrue(pred) => solve_predicate(pred, column_aliases, index_refs),
         Expr::IsNotTrue(pred) => {
-            let pred = solve_predicate(pred, column_names, index_refs)?;
+            let pred = solve_predicate(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| Ok(!pred(row)?)))
         }
         Expr::IsNull(pred) => {
-            let pred = solve_value(pred, column_names, index_refs)?;
+            let pred = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| match pred(row)? {
                 JointValues::DBValue(Value::Null) => Ok(true),
                 JointValues::SQLValue(SqlValue::Null) => Ok(true),
@@ -84,7 +85,7 @@ pub fn solve_predicate(
             }))
         }
         Expr::IsNotNull(pred) => {
-            let pred = solve_value(pred, column_names, index_refs)?;
+            let pred = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| match pred(row)? {
                 JointValues::DBValue(Value::Null) => Ok(false),
                 JointValues::SQLValue(SqlValue::Null) => Ok(false),
@@ -95,8 +96,8 @@ pub fn solve_predicate(
             // Resolve values from the two sides of the expression, and then perform
             // the comparison on the two values
             BinaryOperator::Gt => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -104,8 +105,8 @@ pub fn solve_predicate(
                 }))
             }
             BinaryOperator::Lt => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -113,8 +114,8 @@ pub fn solve_predicate(
                 }))
             }
             BinaryOperator::GtEq => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -122,8 +123,8 @@ pub fn solve_predicate(
                 }))
             }
             BinaryOperator::LtEq => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -131,8 +132,8 @@ pub fn solve_predicate(
                 }))
             }
             BinaryOperator::Eq => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -140,8 +141,8 @@ pub fn solve_predicate(
                 }))
             }
             BinaryOperator::NotEq => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -152,25 +153,25 @@ pub fn solve_predicate(
             // combine them into a single function that returns true if both functions return true
             // Note how this would also indirectly handle short-circuiting
             BinaryOperator::And => {
-                let left = solve_predicate(left, column_names, index_refs)?;
-                let right = solve_predicate(right, column_names, index_refs)?;
+                let left = solve_predicate(left, column_aliases, index_refs)?;
+                let right = solve_predicate(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| Ok(left(row)? && right(row)?)))
             }
             BinaryOperator::Or => {
-                let left = solve_predicate(left, column_names, index_refs)?;
-                let right = solve_predicate(right, column_names, index_refs)?;
+                let left = solve_predicate(left, column_aliases, index_refs)?;
+                let right = solve_predicate(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| Ok(left(row)? || right(row)?)))
             }
             _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
         },
         Expr::UnaryOp { op, expr } => match op {
             UnaryOperator::Not => {
-                let expr = solve_predicate(expr, column_names, index_refs)?;
+                let expr = solve_predicate(expr, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| Ok(!expr(row)?)))
             }
             _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
         },
-        Expr::Nested(pred) => solve_predicate(pred, column_names, index_refs),
+        Expr::Nested(pred) => solve_predicate(pred, column_aliases, index_refs),
         _ => Err(format!("Invalid Predicate Clause: {}", pred)),
     }
 }
@@ -181,16 +182,16 @@ pub fn solve_predicate(
 /// The main difference between this and solve_predicate is that we can return a Value, instead of
 /// a boolean.
 pub fn solve_value(
-    pred: &Expr,
-    column_names: &Vec<(String, Column, String)>,
-    index_refs: &HashMap<String, usize>,
-) -> Result<SolveValue, String> {
-    match pred {
+    expr: &Expr,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<ValueSolver, String> {
+    match expr {
         // This would mean that we're referencing a column name, so we just need to figure out the
         // index of that column name in the row, and then return a function that references this index
         // in the provided row.
         Expr::Identifier(x) => {
-            let x = resolve_reference(x.value.to_string(), column_names)?;
+            let x = resolve_reference(x.value.to_string(), column_aliases)?;
             let index = *index_refs
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
@@ -207,7 +208,7 @@ pub fn solve_value(
                     .map(|x| x.value.to_string())
                     .collect::<Vec<String>>()
                     .join("."),
-                column_names,
+                column_aliases,
             )?;
             let index = *index_refs
                 .get(&x)
@@ -216,7 +217,7 @@ pub fn solve_value(
                 Ok(JointValues::DBValue(row[index].clone()))
             }))
         }
-        Expr::Nested(x) => solve_value(x, column_names, index_refs),
+        Expr::Nested(x) => solve_value(x, column_aliases, index_refs),
         Expr::Value(x) => {
             // Create a copy of the value
             let val = x.clone();
@@ -226,8 +227,8 @@ pub fn solve_value(
         }
         Expr::BinaryOp { left, op, right } => match op {
             BinaryOperator::Plus => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -235,8 +236,8 @@ pub fn solve_value(
                 }))
             }
             BinaryOperator::Minus => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -244,8 +245,8 @@ pub fn solve_value(
                 }))
             }
             BinaryOperator::Multiply => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -253,8 +254,8 @@ pub fn solve_value(
                 }))
             }
             BinaryOperator::Divide => {
-                let left = solve_value(left, column_names, index_refs)?;
-                let right = solve_value(right, column_names, index_refs)?;
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let left = left(row)?;
                     let right = right(row)?;
@@ -269,7 +270,7 @@ pub fn solve_value(
             | BinaryOperator::GtEq
             | BinaryOperator::Eq
             | BinaryOperator::NotEq => {
-                let binary = solve_predicate(pred, column_names, index_refs)?;
+                let binary = solve_predicate(expr, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let pred = binary(row)?;
                     Ok(JointValues::DBValue(Value::Bool(pred)))
@@ -279,11 +280,11 @@ pub fn solve_value(
         },
         Expr::UnaryOp { op, expr } => match op {
             UnaryOperator::Plus => {
-                let expr = solve_value(expr, column_names, index_refs)?;
+                let expr = solve_value(expr, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| expr(row)))
             }
             UnaryOperator::Minus => {
-                let expr = solve_value(expr, column_names, index_refs)?;
+                let expr = solve_value(expr, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let val = expr(row)?;
                     JointValues::DBValue(Value::I32(0)).subtract(&val)
@@ -291,7 +292,7 @@ pub fn solve_value(
             }
             UnaryOperator::Not => {
                 // Solve the inner value, expecting it's return type to be a boolean, and negate it.
-                let binary = solve_predicate(expr, column_names, index_refs)?;
+                let binary = solve_predicate(expr, column_aliases, index_refs)?;
                 Ok(Box::new(move |row| {
                     let pred = binary(row)?;
                     Ok(JointValues::DBValue(Value::Bool(!pred)))
@@ -299,7 +300,7 @@ pub fn solve_value(
             }
             _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
         },
-        _ => Err(format!("Unexpected Value Clause: {}", pred)),
+        _ => Err(format!("Unexpected Value Clause: {}", expr)),
     }
 }
 
@@ -309,13 +310,13 @@ pub fn solve_value(
 // already, like 'U', it would return "U.id".
 pub fn resolve_reference(
     column_name: String,
-    table_column_names: &Vec<(String, Column, String)>,
+    column_aliases: &ColumnAliases,
 ) -> Result<String, String> {
     if column_name.contains(".") {
         // We know this works, as the parser does not allow for '.' in column names
         Ok(column_name)
     } else {
-        let matches: Vec<&String> = table_column_names
+        let matches: Vec<&String> = column_aliases
             .iter()
             .filter_map(|(col_name, _, name)| {
                 if name == &column_name {

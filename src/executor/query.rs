@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::predicate::{
     resolve_predicate, resolve_reference, resolve_value, solve_predicate, solve_value,
-    SolvePredicate, SolveValue,
+    PredicateSolver, ValueSolver,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
@@ -16,10 +16,13 @@ use crate::{
     },
     util::row::RowLocation,
 };
-use chrono::format::format;
+
 use itertools::Itertools;
-use serde::de::value;
 use sqlparser::ast::{Expr, Ident, SelectItem, SetExpr, Statement};
+
+pub type Tables = Vec<(Table, String)>;
+pub type ColumnAliases = Vec<(String, Column, String)>;
+pub type IndexRefs = HashMap<String, usize>;
 
 /// A parse function, that starts with a string and returns either a table for query commands
 /// or a string for
@@ -51,13 +54,10 @@ pub fn execute_query(
                         }
                     }
                     user.append_command(&command);
-                    let pred: Option<SolvePredicate> = match &s.selection {
-                        Some(pred) => Some(where_clause(
-                            pred,
-                            table_names.clone(),
-                            get_db_instance()?,
-                            user,
-                        )?),
+                    let pred: Option<PredicateSolver> = match &s.selection {
+                        Some(pred) => {
+                            where_clause(pred, &table_names, get_db_instance()?, user).ok()
+                        }
                         None => None,
                     };
                     return select(columns, pred, table_names, get_db_instance()?, user);
@@ -85,7 +85,7 @@ pub fn execute_update(
             Statement::Update {
                 table,
                 assignments,
-                from,
+                from: _,
                 selection,
             } => {
                 //println!("table: {:?}", table);
@@ -93,21 +93,21 @@ pub fn execute_update(
                 //println!("from: {:?}", from); // This value is unimportant
                 //println!("selection: {:?}", selection);
 
-                let mut final_table = String::from("test"); // What is the best way to do this?
+                let final_table; // What is the best way to do this?
                 let mut all_data: Vec<(String, Expr)> = Vec::new();
-                let mut final_alias;
+                let final_alias;
 
                 match table.relation.clone() {
                     sqlparser::ast::TableFactor::Table {
                         name: table_name,
-                        alias: alias,
-                        args: args,
-                        with_hints: with_hints,
+                        alias,
+                        args: _,
+                        with_hints: _,
                     } => {
                         // Now you have the table
-                        match alias {
-                            Some(x) => (final_alias = x.to_string()),
-                            None => (final_alias = " ".to_string()),
+                        final_alias = match alias {
+                            Some(x) => x.to_string(),
+                            None => "".to_string(),
                         };
                         final_table = table_name.to_string();
                     }
@@ -122,22 +122,17 @@ pub fn execute_update(
 
                 // Iterate through and build vector of assignments to pass to update
                 for assignment in assignments {
-                    let mut column_name = String::new();
-                    let mut insert_value = assignment.value.clone();
+                    let column_name;
+                    let insert_value = assignment.value.clone();
                     column_name = assignment.id[0].value.clone();
 
                     all_data.push((column_name, insert_value));
                 }
                 // Now we have the table name and the assignments
-                println!("Updated assignments: {:?}", all_data);
+                // println!("Updated assignments: {:?}", all_data);
 
-                let pred: Option<SolvePredicate> = match selection {
-                    Some(pred) => Some(where_clause(
-                        pred,
-                        table_names.clone(),
-                        get_db_instance()?,
-                        user,
-                    )?),
+                let pred: Option<PredicateSolver> = match selection {
+                    Some(pred) => where_clause(pred, &table_names, get_db_instance()?, user).ok(),
                     None => None,
                 };
 
@@ -155,22 +150,22 @@ pub fn execute_update(
             }
             Statement::Delete {
                 table_name,
-                using,
+                using: _,
                 selection,
             } => {
-                let mut final_table = String::from("test"); // What is the best way to do this?
-                let mut final_alias;
+                let final_table; // What is the best way to do this?
+                let final_alias;
                 match table_name.clone() {
                     sqlparser::ast::TableFactor::Table {
                         name: table_name,
-                        alias: alias,
-                        args: args,
-                        with_hints: with_hints,
+                        alias,
+                        args: _,
+                        with_hints: _,
                     } => {
                         // Now you have the table
-                        match alias {
-                            Some(x) => (final_alias = x.to_string()),
-                            None => (final_alias = "".to_string()),
+                        final_alias = match alias {
+                            Some(x) => x.to_string(),
+                            None => "".to_string(),
                         };
                         final_table = table_name.to_string();
                     }
@@ -182,13 +177,8 @@ pub fn execute_update(
 
                 let table_names = vec![(final_table.clone(), final_alias)];
 
-                let pred: Option<SolvePredicate> = match selection {
-                    Some(pred) => Some(where_clause(
-                        pred,
-                        table_names.clone(),
-                        get_db_instance()?,
-                        user,
-                    )?),
+                let pred: Option<PredicateSolver> = match selection {
+                    Some(pred) => where_clause(pred, &table_names, get_db_instance()?, user).ok(),
                     None => None,
                 };
                 results.push(delete(final_table, pred, get_db_instance()?, user)?.0);
@@ -226,7 +216,6 @@ pub fn execute_update(
                                 );
                             }
                             all_data.push(data);
-                            println!("data: {:?}", all_data);
                         }
                     }
                     _ => {
@@ -285,7 +274,7 @@ pub fn drop_table(
 /// It returns a tuple containing the schema and the rows of the resulting table.
 pub fn select(
     columns: Vec<SelectItem>,
-    pred: Option<SolvePredicate>,
+    pred: Option<PredicateSolver>,
     table_names: Vec<(String, String)>,
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
@@ -298,10 +287,10 @@ pub fn select(
     let mut selected_rows: Vec<Row> = Vec::new();
     let mut column_names: Vec<String> = Vec::new();
 
-    let tables = load_aliased_tables(database, user, table_names)?;
+    let tables = load_aliased_tables(database, user, &table_names)?;
 
     // This is where the fun begins... ;)
-    let table_column_names = gen_column_aliases(&tables);
+    let table_aliases = gen_column_aliases(&tables);
 
     // Create an iterator of table iterators using the cartesion product of the tables :)
     let table_iterator = tables
@@ -310,14 +299,14 @@ pub fn select(
         .cloned()
         .multi_cartesian_product();
 
-    let index_refs = get_index_refs(&table_column_names);
+    let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
     let column_funcs = resolve_columns(
         columns,
         &mut column_names,
         &tables,
-        &table_column_names,
+        &table_aliases,
         &index_refs,
     )?;
 
@@ -348,36 +337,39 @@ pub fn update(
     values: Vec<(String, Expr)>,
     table_name: String,
     alias: String,
-    selection: Option<SolvePredicate>,
+    selection: Option<PredicateSolver>,
     database: &Database,
     user: &mut User,
 ) -> Result<(String, UpdateDiff), String> {
     database.get_table_path(&table_name, user)?;
-    let mut table = Table::from_user(user, database, &table_name, None)?;
+    let table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowInfo> = Vec::new();
-    let tables = load_aliased_tables(database, user, vec![(table_name, alias)])?;
-    let col_names = gen_column_aliases(&tables);
-    let index_refs = get_index_refs(&col_names);
+    let tables = load_aliased_tables(database, user, &vec![(table_name.clone(), alias)])?;
+    let column_aliases = gen_column_aliases(&tables);
+    let index_refs = get_index_refs(&column_aliases);
 
-    let mut finished_values = values
+    let values = values
         .into_iter()
-        .map(|(name, expr)| Ok((name, solve_value(&expr, &col_names, &index_refs)?)))
-        .collect::<Result<Vec<(String, SolveValue)>, String>>()?;
+        .map(|(name, expr)| Ok((name, solve_value(&expr, &column_aliases, &index_refs)?)))
+        .collect::<Result<Vec<(String, ValueSolver)>, String>>()?;
 
     for row_info in table.clone() {
         if resolve_predicate(&selection, &row_info.row)? {
             // Append the selected_cells row to our result
             let mut row_info = row_info.clone();
-            for (name, value) in finished_values.iter() {
+            for (name, value) in values.iter() {
                 let value = resolve_value(&value, &row_info.row)?;
-                let column_name = resolve_reference(name.clone(), &col_names)?;
-                let index = *index_refs.get(&column_name).ok_or(format!("error"))?;
+                let column_name = resolve_reference(name.clone(), &column_aliases)?;
+                let index = *index_refs.get(&column_name).ok_or(format!(
+                    "Column name {} not found in table {}",
+                    column_name, &table_name
+                ))?;
                 row_info.row[index] = value;
             }
             selected_rows.push(row_info);
         }
     }
-    
+
     let len: usize = selected_rows.len();
     let diff: UpdateDiff = table.rewrite_rows(selected_rows)?;
     user.append_diff(&Diff::Update(diff.clone()));
@@ -386,7 +378,7 @@ pub fn update(
 
 pub fn delete(
     table_name: String,
-    selection: Option<SolvePredicate>,
+    selection: Option<PredicateSolver>,
     database: &Database,
     user: &mut User,
 ) -> Result<(String, RemoveDiff), String> {
@@ -453,14 +445,14 @@ pub fn insert(
 // the expression is invalid.
 pub fn where_clause(
     pred: &Expr,
-    table_names: Vec<(String, String)>,
+    table_names: &Vec<(String, String)>,
     database: &Database,
     user: &User,
-) -> Result<SolvePredicate, String> {
-    let tables = load_aliased_tables(database, user, table_names)?;
-    let col_names = gen_column_aliases(&tables);
-    let index_refs = get_index_refs(&col_names);
-    solve_predicate(pred, &col_names, &index_refs)
+) -> Result<PredicateSolver, String> {
+    let tables = load_aliased_tables(database, user, &table_names)?;
+    let column_aliases = gen_column_aliases(&tables);
+    let index_refs = get_index_refs(&column_aliases);
+    solve_predicate(pred, &column_aliases, &index_refs)
 }
 
 // Generating tables with aliases from a list of table names,
@@ -468,8 +460,8 @@ pub fn where_clause(
 fn load_aliased_tables(
     database: &Database,
     user: &User,
-    table_names: Vec<(String, String)>,
-) -> Result<Vec<(Table, String)>, String> {
+    table_names: &Vec<(String, String)>,
+) -> Result<Tables, String> {
     let tables: Vec<(Table, String)> = table_names
         .iter()
         .map(|(table_name, alias)| {
@@ -482,7 +474,7 @@ fn load_aliased_tables(
                 Ok((table, alias.to_string()))
             }
         })
-        .collect::<Result<Vec<(Table, String)>, String>>()?;
+        .collect::<Result<Tables, String>>()?;
     Ok(tables)
 }
 
@@ -491,7 +483,7 @@ fn load_aliased_tables(
 // alongside their column types and new column name when output.
 // It will be a vector of tuples where each tuple is of the form:
 // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
-fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, String)> {
+fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
     tables
         .iter()
         .map(|(table, alias): &(Table, String)| {
@@ -505,44 +497,44 @@ fn gen_column_aliases(tables: &Vec<(Table, String)>) -> Vec<(String, Column, Str
                         name.clone(),
                     )
                 })
-                .collect::<Vec<(String, Column, String)>>()
+                .collect::<ColumnAliases>()
         })
         .flatten()
-        .collect::<Vec<(String, Column, String)>>()
+        .collect::<ColumnAliases>()
 }
 
 /// Hashmap from column names to index in the row
-fn get_index_refs(col_names: &Vec<(String, Column, String)>) -> HashMap<String, usize> {
-    col_names
+fn get_index_refs(column_aliases: &ColumnAliases) -> IndexRefs {
+    column_aliases
         .iter()
         .enumerate()
         .map(|(i, (name, _, _))| (name.clone(), i))
-        .collect::<HashMap<String, usize>>()
+        .collect::<IndexRefs>()
 }
 
 /// Given a set of Columns, this creates a vector to reference these columns and apply relevant operations
 fn resolve_columns(
     columns: Vec<SelectItem>,
     column_names: &mut Vec<String>,
-    tables: &Vec<(Table, String)>,
-    table_column_names: &Vec<(String, Column, String)>,
-    index_refs: &HashMap<String, usize>,
-) -> Result<Vec<SolveValue>, String> {
+    tables: &Tables,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Vec<ValueSolver>, String> {
     columns
         .into_iter()
-        .map(|item| resolve_selects(item, column_names, table_column_names, tables, index_refs))
+        .map(|item| resolve_selects(item, column_names, tables, column_aliases, index_refs))
         .flatten_ok()
-        .collect::<Result<Vec<SolveValue>, String>>()
+        .collect::<Result<Vec<ValueSolver>, String>>()
 }
 
 /// Given a specific SelectItem, this will resolve the column name and create a function to resolve the value
 fn resolve_selects(
     item: SelectItem,
     column_names: &mut Vec<String>,
-    table_column_names: &Vec<(String, Column, String)>,
-    tables: &Vec<(Table, String)>,
-    index_refs: &HashMap<String, usize>,
-) -> Result<Vec<SolveValue>, String> {
+    tables: &Tables,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Vec<ValueSolver>, String> {
     let items = Ok::<Vec<Expr>, String>(match item {
         SelectItem::ExprWithAlias { expr, alias: _ } => {
             column_names.push(expr.to_string());
@@ -554,12 +546,12 @@ fn resolve_selects(
         }
         // Pick out all the columns
         SelectItem::Wildcard => {
-            let names: Vec<Expr> = table_column_names
+            let names: Vec<Expr> = column_aliases
                 .iter()
                 .map(|(x, _, _)| to_ident(x.clone()))
                 .collect();
             column_names.append(
-                table_column_names
+                column_aliases
                     .iter()
                     .map(|(_, _, z)| z.clone())
                     .collect::<Vec<String>>()
@@ -595,8 +587,8 @@ fn resolve_selects(
     })?;
     items
         .into_iter()
-        .map(|item| solve_value(&item, &table_column_names, &index_refs))
-        .collect::<Result<Vec<SolveValue>, String>>()
+        .map(|item| solve_value(&item, &column_aliases, &index_refs))
+        .collect::<Result<Vec<ValueSolver>, String>>()
 }
 
 pub fn to_ident(s: String) -> Expr {
@@ -1661,7 +1653,7 @@ pub mod tests {
     #[test]
     #[serial]
     // Test update row
-    fn test_update_row(){
+    fn test_update_row() {
         let new_db: Database = Database::new("update_test_db".to_string()).unwrap();
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -1694,6 +1686,5 @@ pub mod tests {
                 Value::Null,
             ],
         ];
-        
     }
 }
