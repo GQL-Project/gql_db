@@ -115,8 +115,10 @@ impl DatabaseConnection for Connection {
             .get_client(&request.id)
             .map_err(|e| Status::internal(e))?;
 
+        let all_users: Vec<User> = self.get_clients_readonly();
+
         /* VC Command Pipeline Begins Here */
-        let result = parser::parse_vc_cmd(&request.query, user);
+        let result = parser::parse_vc_cmd(&request.query, user, all_users);
 
         // In case a user switched to a new branch, we want the db to remove any directories that are not needed.
         let in_use_branch_names: Vec<String> = self.get_all_branches_clients_are_connected_to();

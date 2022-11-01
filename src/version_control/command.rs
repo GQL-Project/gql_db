@@ -1,6 +1,6 @@
 use crate::{fileio::databaseio::*, user::userdata::User};
 use crate::fileio::databaseio::*;
-//use crate::fileio::databaseio::Database::get_diffs_between_nodes;
+
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
@@ -71,6 +71,69 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     let json = serde_json::to_string(&log_objects).unwrap();
 
     Ok((log_string, log_strings, json))
+}
+
+/// Lists all the available branches, and a * next to the current branch
+/// for the given user.
+pub fn list_branches(user: &User) -> Result<String, String> {
+    let branch_heads = get_db_instance()?.get_branch_heads_file_mut();
+
+    let mut branch_string = String::new();
+
+    for name in branch_heads.get_all_branch_names()? {
+        if name == user.get_current_branch_name() {
+            branch_string = format!("{}{}*\n", branch_string, name);
+        } else {
+            branch_string = format!("{}{}\n", branch_string, name);
+        }
+    }
+
+    Ok(branch_string)
+}
+
+/// This function deletes a branch from the database
+pub fn del_branch(
+    user: &User,
+    branch_name: &String,
+    force: bool,
+    all_users: Vec<User>,
+) -> Result<String, String> {
+    // Check if the branch is the master branch. If so, return an error
+    // MAIN_BRANCH_NAME is the name of the master branch
+    if branch_name == MAIN_BRANCH_NAME {
+        return Err("ERROR: Cannot delete the master branch".to_string());
+    }
+
+    // Check if the branch is the current branch. If so, return an error
+    // user.get_current_branch() is the name
+    if user.get_current_branch_name() == *branch_name {
+        return Err("ERROR: Cannot delete the current branch".to_string());
+    }
+
+    // checks if there are uncommited changes, if not, delete no matter what
+    if !force {
+        // Check if branch has uncommitted changes.
+        for client in all_users {
+            if client.get_current_branch_name() == *branch_name {
+                if client.is_on_temp_commit() {
+                    return Err(
+                        "ERROR: Branch has uncommitted changes. Use -f to force delete."
+                            .to_string(),
+                    );
+                }
+            }
+        }
+    }
+    // delete branch head
+    let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+    branch_heads_instance.delete_branch_head(branch_name)?;
+
+    // delete all the rows where branch name = the branch head
+    let branches_instance = get_db_instance()?.get_branch_file_mut();
+    branches_instance.delete_branch_node(branch_name)?;
+
+    let result_string = format!("Branch {} deleted", &branch_name);
+    Ok(result_string.to_string())
 }
 
 /// Takes two commit hashes, and attempts to find a chain of commits
@@ -239,6 +302,27 @@ pub fn discard(user: &mut User) -> Result<(), String> {
     Ok(())
 }
 
+/// This function is used to get the commits from a specific hash
+pub fn info(hash: &String) -> Result<String, String> {
+    let commit_file = get_db_instance()?.get_commit_file_mut();
+    let commit = commit_file.fetch_commit(hash)?;
+
+    let mut log_string: String = String::new();
+
+    log_string = format!("{}\n-----------------------", log_string);
+    log_string = format!("{}\nCommit: {}", log_string, commit.hash);
+    log_string = format!("{}\nMessage: {}", log_string, commit.message);
+    log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
+    log_string = format!("{}\nChanges Made:", log_string);
+    for diffs in commit.diffs {
+        log_string = format!("{}\n{}", log_string, diffs.to_string());
+    }
+    log_string = format!("{}\n-----------------------\n", log_string);
+
+    return Ok(log_string.to_string());
+
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -246,9 +330,10 @@ mod tests {
     use crate::{
         executor::query::create_table,
         fileio::{
-            databaseio::{create_db_instance, delete_db_instance},
+            databaseio::{delete_db_instance, Database},
             header::Schema,
         },
+        parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
@@ -471,5 +556,215 @@ mod tests {
         // Commits 5 - 7 should not be squasable, since user is on another branch
         let _ = squash(&hashes[4], &hashes[6], &user).unwrap_err();
         delete_db_instance().unwrap();
+    }
+
+    // test if the branch deletes properly
+    #[test]
+    #[serial]
+    fn test_del_branch0() {
+        let query0 = "GQL branch branch_name";
+        let query01 = "GQL branch branch_name1";
+        let query2 = "GQL delete branch_name";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_del_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
+        parse_vc_cmd(query01, &mut user, all_users.clone()).unwrap();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query2, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_ok());
+    }
+
+    // checks if it detects non existent branch
+    #[test]
+    #[serial]
+    fn test_del_branch1() {
+        let query = "GQL delete branch_name1";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_del_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_err());
+    }
+
+    // Tries to delete the current branch
+    #[test]
+    #[serial]
+    fn test_del_branch2() {
+        let query0 = "GQL branch branch_name";
+        let query1 = "GQL delete branch_name";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_del_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query1, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_err());
+    }
+
+    // Tries to delete the branch with an uncommitted change
+    #[test]
+    #[serial]
+    fn test_del_branch3() {
+        let query0 = "GQL branch test";
+        let query1 = "GQL switch_branch test";
+        let query2 = "GQL branch test1";
+        let query3 = "GQL delete test";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_del_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut user1: User = User::new("test_user1".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+
+        // first user creates a branch
+        parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
+
+        // second user joins that branch
+        parse_vc_cmd(query1, &mut user1, all_users.clone()).unwrap();
+
+        // second user makes an uncommitted change
+        let load_db = Database::load_db("gql_del_test".to_string()).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user1,
+        )
+        .unwrap();
+        user1.set_is_on_temp_commit(true);
+
+        // first user makes a new branch and moves there
+        parse_vc_cmd(query2, &mut user, all_users.clone()).unwrap();
+
+        all_users.push(user.clone());
+        all_users.push(user1.clone());
+        // first user tries to delete the branch with the uncommitted change
+        parse_vc_cmd("GQL status", &mut user1, all_users.clone()).unwrap();
+        let result = parse_vc_cmd(query3, &mut user, all_users.clone());
+
+        // should not be able to delete
+        assert!(result.is_err());
+        delete_db_instance().unwrap();
+        // new_db.delete_database().unwrap();
+    }
+
+    // Tries to delete the branch with an uncommitted change with -f
+    #[test]
+    #[serial]
+    fn test_del_branch4() {
+        let query0 = "GQL branch test";
+        let query1 = "GQL switch_branch test";
+        let query2 = "GQL branch test1";
+        let query3 = "GQL delete -f test";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_del_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut user1: User = User::new("test_user1".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+
+        // first user creates a branch
+        parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
+
+        // second user joins that branch
+        parse_vc_cmd(query1, &mut user1, all_users.clone()).unwrap();
+
+        // second user makes an uncommitted change
+        let load_db = Database::load_db("gql_del_test".to_string()).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user1,
+        )
+        .unwrap();
+        user1.set_is_on_temp_commit(true);
+
+        // first user makes a new branch and moves there
+        parse_vc_cmd(query2, &mut user, all_users.clone()).unwrap();
+
+        all_users.push(user.clone());
+        all_users.push(user1.clone());
+        // first user tries to delete the branch with the uncommitted change
+        parse_vc_cmd("GQL status", &mut user1, all_users.clone()).unwrap();
+        let result = parse_vc_cmd(query3, &mut user, all_users.clone());
+
+        // should not be able to delete
+        assert!(result.is_ok());
+        delete_db_instance().unwrap();
+        // new_db.delete_database().unwrap();
+    }
+
+    // Tries to get the info without the commit hash
+    #[test]
+    #[serial]
+    fn test_info_commit() {
+        let query = "GQL info";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_info_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_err());
+    }
+
+    //Tries to get the info with an invalid commit hash
+    #[test]
+    #[serial]
+    fn test_info_commit1() {
+        let query = "GQL info 123456789";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_info_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_err());
+    }
+
+    // Tries to get the info with a valid commit hash
+    #[test]
+    #[serial]
+    fn test_info_commit2() {
+        let query0 = "GQL commit -m test";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_info_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+
+        let mut load_db = Database::load_db("gql_info_test".to_string()).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user,
+        )
+        .unwrap();
+
+        parse_vc_cmd(query0, &mut user, all_users.clone()).unwrap();
+
+        let commit_file = load_db.get_commit_file_mut();
+        let commit = commit_file.read_commit(1);
+        let query1 = format!("GQL info {}", commit.unwrap().hash);
+
+        let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_ok());
     }
 }

@@ -219,7 +219,7 @@ impl CommitFile {
         Ok(())
     }
 
-    fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
+    pub fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
         // Read the commit information first
         let page = &mut read_page(pagenum, &self.delta_path)?;
         let pagenum = &mut pagenum;
@@ -245,6 +245,7 @@ impl CommitFile {
                     let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
                     let schema: Schema = self.sread_schema(page, pagenum, offset)?;
                     let mut rows: Vec<RowInfo> = Vec::new();
+                    let mut old_rows: Vec<RowInfo> = Vec::new();
                     for _ in 0..num_rows {
                         let row = self.sread_row(page, pagenum, offset, &schema)?;
                         let row_info = RowInfo {
@@ -253,6 +254,17 @@ impl CommitFile {
                             rownum: self.sread_type(page, pagenum, offset)?,
                         };
                         rows.push(row_info);
+
+                        // Read in the old row if this is an update
+                        if difftype == UPDATE_TYPE {
+                            let old_row = self.sread_row(page, pagenum, offset, &schema)?;
+                            let old_row_info = RowInfo {
+                                row: old_row,
+                                pagenum: self.sread_type(page, pagenum, offset)?,
+                                rownum: self.sread_type(page, pagenum, offset)?,
+                            };
+                            old_rows.push(old_row_info);
+                        }
                     }
                     if difftype == INSERT_TYPE {
                         Diff::Insert(InsertDiff {
@@ -265,6 +277,7 @@ impl CommitFile {
                             table_name,
                             schema,
                             rows,
+                            old_rows,
                         })
                     } else {
                         Diff::Remove(RemoveDiff {
@@ -282,8 +295,8 @@ impl CommitFile {
                 }
                 TABLE_REMOVE_TYPE => {
                     // Remove Table
-                    let schema = self.sread_schema(page, pagenum, offset)?;
                     let num_rows: u32 = self.sread_type(page, pagenum, offset)?;
+                    let schema = self.sread_schema(page, pagenum, offset)?;
                     let mut rows: Vec<RowInfo> = Vec::new();
                     for _ in 0..num_rows {
                         let row = self.sread_row(page, pagenum, offset, &schema)?;
@@ -334,10 +347,13 @@ impl CommitFile {
                 Diff::Update(update) => {
                     self.swrite_type(page, pagenum, offset, update.rows.len() as u32)?;
                     self.swrite_schema(page, pagenum, offset, &update.schema)?;
-                    for row in &update.rows {
+                    for (row, old_row) in update.rows.iter().zip(update.old_rows.iter()) {
                         self.swrite_row(page, pagenum, offset, &row.row, &update.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
+                        self.swrite_row(page, pagenum, offset, &old_row.row, &update.schema)?;
+                        self.swrite_type(page, pagenum, offset, old_row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, old_row.rownum)?;
                     }
                 }
                 Diff::Remove(remove) => {
@@ -353,7 +369,13 @@ impl CommitFile {
                     self.swrite_schema(page, pagenum, offset, &create.schema)?;
                 }
                 Diff::TableRemove(remove) => {
+                    self.swrite_type(page, pagenum, offset, remove.rows_removed.len() as u32)?;
                     self.swrite_schema(page, pagenum, offset, &remove.schema)?;
+                    for row in &remove.rows_removed {
+                        self.swrite_row(page, pagenum, offset, &row.row, &remove.schema)?;
+                        self.swrite_type(page, pagenum, offset, row.pagenum)?;
+                        self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
                 }
             }
         }
@@ -396,6 +418,7 @@ impl CommitFile {
                 match diff {
                     Diff::Update(update) => {
                         let mut newrows = update.rows.clone();
+                        let mut oldrows = update.old_rows.clone();
                         // An Insert and an Update just become an Insert
                         if let Some(Diff::Insert(insert)) =
                             get_diff(&map, &update.table_name, INSERT_TYPE)
@@ -425,6 +448,12 @@ impl CommitFile {
                                     .iter()
                                     .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
                             });
+                            oldrows.retain(|x| {
+                                !insert
+                                    .rows
+                                    .iter()
+                                    .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                            });
                             // Update the insert diff with the new rows
                             add_diff(
                                 &mut map,
@@ -440,11 +469,31 @@ impl CommitFile {
                         if let Some(Diff::Update(existing)) =
                             get_diff(&map, &update.table_name, UPDATE_TYPE)
                         {
+                            // Update the old rows in newrows with the old rows in existing
+                            let old_rows: Vec<RowInfo> = update
+                                .old_rows
+                                .clone()
+                                .iter()
+                                .map(|x| {
+                                    let mut new_oldrow: RowInfo = x.clone();
+                                    for oldrow in &existing.old_rows {
+                                        if new_oldrow.rownum == oldrow.rownum
+                                            && new_oldrow.pagenum == oldrow.pagenum
+                                        {
+                                            new_oldrow.row = oldrow.row.clone();
+                                            return new_oldrow;
+                                        }
+                                    }
+                                    new_oldrow
+                                })
+                                .collect();
+
                             // Merge the diffs together, removing any rows that are in the new update
                             let rows = existing
                                 .rows
                                 .iter()
                                 .filter(|x| {
+                                    // If any of the newrows matches the existing row x, remove it from rows
                                     !newrows
                                         .iter()
                                         .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
@@ -459,6 +508,7 @@ impl CommitFile {
                                     table_name: update.table_name.clone(),
                                     schema: update.schema.clone(),
                                     rows,
+                                    old_rows,
                                 }),
                                 update.table_name.clone(),
                             );
@@ -469,6 +519,7 @@ impl CommitFile {
                                     table_name: update.table_name.clone(),
                                     schema: update.schema.clone(),
                                     rows: newrows,
+                                    old_rows: oldrows,
                                 }),
                                 update.table_name.clone(),
                             );
@@ -580,6 +631,19 @@ impl CommitFile {
                                 })
                                 .cloned()
                                 .collect::<Vec<RowInfo>>();
+
+                            // Remove old_rows from update that are in remove
+                            let old_rows = update
+                                .old_rows
+                                .iter()
+                                .filter(|x| {
+                                    !newrows
+                                        .iter()
+                                        .any(|y| x.pagenum == y.pagenum && x.rownum == y.rownum)
+                                })
+                                .cloned()
+                                .collect::<Vec<RowInfo>>();
+
                             // Update the update diff with the new rows
                             add_diff(
                                 &mut map,
@@ -587,6 +651,7 @@ impl CommitFile {
                                     table_name: remove.table_name.clone(),
                                     schema: remove.schema.clone(),
                                     rows,
+                                    old_rows,
                                 }),
                                 remove.table_name.clone(),
                             );
@@ -646,8 +711,23 @@ impl CommitFile {
                             // If there is not a TableCreate, we can remove all the diffs for that table,
                             // but we still need to add the TableRemove
                             else {
+                                let mut new_remove_diff: TableRemoveDiff = remove.clone();
+
+                                // If it contained a remove diff, we need to also add those removed rows to the table remove diff
+                                if let Some(remove_rows_diff) = value.get(&diff::REMOVE_TYPE) {
+                                    let mut rows_removed_to_append: Vec<RowInfo> =
+                                        remove_rows_diff.get_rows()?;
+                                    new_remove_diff
+                                        .rows_removed
+                                        .append(&mut rows_removed_to_append);
+                                }
+
                                 map.remove(&remove.table_name);
-                                add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                                add_diff(
+                                    &mut map,
+                                    Diff::TableRemove(new_remove_diff),
+                                    remove.table_name.clone(),
+                                );
                             }
                         }
                         // Otherwise, just add the diff like normal
@@ -704,7 +784,7 @@ fn add_diff(map: &mut HashMap<String, HashMap<i32, Diff>>, diff: Diff, table_nam
 mod tests {
     use crate::{
         executor::query::{create_table, insert},
-        fileio::databaseio::{create_db_instance, delete_db_instance, get_db_instance, Database},
+        fileio::databaseio::{delete_db_instance, get_db_instance, Database},
         user::userdata::User,
         util::{bench::fcreate_db_instance, row::RowLocation},
     };
@@ -810,19 +890,31 @@ mod tests {
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
-            vec!["1".to_string(), "Iron Man".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
+                Value::I64(1),
+                Value::String("Iron Man".to_string()),
+                Value::I64(40),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
             ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
@@ -888,19 +980,31 @@ mod tests {
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
-            vec!["1".to_string(), "Nick Fury".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
+                Value::I64(1),
+                Value::String("Nick Fury".to_string()),
+                Value::I64(40),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
             ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
@@ -964,19 +1068,31 @@ mod tests {
 
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let mut rows = vec![
-            vec!["1".to_string(), "Nick Fury".to_string(), "40".to_string()],
-            vec!["2".to_string(), "Spiderman".to_string(), "20".to_string()],
             vec![
-                "3".to_string(),
-                "Doctor Strange".to_string(),
-                "35".to_string(),
+                Value::I64(1),
+                Value::String("Nick Fury".to_string()),
+                Value::I64(40),
             ],
             vec![
-                "4".to_string(),
-                "Captain America".to_string(),
-                "100".to_string(),
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
             ],
-            vec!["5".to_string(), "Thor".to_string(), "1000".to_string()],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
         ];
         rows.extend_from_within(0..);
         rows.extend_from_within(0..);
