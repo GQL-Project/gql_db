@@ -4,7 +4,8 @@ use crate::{
         header::read_schema,
         pageio::{read_page, Page},
     },
-    user::userdata::User, util::dbtype::Column,
+    user::userdata::User,
+    util::dbtype::Column,
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -356,23 +357,35 @@ pub fn schema_table(user: &User) -> Result<String, String> {
                 .iter()
                 .map(|(name, _typ)| name.clone())
                 .collect::<Vec<String>>()
-                .clone());
+                .clone(),
+        );
         schema_types.push(
             schema_object
                 .iter()
                 .map(|(name, _typ)| _typ.clone())
                 .collect::<Vec<Column>>()
-                .clone());
+                .clone(),
+        );
     }
 
     let table_names = instance.get_tables(user);
     let mut log_string: String = String::new();
 
     for i in 0..schemas.len() {
-        log_string = format!("{}\nTable: {}\n", log_string, table_names.clone().unwrap()[i]);
+        log_string = format!(
+            "{}\nTable: {}\n",
+            log_string,
+            table_names.clone().unwrap()[i]
+        );
         let mut builder = Builder::default();
         builder.set_columns(schemas[i].clone());
-        builder.add_record(schema_types[i].clone().iter().map(|x| x.to_string()).collect::<Vec<String>>());
+        builder.add_record(
+            schema_types[i]
+                .clone()
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>(),
+        );
         let mut table_schema = builder.build();
         table_schema.with(Style::rounded());
         log_string = format!("{}\n{}\n\n", log_string, table_schema);
@@ -861,7 +874,6 @@ mod tests {
             &mut user,
         )
         .unwrap();
-
 
         let result = parse_vc_cmd(query, &mut user, all_users.clone());
 

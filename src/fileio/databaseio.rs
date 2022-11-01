@@ -273,16 +273,15 @@ impl Database {
         for entry in std::fs::read_dir(&branch_path)
             .map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?
         {
-            let entry = entry
-                .map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?;
+            let entry =
+                entry.map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?;
             let path = entry.path();
             let file_name = path.file_name();
             if file_name.is_some() {
                 let table_name = file_name.unwrap().to_str().unwrap().to_string();
                 if table_name.ends_with(".db") {
                     tables.push((&table_name[0..table_name.len() - 3]).to_string());
-                }
-                else {
+                } else {
                     tables.push(table_name.to_string());
                 }
             }
