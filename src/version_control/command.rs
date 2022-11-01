@@ -248,52 +248,46 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
         .traverse_branch_nodes(&branch_node)?;
 
     // If the commit hash is not in the current branch, return an error
-    let mut match_counter = 0;
-    let mut match_node: BranchNode = BranchNode {
-        commit_hash: "".to_string(),
-        branch_name: "".to_string(),
-        prev_pagenum: 0,
-        prev_rownum: 0,
-        curr_pagenum: 0,
-        curr_rownum: 0,
-        num_kids: 0,
-        is_head: false,
-    };
+    let mut match_node = None;
     //Looking for the commit hash in the branch nodes
     for node in branch_nodes {
         if node.commit_hash == *commit_hash {
-            match_counter += 1;
+            if match_node.is_some() {
+                return Err(
+                    "Commit exists multiple times in branch! Something is seriously wrong!"
+                        .to_string(),
+                );
+            }
             //Storing the matched commit's information
-            match_node = node;
+            match_node = Some(node);
         }
     }
 
     // If the commit hash is not in the current branch, return an error
-    if match_counter == 0 {
-        return Err("Commit doesn't exist in the current branch!".to_string());
-    } else if match_counter > 1 {
-        return Err(
-            "Commit exists multiple times in branch! Something is seriously wrong!".to_string(),
-        );
+    if let Some(node) = match_node {
+        let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&node), &branch_node)?;
+
+        // Obtaining the directory of all tables
+        let branch_path: String = get_db_instance()?.get_current_branch_path(user);
+
+        // Reverting the diffs
+        revert_tables_from_diffs(&branch_path, &diffs)?;
+
+        // Creating a revert commit
+        let revert_message = format!("Reverted to commit {}", commit_hash);
+        let revert_command = format!("gql revert {}", commit_hash);
+        let revert_commit_and_node = get_db_instance()?.create_commit_and_node(
+            &revert_message,
+            &revert_command,
+            user,
+            None,
+        )?;
+        let revert_commit = revert_commit_and_node.1;
+
+        Ok(revert_commit)
+    } else {
+        Err("Commit not found in current branch!".to_string())
     }
-
-    // Extracting the diffs between the two nodes
-    let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&match_node), &branch_node)?;
-
-    // Obtaining the directory of all tables
-    let branch_path: String = get_db_instance()?.get_current_branch_path(user);
-
-    // Reverting the diffs
-    revert_tables_from_diffs(&branch_path, &diffs)?;
-
-    // Creating a revert commit
-    let revert_message = format!("Reverted to commit {}", commit_hash);
-    let revert_command = format!("gql revert {}", commit_hash);
-    let revert_commit_and_node =
-        get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
-    let revert_commit = revert_commit_and_node.1;
-
-    Ok(revert_commit)
 }
 
 /// Takes a user object and clears their branch of uncommitted changes.
