@@ -223,6 +223,10 @@ pub fn info(hash: &String) -> Result<String, String> {
     log_string = format!("{}\nCommit: {}", log_string, commit.hash);
     log_string = format!("{}\nMessage: {}", log_string, commit.message);
     log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
+    log_string = format!("{}\nChanges Made:", log_string);
+    for diffs in commit.diffs {
+        log_string = format!("{}\n{}", log_string, diffs.to_string());
+    }
     log_string = format!("{}\n-----------------------\n", log_string);
 
     return Ok(log_string.to_string());
