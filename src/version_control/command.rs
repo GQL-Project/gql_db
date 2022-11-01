@@ -8,7 +8,6 @@ use crate::{
         header::read_schema,
         pageio::{read_page, Page},
     },
-    user::userdata::User,
     util::dbtype::Column,
 };
 
