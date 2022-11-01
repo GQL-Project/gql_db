@@ -410,7 +410,8 @@ mod tests {
         parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
-            dbtype::*, row::Row,
+            dbtype::*,
+            row::Row,
         },
         version_control::{
             commit::Commit,
