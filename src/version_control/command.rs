@@ -1,9 +1,14 @@
 use crate::{
-    fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME},
-    user::userdata::User,
+    fileio::{
+        databaseio::{get_db_instance, MAIN_BRANCH_NAME},
+        header::read_schema,
+        pageio::{read_page, Page},
+    },
+    user::userdata::User, util::dbtype::Column,
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
+use tabled::{builder::Builder, Style};
 
 use super::{
     branches::{BranchNode, Branches},
@@ -233,8 +238,54 @@ pub fn info(hash: &String) -> Result<String, String> {
 }
 
 /// This function outputs all of the possible tables and Schemas in the current branch
-pub fn schema_table() -> Result<String, String> {
-    Ok("test".to_string())
+pub fn schema_table(user: &User) -> Result<String, String> {
+    // Get the list of all the tables in the database
+    let instance = get_db_instance()?;
+    let all_table_paths = instance.get_table_paths(user);
+
+    let mut page_read: Vec<Box<Page>> = Vec::new();
+    for path in all_table_paths.clone().unwrap() {
+        let page = read_page(0, &path)?;
+        page_read.push(page);
+    }
+
+    if page_read.clone().len() == 0 {
+        return Ok("No tables in current branch".to_string());
+    }
+
+    // Call read_schema for each table
+    let mut schemas: Vec<Vec<String>> = Vec::new();
+    let mut schema_types: Vec<Vec<Column>> = Vec::new();
+    for page_num in page_read.clone() {
+        let schema_object = read_schema(&page_num)?;
+        schemas.push(
+            schema_object
+                .iter()
+                .map(|(name, _typ)| name.clone())
+                .collect::<Vec<String>>()
+                .clone());
+        schema_types.push(
+            schema_object
+                .iter()
+                .map(|(name, _typ)| _typ.clone())
+                .collect::<Vec<Column>>()
+                .clone());
+    }
+
+    let table_names = instance.get_tables(user);
+    let mut log_string: String = String::new();
+
+    for i in 0..schemas.len() {
+        log_string = format!("{}\nTable: {}\n", log_string, table_names.clone().unwrap()[i]);
+        let mut builder = Builder::default();
+        builder.set_columns(schemas[i].clone());
+        builder.add_record(schema_types[i].clone().iter().map(|x| x.to_string()).collect::<Vec<String>>());
+        let mut table_schema = builder.build();
+        table_schema.with(Style::rounded());
+        log_string = format!("{}\n{}\n\n", log_string, table_schema);
+    }
+
+    Ok(log_string.to_string())
 }
 
 #[cfg(test)]
@@ -677,6 +728,49 @@ mod tests {
         let query1 = format!("GQL info {}", commit.unwrap().hash);
 
         let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_ok());
+    }
+
+    // Tries to get the all the table in a branch with no table
+    #[test]
+    #[serial]
+    fn test_tables() {
+        let query = "GQL table";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_tables_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.unwrap() == "No tables in current branch".to_string());
+    }
+
+    // Tries to get the all the table in a branch with a table
+    #[test]
+    #[serial]
+    fn tecarogst_tables1() {
+        let query = "GQL table";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_tables_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+
+        let mut load_db = Database::load_db("gql_tables_test".to_string()).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user,
+        )
+        .unwrap();
+
+
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
 
         delete_db_instance().unwrap();
         assert!(result.is_ok());

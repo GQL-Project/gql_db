@@ -93,6 +93,6 @@ pub enum VersionControlSubCommand {
         force: bool,
     },
     /// Returns all of tables in the current branch
-    #[clap(aliases = &["tables", "schema", "scehma_table"])]
+    #[clap(aliases = &["table", "schema", "scehma_table"])]
     SchemaTable,
 }
