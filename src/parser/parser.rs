@@ -1,8 +1,8 @@
-use crate::fileio::databaseio::get_db_instance;
 use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
 use crate::version_control::merge::MergeConflictResolutionAlgo;
+use crate::{fileio::databaseio::get_db_instance, version_control::command::revert};
 
 use clap::Parser as ClapParser;
 use sqlparser::ast::Statement;
@@ -149,7 +149,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     ))
                 }
                 VersionControlSubCommand::RevertCommit { commit } => {
-                    Ok(format!("Reverted Commit at hash: {}", commit))
+                    let revert_results = command::revert(user, &commit)?;
+                    Ok(format!("Reverted Commit at hash: {}", revert_results.hash))
+                }
+                VersionControlSubCommand::DiscardChanges => {
+                    command::discard(user)?;
+                    Ok("Discarded changes".to_string())
                 }
                 VersionControlSubCommand::SchemaTable => command::schema_table(user),
             }

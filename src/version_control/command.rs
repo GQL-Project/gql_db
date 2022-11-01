@@ -288,7 +288,7 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
 
     // Creating a revert commit
     let revert_message = format!("Reverted to commit {}", commit_hash);
-    let revert_command = format!("Revert;");
+    let revert_command = format!("gql revert {}", commit_hash);
     let revert_commit_and_node =
         get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
     let revert_commit = revert_commit_and_node.1;
@@ -301,13 +301,15 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
 /// Returns Success or Error
 pub fn discard(user: &mut User) -> Result<(), String> {
     //Storing the user's branch path
-    let branch_path: String = get_db_instance()?.get_current_branch_path(user);
+    let branch_path: String = get_db_instance()?.get_temp_db_dir_path(user);
 
-    //Setting the user to the permanent copy of the branch
+    if user.is_on_temp_commit() {
+        //Deleting the temp copy of the branch
+        fs::remove_dir_all(branch_path).map_err(|e| e.to_string())?;
+        user.set_diffs(&Vec::new());
+    }
+
     user.set_is_on_temp_commit(false);
-
-    //Deleting the temp copy of the branch
-    fs::remove_dir(branch_path + "-temp").map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -401,7 +403,7 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::create_table,
+        executor::query::{create_table, insert},
         fileio::{
             databaseio::{delete_db_instance, Database},
             header::Schema,
@@ -852,7 +854,7 @@ mod tests {
     fn test_discard_command() {
         //Creating db instance
         let db_name: String = "gql_discard_test".to_string();
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         //Creating a new user
         let mut user: User = User::new("test_user".to_string());
@@ -866,7 +868,12 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info =
+
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        let mut _table1_info =
             create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
 
         // Insert rows into the table on new branch
@@ -875,7 +882,12 @@ mod tests {
             vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
             vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
         ];
-        let _insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
+        let _res = insert(rows, table_name1, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Storing temp directory path
+        let temp_main_dir: String = get_db_instance().unwrap().get_temp_db_dir_path(&user);
+        assert_ne!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), true);
 
         //Calling Discard
         discard(&mut user).unwrap();
@@ -883,15 +895,9 @@ mod tests {
         //Asserting that the user isn't on a temp commit
         assert_eq!(user.is_on_temp_commit(), false);
 
-        //Asserting that the temp directory is deleted
-        let main_branch_table_dir: String = get_db_instance()
-            .unwrap()
-            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
-        let temp_main_dir: String = main_branch_table_dir.clone() + &"-temp".to_string();
-
-        let temp_main_dir_exists: bool = std::path::Path::new(&temp_main_dir).exists();
-
-        assert_eq!(temp_main_dir_exists, false);
+        // Asserting user diffs are now empty
+        assert_eq!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), false);
         delete_db_instance().unwrap();
     }
 
@@ -901,7 +907,7 @@ mod tests {
     fn test_discard_command_after_commit() {
         //Creating db instance
         let db_name: String = "gql_discard_test".to_string();
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         //Creating a new user
         let mut user: User = User::new("test_user".to_string());
@@ -915,9 +921,12 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info =
-            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
-        user.append_diff(&Diff::TableCreate(table1_info.1));
+
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
 
         // Insert rows into the table on main branch
         let rows: Vec<Row> = vec![
@@ -925,8 +934,13 @@ mod tests {
             vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
             vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
         ];
-        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
-        user.append_diff(&Diff::Insert(insert_diff));
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
 
         // Making temp_changes
         let rows2: Vec<Row> = vec![
@@ -934,7 +948,12 @@ mod tests {
             vec![Value::I32(2), Value::String("Jason Todd".to_string())],
             vec![Value::I32(3), Value::String("Tim Drake".to_string())],
         ];
-        let _insert_diff2: InsertDiff = (table1_info.0).insert_rows(rows2).unwrap();
+        let _res = insert(rows2, table_name1, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Storing temp directory path
+        let temp_main_dir: String = get_db_instance().unwrap().get_temp_db_dir_path(&user);
+        assert_ne!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), true);
 
         //Calling Discard
         discard(&mut user).unwrap();
@@ -942,15 +961,9 @@ mod tests {
         //Asserting that the user isn't on a temp commit
         assert_eq!(user.is_on_temp_commit(), false);
 
-        //Asserting that the temp directory is deleted
-        let main_branch_table_dir: String = get_db_instance()
-            .unwrap()
-            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
-        let temp_main_dir: String = main_branch_table_dir.clone() + &"-temp".to_string();
-
-        let temp_main_dir_exists: bool = std::path::Path::new(&temp_main_dir).exists();
-
-        assert_eq!(temp_main_dir_exists, false);
+        // Asserting user diffs are now empty
+        assert_eq!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), false);
         delete_db_instance().unwrap();
     }
 
@@ -960,7 +973,7 @@ mod tests {
     fn test_revert_command() {
         //Creating db instance
         let db_name = "gql_revert_test".to_string();
-        create_db_instance(&db_name).unwrap();
+        fcreate_db_instance(&db_name);
 
         //Creating a new user
         let mut user: User = User::new("test_user".to_string());
@@ -1094,7 +1107,7 @@ mod tests {
     // Tries to get the all the table in a branch with a table
     #[test]
     #[serial]
-    fn tecarogst_tables1() {
+    fn test_tables1() {
         let query = "GQL table";
         // Create a new user on the main branch
         fcreate_db_instance("gql_tables_test");

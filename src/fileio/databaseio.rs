@@ -1280,7 +1280,7 @@ impl Database {
     }
 
     /// Returns the temporary database's path for a user: <path>/<db_name>/<db_name>-<branch_name>-<user_id>
-    fn get_temp_db_dir_path(&self, user: &User) -> String {
+    pub fn get_temp_db_dir_path(&self, user: &User) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
