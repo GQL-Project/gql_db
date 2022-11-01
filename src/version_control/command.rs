@@ -1,5 +1,5 @@
-use crate::{fileio::databaseio::*, user::userdata::User};
 use crate::fileio::databaseio::*;
+use crate::{fileio::databaseio::*, user::userdata::User};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -255,17 +255,18 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     for node in branch_nodes {
         if node.commit_hash == *commit_hash {
             match_counter += 1;
-            //Storing the matched commit's information 
-            match_node = node;   
+            //Storing the matched commit's information
+            match_node = node;
         }
     }
 
     // If the commit hash is not in the current branch, return an error
     if (match_counter == 0) {
         return Err("Commit doesn't exist in the current branch!".to_string());
-    }
-    else if (match_counter > 1) {
-        return Err("Commit exists multiple times in branch! Something is seriously wrong!".to_string());
+    } else if (match_counter > 1) {
+        return Err(
+            "Commit exists multiple times in branch! Something is seriously wrong!".to_string(),
+        );
     }
 
     // Extracting the diffs between the two nodes
@@ -280,7 +281,8 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     // Creating a revert commit
     let revert_message = format!("Reverted to commit {}", commit_hash);
     let revert_command = format!("revert");
-    let revert_commit_and_node = get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
+    let revert_commit_and_node =
+        get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
     let revert_commit = revert_commit_and_node.1;
 
     Ok(revert_commit)
@@ -298,7 +300,7 @@ pub fn discard(user: &mut User) -> Result<(), String> {
 
     //Deleting the temp copy of the branch
     fs::remove_dir(branch_path + "-temp");
-    
+
     Ok(())
 }
 
@@ -320,7 +322,6 @@ pub fn info(hash: &String) -> Result<String, String> {
     log_string = format!("{}\n-----------------------\n", log_string);
 
     return Ok(log_string.to_string());
-
 }
 
 #[cfg(test)]
