@@ -1,10 +1,12 @@
-use crate::{
-    fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME},
-    user::userdata::User,
-};
+use crate::{fileio::databaseio::*, user::userdata::User};
+use crate::fileio::databaseio::*;
+
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::fs;
+use std::path;
 
+use super::diff::revert_tables_from_diffs;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
@@ -212,6 +214,94 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
     Ok(squash_commit)
 }
 
+/// Takes a commit hash, and checks if it exists in the current branch
+/// If the commit exists in the user's branch,
+/// the branch is reverted to the desired commit.
+/// All changes are undone and this revert is saved as another commit
+pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
+    let branch_name: String = user.get_current_branch_name();
+    let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
+
+    // seperate to make debug easier
+    let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+
+    // If there are no commits, return an empty vector
+    if branch_heads_instance.get_all_branch_heads()?.len() == 0 {
+        return Err("No Commits!".to_string());
+    }
+
+    //Grabbing the branch node from the head
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&branch_name, &branches_from_head)?;
+
+    //Traversing the nodes to find the argument commit hash
+    let branch_nodes: Vec<BranchNode> = get_db_instance()?
+        .get_branch_file()
+        .traverse_branch_nodes(&branch_node)?;
+
+    // If the commit hash is not in the current branch, return an error
+    let mut match_counter = 0;
+    let mut match_node: BranchNode = BranchNode {
+        commit_hash: "".to_string(),
+        branch_name: "".to_string(),
+        prev_pagenum: 0,
+        prev_rownum: 0,
+        curr_pagenum: 0,
+        curr_rownum: 0,
+        num_kids: 0,
+        is_head: false,
+    };
+    //Looking for the commit hash in the branch nodes
+    for node in branch_nodes {
+        if node.commit_hash == *commit_hash {
+            match_counter += 1;
+            //Storing the matched commit's information 
+            match_node = node;   
+        }
+    }
+
+    // If the commit hash is not in the current branch, return an error
+    if (match_counter == 0) {
+        return Err("Commit doesn't exist in the current branch!".to_string());
+    }
+    else if (match_counter > 1) {
+        return Err("Commit exists multiple times in branch! Something is seriously wrong!".to_string());
+    }
+
+    // Extracting the diffs between the two nodes
+    let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&match_node), &branch_node)?;
+
+    // Obtaining the directory of all tables
+    let branch_path: String = get_db_instance()?.get_current_branch_path(user);
+
+    // Reverting the diffs
+    revert_tables_from_diffs(&branch_path, &diffs)?;
+
+    // Creating a revert commit
+    let revert_message = format!("Reverted to commit {}", commit_hash);
+    let revert_command = format!("revert");
+    let revert_commit_and_node = get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
+    let revert_commit = revert_commit_and_node.1;
+
+    Ok(revert_commit)
+}
+
+/// Takes a user object and clears their branch of uncommitted changes.
+/// This is done by moving the user to the permanent copy of the branch and deleting the temporary copy.
+/// Returns Success or Error
+pub fn discard(user: &mut User) -> Result<(), String> {
+    //Storing the user's branch path
+    let branch_path: String = get_db_instance()?.get_current_branch_path(user);
+
+    //Setting the user to the permanent copy of the branch
+    user.set_is_on_temp_commit(false);
+
+    //Deleting the temp copy of the branch
+    fs::remove_dir(branch_path + "-temp");
+    
+    Ok(())
+}
+
 /// This function is used to get the commits from a specific hash
 pub fn info(hash: &String) -> Result<String, String> {
     let commit_file = get_db_instance()?.get_commit_file_mut();
@@ -230,6 +320,7 @@ pub fn info(hash: &String) -> Result<String, String> {
     log_string = format!("{}\n-----------------------\n", log_string);
 
     return Ok(log_string.to_string());
+
 }
 
 #[cfg(test)]
