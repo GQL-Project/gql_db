@@ -2,7 +2,7 @@ use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
 use crate::version_control::merge::MergeConflictResolutionAlgo;
-use crate::{fileio::databaseio::get_db_instance, version_control::command::revert};
+use crate::{fileio::databaseio::get_db_instance};
 
 use clap::Parser as ClapParser;
 use sqlparser::ast::Statement;
@@ -289,12 +289,12 @@ mod tests {
     #[test]
     #[serial]
     fn test_parse_vc_cmd10() {
-        let query = "GQL revert commit_hash";
+        let query = "GQL revert commit_hash commit_hash2";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let all_users: Vec<User> = Vec::new();
         let result = parse_vc_cmd(query, &mut user, all_users);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
