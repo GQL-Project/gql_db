@@ -1,6 +1,7 @@
-use crate::fileio::databaseio::*;
 use crate::{fileio::databaseio::*, user::userdata::User};
-
+use crate::util::row::Row;
+use crate::version_control::diff::*;
+use crate::fileio::tableio::*;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
@@ -280,7 +281,7 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
 
     // Creating a revert commit
     let revert_message = format!("Reverted to commit {}", commit_hash);
-    let revert_command = format!("revert");
+    let revert_command = format!("Revert;");
     let revert_commit_and_node =
         get_db_instance()?.create_commit_and_node(&revert_message, &revert_command, user, None)?;
     let revert_commit = revert_commit_and_node.1;
@@ -326,20 +327,22 @@ pub fn info(hash: &String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use serial_test::serial;
 
     use crate::{
         executor::query::create_table,
         fileio::{
             databaseio::{delete_db_instance, Database},
-            header::Schema,
+            header::Schema, tableio::Table,
         },
         parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
         },
-        version_control::{commit::Commit, diff::Diff},
+        version_control::{commit::Commit, diff::{Diff, InsertDiff}},
     };
 
     use super::*;
@@ -767,5 +770,237 @@ mod tests {
 
         delete_db_instance().unwrap();
         assert!(result.is_ok());
+    }
+
+    // Checks that discard deletes the -temp dir
+    #[test]
+    #[serial]
+    fn test_discard_command() {
+        //Creating db instance
+        let db_name: String = "gql_discard_test".to_string();
+        create_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        let table_name1: String = "table1".to_string();
+
+        //Making temp changes
+
+        // Create a new table on main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let mut table1_info = create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        
+        // Insert rows into the table on new branch
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
+
+        //Calling Discard
+        discard(&mut user).unwrap();
+        
+        //Asserting that the user isn't on a temp commit
+        assert_eq!(user.is_on_temp_commit(), false);
+
+        //Asserting that the temp directory is deleted
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+        let temp_main_dir: String = main_branch_table_dir.clone() + &"-temp".to_string();
+
+        let temp_main_dir_exists: bool = std::path::Path::new(&temp_main_dir).exists();
+
+        assert_eq!(temp_main_dir_exists, false);
+        delete_db_instance().unwrap();
+    }
+
+    // Checks that discard deletes the -temp dir
+    #[test]
+    #[serial]
+    fn test_discard_command_after_commit() {
+        //Creating db instance
+        let db_name: String = "gql_discard_test".to_string();
+        create_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        let table_name1: String = "table1".to_string();
+
+        //Making temp changes
+
+        // Create a new table on main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let mut table1_info = create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        user.append_diff(&Diff::TableCreate(table1_info.1));
+
+        // Insert rows into the table on main branch
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Making temp_changes
+        let rows2: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Dick Grayson".to_string())],
+            vec![Value::I32(2), Value::String("Jason Todd".to_string())],
+            vec![Value::I32(3), Value::String("Tim Drake".to_string())],
+        ];
+        let insert_diff2: InsertDiff = (table1_info.0).insert_rows(rows2).unwrap();
+
+        //Calling Discard
+        discard(&mut user).unwrap();
+        
+        //Asserting that the user isn't on a temp commit
+        assert_eq!(user.is_on_temp_commit(), false);
+
+        //Asserting that the temp directory is deleted
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+        let temp_main_dir: String = main_branch_table_dir.clone() + &"-temp".to_string();
+
+        let temp_main_dir_exists: bool = std::path::Path::new(&temp_main_dir).exists();
+
+        assert_eq!(temp_main_dir_exists, false);
+        delete_db_instance().unwrap();
+    }
+
+
+    // Checks that revert works with a valid commit hash
+    #[test]
+    #[serial]
+    fn test_revert_command() {
+        //Creating db instance
+        let db_name = "gql_revert_test".to_string();
+        create_db_instance(&db_name).unwrap();
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        let table_name1: String = "table1".to_string();
+
+        // Copying main dir to store state of database
+        let copy_dir: String = "test_revert_copy_dir".to_string();
+        std::fs::create_dir_all(copy_dir.clone()).unwrap();
+
+        // Create a new table on the main
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let mut table1_info = create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        user.append_diff(&Diff::TableCreate(table1_info.1));
+
+        // Create a commit on the main branch
+        let node_commit1 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        
+        // Insert rows into the table on main
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Create commit on main branch
+        let node_commit2 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main - Added Wayne family".to_string(),
+                &"Insert;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // To copy a single table to that dir
+        std::fs::copy((table1_info.0).path.clone(),
+            format!(
+                "{}{}{}.db",
+                copy_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+        
+        // Reverting commit 2
+        let revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
+
+        // Checking if the revert command made a difference
+        // Get the directories for all the branches
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Read in all the tables from the branch directories before we compare them
+        let table_main: Table =
+            Table::new(&main_branch_table_dir, &"table1".to_string(), None).unwrap();
+        let table_copy: Table =
+            Table::new(&copy_dir, &"table1".to_string(), None).unwrap();
+
+        // Make sure that the main branch isn't the same as the copied folder
+        assert_eq!(
+            compare_tables(
+                &table_main,
+                &table_copy,
+                &main_branch_table_dir,
+                &copy_dir
+            ),
+            false
+        );
+        delete_db_instance().unwrap();
+    }
+
+    /// Helper that compares two tables to make sure that they are identical, but in separate directories
+    fn compare_tables(
+        table1: &Table,
+        table2: &Table,
+        table1dir: &String,
+        table2dir: &String,
+    ) -> bool {
+        if table1dir == table2dir {
+            return false;
+        }
+
+        // Make sure that table1 and table2 are the same and they point to the right directories
+        if std::path::Path::new(&table1.path)
+            != std::path::Path::new(&format!("{}/{}.db", table1dir, table1.name))
+        {
+            return false;
+        }
+
+        if std::path::Path::new(&table2.path)
+            != std::path::Path::new(&format!("{}/{}.db", table2dir, table1.name))
+        {
+            return false;
+        }
+
+        if !file_diff::diff(&table1.path, &table2.path) {
+            return false;
+        }
+        true
     }
 }
