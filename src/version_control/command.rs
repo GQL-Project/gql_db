@@ -1,6 +1,3 @@
-use crate::fileio::tableio::*;
-use crate::util::row::Row;
-use crate::version_control::diff::*;
 use crate::{fileio::databaseio::*, user::userdata::User};
 
 use crate::{
@@ -272,9 +269,9 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     }
 
     // If the commit hash is not in the current branch, return an error
-    if (match_counter == 0) {
+    if match_counter == 0 {
         return Err("Commit doesn't exist in the current branch!".to_string());
-    } else if (match_counter > 1) {
+    } else if match_counter > 1 {
         return Err(
             "Commit exists multiple times in branch! Something is seriously wrong!".to_string(),
         );
@@ -310,7 +307,7 @@ pub fn discard(user: &mut User) -> Result<(), String> {
     user.set_is_on_temp_commit(false);
 
     //Deleting the temp copy of the branch
-    fs::remove_dir(branch_path + "-temp");
+    fs::remove_dir(branch_path + "-temp").map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -366,7 +363,7 @@ pub fn schema_table(user: &User) -> Result<String, String> {
         schema_types.push(
             schema_object
                 .iter()
-                .map(|(name, _typ)| _typ.clone())
+                .map(|(_name, typ)| typ.clone())
                 .collect::<Vec<Column>>()
                 .clone(),
         );
@@ -400,7 +397,6 @@ pub fn schema_table(user: &User) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use serial_test::serial;
 
@@ -414,7 +410,7 @@ mod tests {
         parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
-            dbtype::*,
+            dbtype::*, row::Row,
         },
         version_control::{
             commit::Commit,
@@ -855,7 +851,7 @@ mod tests {
     fn test_discard_command() {
         //Creating db instance
         let db_name: String = "gql_discard_test".to_string();
-        create_db_instance(&db_name);
+        create_db_instance(&db_name).unwrap();
 
         //Creating a new user
         let mut user: User = User::new("test_user".to_string());
@@ -878,7 +874,7 @@ mod tests {
             vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
             vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
         ];
-        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
+        let _insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
 
         //Calling Discard
         discard(&mut user).unwrap();
@@ -904,7 +900,7 @@ mod tests {
     fn test_discard_command_after_commit() {
         //Creating db instance
         let db_name: String = "gql_discard_test".to_string();
-        create_db_instance(&db_name);
+        create_db_instance(&db_name).unwrap();
 
         //Creating a new user
         let mut user: User = User::new("test_user".to_string());
@@ -937,7 +933,7 @@ mod tests {
             vec![Value::I32(2), Value::String("Jason Todd".to_string())],
             vec![Value::I32(3), Value::String("Tim Drake".to_string())],
         ];
-        let insert_diff2: InsertDiff = (table1_info.0).insert_rows(rows2).unwrap();
+        let _insert_diff2: InsertDiff = (table1_info.0).insert_rows(rows2).unwrap();
 
         //Calling Discard
         discard(&mut user).unwrap();
@@ -1004,7 +1000,7 @@ mod tests {
         user.append_diff(&Diff::Insert(insert_diff));
 
         // Create commit on main branch
-        let node_commit2 = get_db_instance()
+        let _node_commit2 = get_db_instance()
             .unwrap()
             .create_commit_and_node(
                 &"Second Commit on Main - Added Wayne family".to_string(),
@@ -1027,7 +1023,7 @@ mod tests {
         .unwrap();
 
         // Reverting commit 2
-        let revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
+        let _revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
 
         // Checking if the revert command made a difference
         // Get the directories for all the branches
@@ -1105,7 +1101,7 @@ mod tests {
         let mut all_users: Vec<User> = Vec::new();
         all_users.push(user.clone());
 
-        let mut load_db = Database::load_db("gql_tables_test".to_string()).unwrap();
+        let load_db = Database::load_db("gql_tables_test".to_string()).unwrap();
         create_table(
             &"testing".to_string(),
             &vec![("id".to_string(), Column::I32)],
