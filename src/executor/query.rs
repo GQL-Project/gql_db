@@ -355,7 +355,6 @@ pub fn update(
     database.get_table_path(&table_name, user)?;
     let mut table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowInfo> = Vec::new();
-
     let tables = load_aliased_tables(database, user, vec![(table_name, alias)])?;
     let col_names = gen_column_aliases(&tables);
     let index_refs = get_index_refs(&col_names);
@@ -378,12 +377,11 @@ pub fn update(
             selected_rows.push(row_info);
         }
     }
-
     
     let len: usize = selected_rows.len();
     let diff: UpdateDiff = table.rewrite_rows(selected_rows)?;
     user.append_diff(&Diff::Update(diff.clone()));
-    Ok((format!("{} rows were successfully inserted.", len), diff))
+    Ok((format!("{} rows were successfully updated.", len), diff))
 }
 
 pub fn delete(
@@ -406,7 +404,7 @@ pub fn delete(
     let diff: RemoveDiff = table.remove_rows(selected_rows)?;
     user.append_diff(&Diff::Remove(diff.clone()));
 
-    Ok((format!("{} Rows were deleted.", len), diff))
+    Ok((format!("{} rows were deleted.", len), diff))
     //return Err("Error".to_string());
 }
 
@@ -1658,5 +1656,44 @@ pub mod tests {
 
         // Delete the test database
         new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    // Test update row
+    fn test_update_row(){
+        let new_db: Database = Database::new("update_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            (
+                "age".to_string(),
+                Column::Nullable(Box::new(Column::Double)),
+            ),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let rows = vec![
+            vec![
+                Value::Null, // Nulled
+                Value::String("Iron Man".to_string()),
+                Value::String("Robert Downey".to_string()),
+            ],
+            vec![
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::String("".to_string()),
+            ],
+            vec![Value::I64(3), Value::Null, Value::Float(322.456)],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::Null,
+            ],
+        ];
+        
     }
 }
