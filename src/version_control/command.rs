@@ -1,7 +1,7 @@
-use crate::{fileio::databaseio::*, user::userdata::User};
+use crate::fileio::tableio::*;
 use crate::util::row::Row;
 use crate::version_control::diff::*;
-use crate::fileio::tableio::*;
+use crate::{fileio::databaseio::*, user::userdata::User};
 
 use crate::{
     fileio::{
@@ -408,14 +408,18 @@ mod tests {
         executor::query::create_table,
         fileio::{
             databaseio::{delete_db_instance, Database},
-            header::Schema, tableio::Table,
+            header::Schema,
+            tableio::Table,
         },
         parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
         },
-        version_control::{commit::Commit, diff::{Diff, InsertDiff}},
+        version_control::{
+            commit::Commit,
+            diff::{Diff, InsertDiff},
+        },
     };
 
     use super::*;
@@ -865,8 +869,9 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info = create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
-        
+        let mut table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+
         // Insert rows into the table on new branch
         let rows: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
@@ -877,7 +882,7 @@ mod tests {
 
         //Calling Discard
         discard(&mut user).unwrap();
-        
+
         //Asserting that the user isn't on a temp commit
         assert_eq!(user.is_on_temp_commit(), false);
 
@@ -913,7 +918,8 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info = create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        let mut table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
         user.append_diff(&Diff::TableCreate(table1_info.1));
 
         // Insert rows into the table on main branch
@@ -935,7 +941,7 @@ mod tests {
 
         //Calling Discard
         discard(&mut user).unwrap();
-        
+
         //Asserting that the user isn't on a temp commit
         assert_eq!(user.is_on_temp_commit(), false);
 
@@ -950,7 +956,6 @@ mod tests {
         assert_eq!(temp_main_dir_exists, false);
         delete_db_instance().unwrap();
     }
-
 
     // Checks that revert works with a valid commit hash
     #[test]
@@ -974,7 +979,8 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info = create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        let mut table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
         user.append_diff(&Diff::TableCreate(table1_info.1));
 
         // Create a commit on the main branch
@@ -987,7 +993,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        
+
         // Insert rows into the table on main
         let rows: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
@@ -1009,7 +1015,8 @@ mod tests {
             .unwrap();
 
         // To copy a single table to that dir
-        std::fs::copy((table1_info.0).path.clone(),
+        std::fs::copy(
+            (table1_info.0).path.clone(),
             format!(
                 "{}{}{}.db",
                 copy_dir,
@@ -1018,7 +1025,7 @@ mod tests {
             ),
         )
         .unwrap();
-        
+
         // Reverting commit 2
         let revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
 
@@ -1031,17 +1038,11 @@ mod tests {
         // Read in all the tables from the branch directories before we compare them
         let table_main: Table =
             Table::new(&main_branch_table_dir, &"table1".to_string(), None).unwrap();
-        let table_copy: Table =
-            Table::new(&copy_dir, &"table1".to_string(), None).unwrap();
+        let table_copy: Table = Table::new(&copy_dir, &"table1".to_string(), None).unwrap();
 
         // Make sure that the main branch isn't the same as the copied folder
         assert_eq!(
-            compare_tables(
-                &table_main,
-                &table_copy,
-                &main_branch_table_dir,
-                &copy_dir
-            ),
+            compare_tables(&table_main, &table_copy, &main_branch_table_dir, &copy_dir),
             false
         );
         delete_db_instance().unwrap();
@@ -1076,7 +1077,7 @@ mod tests {
         }
         true
     }
-    
+
     // Tries to get the all the table in a branch with no table
     #[test]
     #[serial]
@@ -1117,6 +1118,5 @@ mod tests {
 
         delete_db_instance().unwrap();
         assert!(result.is_ok());
-
     }
 }
