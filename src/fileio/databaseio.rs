@@ -261,6 +261,54 @@ impl Database {
         Ok((node, commit))
     }
 
+    /// Returns all of the tables in the current working branch
+    pub fn get_tables(&self, user: &User) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let branch_path: String = self.get_current_working_branch_path(user);
+
+        let mut tables: Vec<String> = Vec::new();
+
+        for entry in std::fs::read_dir(&branch_path)
+            .map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?
+        {
+            let entry =
+                entry.map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?;
+            let path = entry.path();
+            let file_name = path.file_name();
+            if file_name.is_some() {
+                let table_name = file_name.unwrap().to_str().unwrap().to_string();
+                if table_name.ends_with(".db") {
+                    tables.push((&table_name[0..table_name.len() - 3]).to_string());
+                } else {
+                    tables.push(table_name.to_string());
+                }
+            }
+        }
+        Ok(tables)
+    }
+
+    /// Returns the path of all tables
+    pub fn get_table_paths(&self, user: &User) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let branch_path: String = self.get_current_working_branch_path(user);
+
+        let mut table_paths: Vec<String> = Vec::new();
+
+        for entry in std::fs::read_dir(&branch_path)
+            .map_err(|e| "Database::get_table_paths() Error: ".to_owned() + &e.to_string())?
+        {
+            let entry = entry
+                .map_err(|e| "Database::get_table_paths() Error: ".to_owned() + &e.to_string())?;
+            let path = entry.path();
+            table_paths.push(path.into_os_string().into_string().unwrap());
+        }
+        Ok(table_paths)
+    }
+
     /// Returns the user's current working branch directory
     /// It will return the temporary branch path if the user is on an a temporary branch (uncommitted changes).
     /// It will return the normal branch path if the user does not have any uncommitted changes.

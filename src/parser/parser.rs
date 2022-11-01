@@ -151,6 +151,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                 VersionControlSubCommand::RevertCommit { commit } => {
                     Ok(format!("Reverted Commit at hash: {}", commit))
                 }
+                VersionControlSubCommand::SchemaTable => command::schema_table(user),
             }
         }
         Err(e) => Err(e.to_string()),
