@@ -261,6 +261,54 @@ impl Database {
         Ok((node, commit))
     }
 
+    /// Returns all of the tables in the current working branch
+    pub fn get_tables(&self, user: &User) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let branch_path: String = self.get_current_working_branch_path(user);
+
+        let mut tables: Vec<String> = Vec::new();
+
+        for entry in std::fs::read_dir(&branch_path)
+            .map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?
+        {
+            let entry =
+                entry.map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?;
+            let path = entry.path();
+            let file_name = path.file_name();
+            if file_name.is_some() {
+                let table_name = file_name.unwrap().to_str().unwrap().to_string();
+                if table_name.ends_with(".db") {
+                    tables.push((&table_name[0..table_name.len() - 3]).to_string());
+                } else {
+                    tables.push(table_name.to_string());
+                }
+            }
+        }
+        Ok(tables)
+    }
+
+    /// Returns the path of all tables
+    pub fn get_table_paths(&self, user: &User) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let branch_path: String = self.get_current_working_branch_path(user);
+
+        let mut table_paths: Vec<String> = Vec::new();
+
+        for entry in std::fs::read_dir(&branch_path)
+            .map_err(|e| "Database::get_table_paths() Error: ".to_owned() + &e.to_string())?
+        {
+            let entry = entry
+                .map_err(|e| "Database::get_table_paths() Error: ".to_owned() + &e.to_string())?;
+            let path = entry.path();
+            table_paths.push(path.into_os_string().into_string().unwrap());
+        }
+        Ok(table_paths)
+    }
+
     /// Returns the user's current working branch directory
     /// It will return the temporary branch path if the user is on an a temporary branch (uncommitted changes).
     /// It will return the normal branch path if the user does not have any uncommitted changes.
@@ -1061,7 +1109,7 @@ impl Database {
     /// Finds the diffs between node1 and node2 where node1 is the older node (closer to the origin).
     /// If node1 is None, it returns all diffs between the origin and node2.
     /// Returns a vector of diffs where the older diffs are first
-    fn get_diffs_between_nodes(
+    pub fn get_diffs_between_nodes(
         &self,
         node1: Option<&BranchNode>,
         node2: &BranchNode,
@@ -1232,7 +1280,7 @@ impl Database {
     }
 
     /// Returns the temporary database's path for a user: <path>/<db_name>/<db_name>-<branch_name>-<user_id>
-    fn get_temp_db_dir_path(&self, user: &User) -> String {
+    pub fn get_temp_db_dir_path(&self, user: &User) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 

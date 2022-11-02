@@ -1,10 +1,20 @@
+use crate::{fileio::databaseio::*, user::userdata::User};
+
 use crate::{
-    fileio::databaseio::{get_db_instance, MAIN_BRANCH_NAME},
-    user::userdata::User,
+    fileio::{
+        header::read_schema,
+        pageio::{read_page, Page},
+    },
+    util::dbtype::Column,
 };
+
 use serde::{Deserialize, Serialize};
 use serde_json;
+use tabled::{builder::Builder, Style};
 
+use std::fs;
+
+use super::diff::revert_tables_from_diffs;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
@@ -212,6 +222,92 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
     Ok(squash_commit)
 }
 
+/// Takes a commit hash, and checks if it exists in the current branch
+/// If the commit exists in the user's branch,
+/// the branch is reverted to the desired commit.
+/// All changes are undone and this revert is saved as another commit
+pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
+    let branch_name: String = user.get_current_branch_name();
+    let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
+
+    // seperate to make debug easier
+    let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+
+    // If there are no commits, return an empty vector
+    if branch_heads_instance.get_all_branch_heads()?.len() == 0 {
+        return Err("No Commits!".to_string());
+    }
+
+    //Grabbing the branch node from the head
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&branch_name, &branches_from_head)?;
+
+    //Traversing the nodes to find the argument commit hash
+    let branch_nodes: Vec<BranchNode> = get_db_instance()?
+        .get_branch_file()
+        .traverse_branch_nodes(&branch_node)?;
+
+    // If the commit hash is not in the current branch, return an error
+    let mut match_node = None;
+    //Looking for the commit hash in the branch nodes
+    for node in branch_nodes {
+        if node.commit_hash == *commit_hash {
+            if match_node.is_some() {
+                return Err(
+                    "Commit exists multiple times in branch! Something is seriously wrong!"
+                        .to_string(),
+                );
+            }
+            //Storing the matched commit's information
+            match_node = Some(node);
+        }
+    }
+
+    // If the commit hash is not in the current branch, return an error
+    if let Some(node) = match_node {
+        let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&node), &branch_node)?;
+
+        // Obtaining the directory of all tables
+        let branch_path: String = get_db_instance()?.get_current_branch_path(user);
+
+        // Reverting the diffs
+        revert_tables_from_diffs(&branch_path, &diffs)?;
+
+        // Creating a revert commit
+        let revert_message = format!("Reverted to commit {}", commit_hash);
+        let revert_command = format!("gql revert {}", commit_hash);
+        let revert_commit_and_node = get_db_instance()?.create_commit_and_node(
+            &revert_message,
+            &revert_command,
+            user,
+            None,
+        )?;
+        let revert_commit = revert_commit_and_node.1;
+
+        Ok(revert_commit)
+    } else {
+        Err("Commit not found in current branch!".to_string())
+    }
+}
+
+/// Takes a user object and clears their branch of uncommitted changes.
+/// This is done by moving the user to the permanent copy of the branch and deleting the temporary copy.
+/// Returns Success or Error
+pub fn discard(user: &mut User) -> Result<(), String> {
+    //Storing the user's branch path
+    let branch_path: String = get_db_instance()?.get_temp_db_dir_path(user);
+
+    if user.is_on_temp_commit() {
+        //Deleting the temp copy of the branch
+        fs::remove_dir_all(branch_path).map_err(|e| e.to_string())?;
+        user.set_diffs(&Vec::new());
+    }
+
+    user.set_is_on_temp_commit(false);
+
+    Ok(())
+}
+
 /// This function is used to get the commits from a specific hash
 pub fn info(hash: &String) -> Result<String, String> {
     let commit_file = get_db_instance()?.get_commit_file_mut();
@@ -232,22 +328,91 @@ pub fn info(hash: &String) -> Result<String, String> {
     return Ok(log_string.to_string());
 }
 
+/// This function outputs all of the possible tables and Schemas in the current branch
+pub fn schema_table(user: &User) -> Result<String, String> {
+    // Get the list of all the tables in the database
+    let instance = get_db_instance()?;
+    let all_table_paths = instance.get_table_paths(user);
+
+    let mut page_read: Vec<Box<Page>> = Vec::new();
+    for path in all_table_paths.clone().unwrap() {
+        let page = read_page(0, &path)?;
+        page_read.push(page);
+    }
+
+    if page_read.clone().len() == 0 {
+        return Ok("No tables in current branch".to_string());
+    }
+
+    // Call read_schema for each table
+    let mut schemas: Vec<Vec<String>> = Vec::new();
+    let mut schema_types: Vec<Vec<Column>> = Vec::new();
+    for page_num in page_read.clone() {
+        let schema_object = read_schema(&page_num)?;
+        schemas.push(
+            schema_object
+                .iter()
+                .map(|(name, _typ)| name.clone())
+                .collect::<Vec<String>>()
+                .clone(),
+        );
+        schema_types.push(
+            schema_object
+                .iter()
+                .map(|(_name, typ)| typ.clone())
+                .collect::<Vec<Column>>()
+                .clone(),
+        );
+    }
+
+    let table_names = instance.get_tables(user);
+    let mut log_string: String = String::new();
+
+    for i in 0..schemas.len() {
+        log_string = format!(
+            "{}\nTable: {}\n",
+            log_string,
+            table_names.clone().unwrap()[i]
+        );
+        let mut builder = Builder::default();
+        builder.set_columns(schemas[i].clone());
+        builder.add_record(
+            schema_types[i]
+                .clone()
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>(),
+        );
+        let mut table_schema = builder.build();
+        table_schema.with(Style::rounded());
+        log_string = format!("{}\n{}\n\n", log_string, table_schema);
+    }
+
+    Ok(log_string.to_string())
+}
+
 #[cfg(test)]
 mod tests {
+
     use serial_test::serial;
 
     use crate::{
-        executor::query::create_table,
+        executor::query::{create_table, insert},
         fileio::{
             databaseio::{delete_db_instance, Database},
             header::Schema,
+            tableio::Table,
         },
         parser::parser::parse_vc_cmd,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
+            row::Row,
         },
-        version_control::{commit::Commit, diff::Diff},
+        version_control::{
+            commit::Commit,
+            diff::{Diff, InsertDiff},
+        },
     };
 
     use super::*;
@@ -672,6 +837,288 @@ mod tests {
         let query1 = format!("GQL info {}", commit.unwrap().hash);
 
         let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.is_ok());
+    }
+
+    // Checks that discard deletes the -temp dir
+    #[test]
+    #[serial]
+    fn test_discard_command() {
+        //Creating db instance
+        let db_name: String = "gql_discard_test".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        let table_name1: String = "table1".to_string();
+
+        //Making temp changes
+
+        // Create a new table on main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        let mut _table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Insert rows into the table on new branch
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let _res = insert(rows, table_name1, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Storing temp directory path
+        let temp_main_dir: String = get_db_instance().unwrap().get_temp_db_dir_path(&user);
+        assert_ne!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), true);
+
+        //Calling Discard
+        discard(&mut user).unwrap();
+
+        //Asserting that the user isn't on a temp commit
+        assert_eq!(user.is_on_temp_commit(), false);
+
+        // Asserting user diffs are now empty
+        assert_eq!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), false);
+        delete_db_instance().unwrap();
+    }
+
+    // Checks that discard deletes the -temp dir
+    #[test]
+    #[serial]
+    fn test_discard_command_after_commit() {
+        //Creating db instance
+        let db_name: String = "gql_discard_test".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        let table_name1: String = "table1".to_string();
+
+        //Making temp changes
+
+        // Create a new table on main branch
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Insert rows into the table on main branch
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // Making temp_changes
+        let rows2: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Dick Grayson".to_string())],
+            vec![Value::I32(2), Value::String("Jason Todd".to_string())],
+            vec![Value::I32(3), Value::String("Tim Drake".to_string())],
+        ];
+        let _res = insert(rows2, table_name1, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Storing temp directory path
+        let temp_main_dir: String = get_db_instance().unwrap().get_temp_db_dir_path(&user);
+        assert_ne!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), true);
+
+        //Calling Discard
+        discard(&mut user).unwrap();
+
+        //Asserting that the user isn't on a temp commit
+        assert_eq!(user.is_on_temp_commit(), false);
+
+        // Asserting user diffs are now empty
+        assert_eq!(user.get_diffs().len(), 0);
+        assert_eq!(std::path::Path::new(&temp_main_dir).exists(), false);
+        delete_db_instance().unwrap();
+    }
+
+    // Checks that revert works with a valid commit hash
+    #[test]
+    #[serial]
+    fn test_revert_command() {
+        //Creating db instance
+        let db_name = "gql_revert_test".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        let table_name1: String = "table1".to_string();
+
+        // Copying main dir to store state of database
+        let copy_dir: String = "test_revert_copy_dir".to_string();
+        std::fs::create_dir_all(copy_dir.clone()).unwrap();
+
+        // Create a new table on the main
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        let mut table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+        user.append_diff(&Diff::TableCreate(table1_info.1));
+
+        // Create a commit on the main branch
+        let node_commit1 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Insert rows into the table on main
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Create commit on main branch
+        let _node_commit2 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main - Added Wayne family".to_string(),
+                &"Insert;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // To copy a single table to that dir
+        std::fs::copy(
+            (table1_info.0).path.clone(),
+            format!(
+                "{}{}{}.db",
+                copy_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+
+        // Reverting commit 2
+        let _revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
+
+        // Checking if the revert command made a difference
+        // Get the directories for all the branches
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Read in all the tables from the branch directories before we compare them
+        let table_main: Table =
+            Table::new(&main_branch_table_dir, &"table1".to_string(), None).unwrap();
+        let table_copy: Table = Table::new(&copy_dir, &"table1".to_string(), None).unwrap();
+
+        // Make sure that the main branch isn't the same as the copied folder
+        assert_eq!(
+            compare_tables(&table_main, &table_copy, &main_branch_table_dir, &copy_dir),
+            false
+        );
+        delete_db_instance().unwrap();
+    }
+
+    /// Helper that compares two tables to make sure that they are identical, but in separate directories
+    fn compare_tables(
+        table1: &Table,
+        table2: &Table,
+        table1dir: &String,
+        table2dir: &String,
+    ) -> bool {
+        if table1dir == table2dir {
+            return false;
+        }
+
+        // Make sure that table1 and table2 are the same and they point to the right directories
+        if std::path::Path::new(&table1.path)
+            != std::path::Path::new(&format!("{}/{}.db", table1dir, table1.name))
+        {
+            return false;
+        }
+
+        if std::path::Path::new(&table2.path)
+            != std::path::Path::new(&format!("{}/{}.db", table2dir, table1.name))
+        {
+            return false;
+        }
+
+        if !file_diff::diff(&table1.path, &table2.path) {
+            return false;
+        }
+        true
+    }
+
+    // Tries to get the all the table in a branch with no table
+    #[test]
+    #[serial]
+    fn test_tables() {
+        let query = "GQL table";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_tables_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
+
+        delete_db_instance().unwrap();
+        assert!(result.unwrap() == "No tables in current branch".to_string());
+    }
+
+    // Tries to get the all the table in a branch with a table
+    #[test]
+    #[serial]
+    fn test_tables1() {
+        let query = "GQL table";
+        // Create a new user on the main branch
+        fcreate_db_instance("gql_tables_test");
+        let mut user: User = User::new("test_user".to_string());
+        let mut all_users: Vec<User> = Vec::new();
+        all_users.push(user.clone());
+
+        let load_db = Database::load_db("gql_tables_test".to_string()).unwrap();
+        create_table(
+            &"testing".to_string(),
+            &vec![("id".to_string(), Column::I32)],
+            &load_db,
+            &mut user,
+        )
+        .unwrap();
+
+        let result = parse_vc_cmd(query, &mut user, all_users.clone());
 
         delete_db_instance().unwrap();
         assert!(result.is_ok());
