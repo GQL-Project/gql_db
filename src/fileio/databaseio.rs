@@ -256,8 +256,9 @@ impl Database {
             let temp_branch_dir: String = self.get_current_working_branch_path(user);
 
             // Delete the temp branch directory
-            std::fs::remove_dir_all(&temp_branch_dir)
-                .map_err(|e| "Database::create_commit_and_node() Error: ".to_owned() + &e.to_string())?;
+            std::fs::remove_dir_all(&temp_branch_dir).map_err(|e| {
+                "Database::create_commit_and_node() Error: ".to_owned() + &e.to_string()
+            })?;
 
             // Set the user back to the non-temp version of the branch
             user.set_is_on_temp_commit(false);
@@ -3272,14 +3273,17 @@ mod tests {
         user.set_is_on_temp_commit(true);
 
         // Get the temp branch dir
-        let table_dir: String = get_db_instance().unwrap().get_current_working_branch_path(&user);
+        let table_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
 
         // Create the temp branch dir
         std::fs::create_dir_all(&table_dir).unwrap();
 
         // Create new table things
         let table_name: String = "test_table".to_string();
-        let table_path: String = table_dir.clone() + &"/".to_string() + &table_name + &".db".to_string();
+        let table_path: String =
+            table_dir.clone() + &"/".to_string() + &table_name + &".db".to_string();
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
@@ -3299,7 +3303,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        
+
         // Assert that the table is not in the table_dir and that the temp branch is deleted
         assert_eq!(std::path::Path::new(&table_path).exists(), false);
         assert_eq!(std::path::Path::new(&table_dir).exists(), false);
