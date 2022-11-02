@@ -274,7 +274,7 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
         revert_tables_from_diffs(&branch_path, &diffs)?;
 
         // Storing diffs for the revert commit
-        let new_diffs = reverse_diffs(&branch_path, &diffs)?;
+        let new_diffs = reverse_diffs(&diffs)?;
         for curr_diff in new_diffs {
             user.append_diff(&curr_diff);
         }

@@ -372,7 +372,7 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
 /// There are a couple assumptions:
 /// 1. The table_dir exists and is where the table files are/will be stored.
 /// 2. The diffs are in the order that the changes were made.
-pub fn reverse_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
+pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
     //Reversing the list of diffs since we are undoing the changes made to the table
     // and will need to apply the changes in the opposite order
     let mut reversed_diffs:Vec<Diff> = Vec::new();
