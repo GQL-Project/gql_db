@@ -75,12 +75,12 @@ pub fn execute_update(
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
-            Statement::Drop { 
-                object_type, 
-                if_exists, 
-                names, 
-                cascade: _, 
-                purge: _ 
+            Statement::Drop {
+                object_type,
+                if_exists,
+                names,
+                cascade: _,
+                purge: _,
             } => {
                 if object_type.clone() == sqlparser::ast::ObjectType::Table {
                     if names.len() != 1 {
@@ -90,11 +90,13 @@ pub fn execute_update(
                     let table_name: String = names[0].to_string();
 
                     // If the table doesn't exist on this branch, return an error
-                    if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name)) {
+                    if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
+                    {
                         return Err(format!("Table {} does not exist", table_name));
                     }
 
-                    let result: TableRemoveDiff = drop_table(&table_name, get_db_instance()?, user)?;
+                    let result: TableRemoveDiff =
+                        drop_table(&table_name, get_db_instance()?, user)?;
                     results.push(format!("Table dropped: {}", result.table_name));
                 }
             }
