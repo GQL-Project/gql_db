@@ -230,6 +230,12 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
+    // Checking the branch's status to ensure if the user is up-to-date
+    let behind_check = user.get_status();
+    if !behind_check.1 {
+        return Err("ERR: Cannot revert when behind! Consider using Discard to delete your changes.".to_string());
+    }
+
     // seperate to make debug easier
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
 
