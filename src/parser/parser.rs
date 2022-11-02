@@ -61,7 +61,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     }
                 }
                 VersionControlSubCommand::Info { commit: hash } => command::info(&hash),
-                VersionControlSubCommand::Status => Ok(user.get_status()),
+                VersionControlSubCommand::Status => Ok(user.get_status().0),
                 VersionControlSubCommand::CreateBranch { branch_name } => {
                     get_db_instance()?
                         .create_branch(&branch_name, user)
@@ -306,11 +306,13 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd12() {
         let query = "GQL status";
+        fcreate_db_instance("gql_log_db_instance_4");
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let all_users: Vec<User> = Vec::new();
         let result = parse_vc_cmd(query, &mut user, all_users);
         assert!(result.is_ok());
+        delete_db_instance().unwrap();
     }
 
     #[test]

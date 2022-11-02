@@ -4,7 +4,7 @@ use crate::version_control::branches::*;
 
 /// This represents a branch head. It is a single row in the `branch_heads.gql` table.
 /// It points to a branch node in the `branches.gql` table.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BranchHead {
     pub branch_name: String, // The name of the branch that this head points to.
     pub pagenum: i32,        // The page number in `branches.gql` where the branch node is located.
