@@ -251,6 +251,16 @@ impl Database {
             let non_temp_branch_dir: String =
                 self.get_branch_path_from_name(&user.get_current_branch_name());
             construct_tables_from_diffs(&non_temp_branch_dir, &user.get_diffs())?;
+
+            // Get the temp branch directory
+            let temp_branch_dir: String = self.get_current_working_branch_path(user);
+
+            // Delete the temp branch directory
+            std::fs::remove_dir_all(&temp_branch_dir)
+                .map_err(|e| "Database::create_commit_and_node() Error: ".to_owned() + &e.to_string())?;
+
+            // Set the user back to the non-temp version of the branch
+            user.set_is_on_temp_commit(false);
         }
 
         // Clear the diffs for the user
@@ -3243,6 +3253,58 @@ mod tests {
         );
 
         // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_temp_branch_removed_on_commit() {
+        // This will test creating a branch off of main then checking merge conflicts to it
+        let db_name: String = "test_temp_branch_removed_on_commit_db".to_string();
+
+        // Create a new database
+        fcreate_db_instance(&db_name);
+
+        // Create a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Set the user on a temporary commit
+        user.set_is_on_temp_commit(true);
+
+        // Get the temp branch dir
+        let table_dir: String = get_db_instance().unwrap().get_current_working_branch_path(&user);
+
+        // Create the temp branch dir
+        std::fs::create_dir_all(&table_dir).unwrap();
+
+        // Create new table things
+        let table_name: String = "test_table".to_string();
+        let table_path: String = table_dir.clone() + &"/".to_string() + &table_name + &".db".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        create_table(&table_name, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Assert that the table is created in table_dir
+        assert_eq!(std::path::Path::new(&table_path).exists(), true);
+
+        // Create a commit on the main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on Main - Created test_table".to_string(),
+                &"Create;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        
+        // Assert that the table is not in the table_dir and that the temp branch is deleted
+        assert_eq!(std::path::Path::new(&table_path).exists(), false);
+        assert_eq!(std::path::Path::new(&table_dir).exists(), false);
+
+        // Delete the db instance
         delete_db_instance().unwrap();
     }
 
