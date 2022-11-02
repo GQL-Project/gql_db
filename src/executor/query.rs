@@ -44,7 +44,6 @@ pub fn execute_query(
                             table_names.push((table_name[0].to_string(), "".to_string()));
                         }
                     }
-                    user.append_command(&command);
                     let pred: Option<SolvePredicate> = match &s.selection {
                         Some(pred) => Some(where_clause(
                             pred,
