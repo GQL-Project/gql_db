@@ -233,7 +233,10 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     // Checking the branch's status to ensure if the user is up-to-date
     let behind_check = user.get_status();
     if behind_check.1 {
-        return Err("ERR: Cannot revert when behind! Consider using Discard to delete your changes.".to_string());
+        return Err(
+            "ERR: Cannot revert when behind! Consider using Discard to delete your changes."
+                .to_string(),
+        );
     }
 
     // seperate to make debug easier
@@ -952,7 +955,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        
+
         get_db_instance()
             .unwrap()
             .create_temp_branch_directory(&mut user)
@@ -1034,7 +1037,13 @@ mod tests {
             vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
             vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
         ];
-        let _res = insert(rows, table_name1.clone(), get_db_instance().unwrap(), &mut user).unwrap();
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
 
         // To copy a single table to that dir
         std::fs::copy(
