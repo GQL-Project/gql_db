@@ -368,6 +368,67 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
     Ok(())
 }
 
+/// This method takes in a directory along with the diffs that are to be undone to the database.
+/// There are a couple assumptions:
+/// 1. The table_dir exists and is where the table files are/will be stored.
+/// 2. The diffs are in the order that the changes were made.
+pub fn reverse_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
+    //Reversing the list of diffs since we are undoing the changes made to the table
+    // and will need to apply the changes in the opposite order
+    let mut reversed_diffs:Vec<Diff> = Vec::new();
+    let flip_order_diffs = diffs.iter().rev();
+    for diff in flip_order_diffs {
+        match diff {
+            // Store an update diff where the old rows are the new rows and vice versa
+            Diff::Update(update_diff) => {
+                let curr_diff = Diff::Update(UpdateDiff {
+                    table_name: update_diff.table_name.clone(),
+                    schema: update_diff.schema.clone(),
+                    rows: update_diff.old_rows.clone(),
+                    old_rows: update_diff.rows.clone(),
+                });
+                reversed_diffs.push(curr_diff);
+            }
+            // Store a remove diff instead of an insert diff since the change is being reverted
+            Diff::Insert(insert_diff) => {
+                let curr_diff = Diff::Remove(RemoveDiff {
+                    table_name: insert_diff.table_name.clone(),
+                    schema: insert_diff.schema.clone(),
+                    rows: insert_diff.rows.clone(), // We need to remove the rows that were inserted
+                });
+                reversed_diffs.push(curr_diff);
+            }
+            // Store a insert diff instead of a remove diff since the change is being reverted
+            Diff::Remove(remove_diff) => {
+                let curr_diff = Diff::Insert(InsertDiff {
+                    table_name: remove_diff.table_name.clone(),
+                    schema: remove_diff.schema.clone(),
+                    rows: remove_diff.rows.clone(), // We need to insert the rows that were removed
+                });
+                reversed_diffs.push(curr_diff);
+            }
+            // TableRemove to revert the TableCreate
+            Diff::TableCreate(table_create_diff) => {
+                let curr_diff = Diff::TableRemove(TableRemoveDiff {
+                    table_name: table_create_diff.table_name.clone(),
+                    schema: table_create_diff.schema.clone(),
+                    rows_removed: Vec::new(), // No rows to store as we're reverting the table creation
+                    // Rows will be handled in other cases like Insert and Remove
+                });
+                reversed_diffs.push(curr_diff);
+            }
+            Diff::TableRemove(table_remove_diff) => {
+                let curr_diff: Diff = Diff::TableCreate(TableCreateDiff {
+                    table_name: table_remove_diff.table_name.clone(),
+                    schema: table_remove_diff.schema.clone(),
+                });
+                reversed_diffs.push(curr_diff);
+            }
+        }
+    }
+    Ok(reversed_diffs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
