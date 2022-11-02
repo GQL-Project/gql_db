@@ -93,7 +93,7 @@ impl User {
                 Ok(node) => {
                     self.branch_head = Some(node);
                 }
-                Err(e) => {
+                Err(_e) => {
                     self.branch_head = None;
                 }
             }
@@ -156,7 +156,7 @@ impl User {
                     self.branch_name
                 )),
             },
-            Err(e) => status.push_str(&format!(
+            Err(_e) => status.push_str(&format!(
                 "Your branch is up to date with {}\n\n",
                 self.branch_name
             )),
