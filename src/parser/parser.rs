@@ -149,8 +149,14 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     ))
                 }
                 VersionControlSubCommand::RevertCommit { commit } => {
-                    Ok(format!("Reverted Commit at hash: {}", commit))
+                    let revert_results = command::revert(user, &commit)?;
+                    Ok(format!("Reverted Commit at hash: {}", revert_results.hash))
                 }
+                VersionControlSubCommand::DiscardChanges => {
+                    command::discard(user)?;
+                    Ok("Discarded changes".to_string())
+                }
+                VersionControlSubCommand::SchemaTable => command::schema_table(user),
             }
         }
         Err(e) => Err(e.to_string()),
@@ -283,12 +289,12 @@ mod tests {
     #[test]
     #[serial]
     fn test_parse_vc_cmd10() {
-        let query = "GQL revert commit_hash";
+        let query = "GQL revert commit_hash commit_hash2";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let all_users: Vec<User> = Vec::new();
         let result = parse_vc_cmd(query, &mut user, all_users);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
