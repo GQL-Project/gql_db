@@ -42,7 +42,6 @@ pub fn resolve_value(solver: &SolveValue, row: &Row) -> Result<Value, String> {
     }
 }
 
-
 // Resolve a pure value without a row, such as in `select 5 + 5`
 pub fn resolve_pure_value(expr: &Expr) -> Result<Value, String> {
     Ok(resolve_value(
