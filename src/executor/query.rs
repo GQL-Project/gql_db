@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::predicate::{
-    resolve_predicate, resolve_pure_value, resolve_reference, resolve_value, solve_comparison,
-    solve_predicate, solve_value, PredicateSolver, ValueSolver, ComparisonSolver, resolve_comparison,
+    resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
+    solve_comparison, solve_predicate, solve_value, ComparisonSolver, PredicateSolver, ValueSolver,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
@@ -19,7 +19,7 @@ use crate::{
 
 use crate::util::dbtype::Value;
 use itertools::Itertools;
-use sqlparser::ast::{Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, Statement};
+use sqlparser::ast::{Expr, Ident, Query, Select, SelectItem, SetExpr, Statement};
 
 pub type Tables = Vec<(Table, String)>;
 pub type ColumnAliases = Vec<(String, Column, String)>;
@@ -99,7 +99,8 @@ fn parse_select(
             let tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
             let column_aliases = gen_column_aliases(&tables);
             let index_refs = get_index_refs(&column_aliases);
-            let cmp: ComparisonSolver = solve_comparison(&query.order_by, &column_aliases, &index_refs)?;
+            let cmp: ComparisonSolver =
+                solve_comparison(&query.order_by, &column_aliases, &index_refs)?;
             rows.sort_unstable_by(|a, b| resolve_comparison(&cmp, a, b));
         }
     }
@@ -124,11 +125,6 @@ pub fn execute_update(
                 from: _,
                 selection,
             } => {
-                //println!("table: {:?}", table);
-                //println!("assignments: {:?}", assignments);
-                //println!("from: {:?}", from); // This value is unimportant
-                //println!("selection: {:?}", selection);
-
                 let final_table; // What is the best way to do this?
                 let mut all_data: Vec<(String, Expr)> = Vec::new();
                 let final_alias;
@@ -152,7 +148,6 @@ pub fn execute_update(
                         return Err("Error parsing".to_string());
                     }
                 }
-                //println!("Table: {:?}", final_table);
 
                 let table_names = vec![(final_table.clone(), final_alias.clone())];
 
@@ -164,9 +159,8 @@ pub fn execute_update(
 
                     all_data.push((column_name, insert_value));
                 }
-                // Now we have the table name and the assignments
-                // println!("Updated assignments: {:?}", all_data);
 
+                // Now we have the table name and the assignments
                 let pred: Option<PredicateSolver> = match selection {
                     Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
                     None => None,

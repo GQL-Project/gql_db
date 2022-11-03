@@ -57,7 +57,7 @@ pub fn resolve_comparison(
 ) -> Ordering {
     match comp(row1, row2) {
         Ok(o) => o,
-        Err(e) => Ordering::Less, // If there's an error, then we can't compare, so we just say they're less
+        Err(_) => Ordering::Less, // If there's an error, then we can't compare, so we just say they're less
     }
 }
 
@@ -288,6 +288,15 @@ pub fn solve_value(
                     left.divide(&right)
                 }))
             }
+            BinaryOperator::Modulo => {
+                let left = solve_value(left, column_aliases, index_refs)?;
+                let right = solve_value(right, column_aliases, index_refs)?;
+                Ok(Box::new(move |row| {
+                    let left = left(row)?;
+                    let right = right(row)?;
+                    left.modulo(&right)
+                }))
+            }
             BinaryOperator::And
             | BinaryOperator::Or
             | BinaryOperator::Lt
@@ -301,7 +310,7 @@ pub fn solve_value(
                     let pred = binary(row)?;
                     Ok(JointValues::DBValue(Value::Bool(pred)))
                 }))
-            }
+            }            
             _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
         },
         Expr::UnaryOp { op, expr } => match op {
@@ -453,6 +462,18 @@ impl JointValues {
         };
         self.apply(other, apply_int, apply_float, apply_string)
             .map_err(|_| format!("Cannot divide {:?} and {:?}", self, other))
+    }
+
+    fn modulo(&self, other: &Self) -> Result<JointValues, String> {
+        let apply_int = |x: i64, y: i64| Ok::<i64, String>(x % y);
+        let apply_float = |_: f64, _: f64| {
+            Err::<f64, String>("Cannot modulus float by float".to_string())
+        };
+        let apply_string = |_: &String, _: &String| {
+            Err::<String, String>("Cannot modulus string by string".to_string())
+        };
+        self.apply(other, apply_int, apply_float, apply_string)
+            .map_err(|_| format!("Cannot modulus {:?} and {:?}", self, other))
     }
 
     /// This function applies a function to two values of similar types, casting when necessary.
