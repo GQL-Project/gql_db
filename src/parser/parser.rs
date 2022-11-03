@@ -159,8 +159,8 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     } else {
                         Ok(schema_results.0)
                     }
-                   // command::schema_table(user)
-                },
+                    // command::schema_table(user)
+                }
                 VersionControlSubCommand::DiscardChanges => {
                     command::discard(user)?;
                     Ok("Discarded changes".to_string())
