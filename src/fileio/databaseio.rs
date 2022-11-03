@@ -3,6 +3,7 @@ use super::pageio::PAGE_SIZE;
 use super::tableio::*;
 use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
+use crate::version_control::command::del_branch;
 use crate::version_control::diff::*;
 use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
 use crate::version_control::{commit::Commit, merge::*};
@@ -887,22 +888,7 @@ impl Database {
 
         // 8. Delete source branch (optionally)
         if do_delete_src_branch {
-            // Delete the branch directory if it exists
-            let src_branch_path: String = self.get_branch_path_from_name(&src_branch_name);
-            if Path::new(&src_branch_path).exists() {
-                std::fs::remove_dir_all(&src_branch_path).map_err(|e| {
-                    format!(
-                        "Database::merge_branches() Error: Cannot Remove Branch Directory: {}",
-                        e
-                    )
-                })?;
-            }
-
-            // Delete the branch nodes from the branches file
-            // TODO: wait for Aryan's change to delete all branch nodes until there is a branching node
-
-            // Delete the branch from the branch_heads
-            self.branch_heads.delete_branch_head(&src_branch_name)?;
+            del_branch(user, &src_branch_name, false, vec![user.clone()])?;
         }
 
         Ok(commit)

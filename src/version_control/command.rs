@@ -132,12 +132,31 @@ pub fn del_branch(
             }
         }
     }
-    // delete branch head
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+    let branches_instance = get_db_instance()?.get_branch_file_mut();
+
+    // Find the node that this branch branched off of
+    let mut temp_node: BranchNode = branch_heads_instance.get_branch_node_from_head(branch_name, branches_instance)?;
+    loop  {
+        let temp_node_opt: Option<BranchNode> = branches_instance.get_prev_branch_node(&temp_node)?;
+        if temp_node_opt.is_some() {
+            temp_node = temp_node_opt.unwrap();
+            if temp_node.branch_name != *branch_name {
+                // We need to update the num kids of the node that this branch branched off of
+                temp_node.num_kids -= 1;
+                branches_instance.update_branch_node(&temp_node)?;
+                break;
+            }
+        }
+        else {
+            break;
+        }
+    }
+
+    // delete branch head
     branch_heads_instance.delete_branch_head(branch_name)?;
 
     // delete all the rows where branch name = the branch head
-    let branches_instance = get_db_instance()?.get_branch_file_mut();
     branches_instance.delete_branch_node(branch_name)?;
 
     let result_string = format!("Branch {} deleted", &branch_name);
