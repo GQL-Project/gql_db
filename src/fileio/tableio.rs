@@ -1,5 +1,9 @@
 use super::{databaseio::Database, header::*, pageio::*, rowio::*};
-use crate::{user::userdata::User, util::{row::*, dbtype::Value}, version_control::diff::*};
+use crate::{
+    user::userdata::User,
+    util::{dbtype::Value, row::*},
+    version_control::diff::*,
+};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 

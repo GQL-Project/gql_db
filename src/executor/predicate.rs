@@ -50,11 +50,7 @@ pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
 }
 
 /// Given a ComparisonSolver and two rows, return an Ordering or an error
-pub fn resolve_comparison(
-    comp: &ComparisonSolver,
-    row1: &Row,
-    row2: &Row,
-) -> Ordering {
+pub fn resolve_comparison(comp: &ComparisonSolver, row1: &Row, row2: &Row) -> Ordering {
     match comp(row1, row2) {
         Ok(o) => o,
         Err(_) => Ordering::Less, // If there's an error, then we can't compare, so we just say they're less
@@ -310,7 +306,7 @@ pub fn solve_value(
                     let pred = binary(row)?;
                     Ok(JointValues::DBValue(Value::Bool(pred)))
                 }))
-            }            
+            }
             _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
         },
         Expr::UnaryOp { op, expr } => match op {
@@ -466,9 +462,8 @@ impl JointValues {
 
     fn modulo(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x % y);
-        let apply_float = |_: f64, _: f64| {
-            Err::<f64, String>("Cannot modulus float by float".to_string())
-        };
+        let apply_float =
+            |_: f64, _: f64| Err::<f64, String>("Cannot modulus float by float".to_string());
         let apply_string = |_: &String, _: &String| {
             Err::<String, String>("Cannot modulus string by string".to_string())
         };
@@ -919,5 +914,4 @@ mod tests {
 
         delete_db_instance().unwrap();
     }
-
 }
