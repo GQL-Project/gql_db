@@ -249,6 +249,15 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
+    // Checking the branch's status to ensure if the user is up-to-date
+    let behind_check = user.get_status();
+    if behind_check.1 {
+        return Err(
+            "ERR: Cannot revert when behind! Consider using Discard to delete your changes."
+                .to_string(),
+        );
+    }
+
     // seperate to make debug easier
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
 
@@ -323,6 +332,7 @@ pub fn discard(user: &mut User) -> Result<(), String> {
     }
 
     user.set_is_on_temp_commit(false);
+    user.set_commands(&Vec::new());
 
     Ok(())
 }
@@ -428,10 +438,7 @@ mod tests {
             dbtype::*,
             row::Row,
         },
-        version_control::{
-            commit::Commit,
-            diff::{Diff, InsertDiff},
-        },
+        version_control::{commit::Commit, diff::Diff},
     };
 
     use super::*;
@@ -955,6 +962,22 @@ mod tests {
         )
         .unwrap();
 
+        // Create a commit on the main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table & Added Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+
         // Making temp_changes
         let rows2: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("Dick Grayson".to_string())],
@@ -1002,9 +1025,12 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info =
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        let mut _table1_info =
             create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
-        user.append_diff(&Diff::TableCreate(table1_info.1));
 
         // Create a commit on the main branch
         let node_commit1 = get_db_instance()
@@ -1017,14 +1043,36 @@ mod tests {
             )
             .unwrap();
 
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+
         // Insert rows into the table on main
         let rows: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
             vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
             vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
         ];
-        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
-        user.append_diff(&Diff::Insert(insert_diff));
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // To copy a single table to that dir
+        std::fs::copy(
+            (_table1_info.0).path.clone(),
+            format!(
+                "{}{}{}.db",
+                copy_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
 
         // Create commit on main branch
         let _node_commit2 = get_db_instance()
@@ -1036,18 +1084,6 @@ mod tests {
                 None,
             )
             .unwrap();
-
-        // To copy a single table to that dir
-        std::fs::copy(
-            (table1_info.0).path.clone(),
-            format!(
-                "{}{}{}.db",
-                copy_dir,
-                std::path::MAIN_SEPARATOR,
-                &table_name1
-            ),
-        )
-        .unwrap();
 
         // Reverting commit 2
         let _revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
