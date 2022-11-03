@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
@@ -50,13 +51,13 @@ pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
 
 /// Given a ComparisonSolver and two rows, return an Ordering or an error
 pub fn resolve_comparison(
-    comp: &Option<ComparisonSolver>,
+    comp: &ComparisonSolver,
     row1: &Row,
     row2: &Row,
-) -> Result<Ordering, String> {
-    match comp {
-        Some(comp) => comp(row1, row2),
-        None => Ok(Ordering::Equal), // If there's no comparison, then it's always equal
+) -> Ordering {
+    match comp(row1, row2) {
+        Ok(o) => o,
+        Err(e) => Ordering::Less, // If there's an error, then we can't compare, so we just say they're less
     }
 }
 

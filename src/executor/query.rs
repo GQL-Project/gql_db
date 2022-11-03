@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::predicate::{
-    resolve_predicate, resolve_reference, resolve_value, solve_predicate, solve_value,
-    PredicateSolver, ValueSolver,
+    resolve_predicate, resolve_pure_value, resolve_reference, resolve_value, solve_comparison,
+    solve_predicate, solve_value, PredicateSolver, ValueSolver, ComparisonSolver, resolve_comparison,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
@@ -17,16 +17,9 @@ use crate::{
     util::row::RowLocation,
 };
 
-use crate::{
-    fileio::{
-        databaseio::*,
-        header::*,
-        tableio::{self, *},
-    },
-    util::dbtype::Value,
-};
+use crate::util::dbtype::Value;
 use itertools::Itertools;
-use sqlparser::ast::{Expr, Ident, SelectItem, SetExpr, Statement};
+use sqlparser::ast::{Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, Statement};
 
 pub type Tables = Vec<(Table, String)>;
 pub type ColumnAliases = Vec<(String, Column, String)>;
@@ -37,7 +30,7 @@ pub type IndexRefs = HashMap<String, usize>;
 pub fn execute_query(
     ast: &Vec<Statement>,
     user: &mut User,
-    command: &String,
+    _command: &String,
 ) -> Result<(Vec<String>, Vec<Row>), String> {
     if ast.len() == 0 {
         return Err("Empty AST".to_string());
@@ -46,27 +39,7 @@ pub fn execute_query(
         match a {
             Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
-                    let (columns, mut rows) = parse_select(s, user)?;
-                    let limit: Option<usize> = match &q.limit {
-                        Some(l) => match resolve_pure_value(l)? {
-                            Value::I32(i) => Some(i as usize),
-                            Value::I64(i) => Some(i as usize),
-                            _ => None,
-                        },
-                        None => None,
-                    };
-                    let offset: usize = match &q.offset {
-                        Some(l) => match resolve_pure_value(&l.value)? {
-                            Value::I32(i) => i as usize,
-                            Value::I64(i) => i as usize,
-                            _ => 0,
-                        },
-                        None => 0,
-                    };
-                    if let Some(l) = limit {
-                        rows = rows[offset..(offset + l).min(rows.len())].to_vec();
-                    }
-                    return Ok((columns, rows));
+                    return parse_select(s, user, Some(q));
                 }
                 _ => print!("Not a select\n"),
             },
@@ -77,8 +50,9 @@ pub fn execute_query(
 }
 
 fn parse_select(
-    s: &Box<sqlparser::ast::Select>,
+    s: &Select,
     user: &mut User,
+    query: Option<&Query>,
 ) -> Result<(Vec<String>, Vec<Row>), String> {
     let mut columns = Vec::new();
     for c in s.projection.iter() {
@@ -94,17 +68,42 @@ fn parse_select(
             table_names.push((table_name[0].to_string(), "".to_string()));
         }
     }
-    let pred: Option<SolvePredicate> = match &s.selection {
-        Some(pred) => Some(where_clause(
-            pred,
-            table_names.clone(),
-            get_db_instance()?,
-            user,
-        )?),
+    let pred: Option<PredicateSolver> = match &s.selection {
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
         None => None,
     };
 
-    select(columns, pred, table_names, get_db_instance()?, user)
+    let (columns, mut rows) = select(columns, pred, &table_names, get_db_instance()?, user)?;
+
+    if let Some(query) = query {
+        let limit: Option<usize> = match &query.limit {
+            Some(l) => match resolve_pure_value(l)? {
+                Value::I32(i) => Some(i as usize),
+                Value::I64(i) => Some(i as usize),
+                _ => None,
+            },
+            None => None,
+        };
+        let offset: usize = match &query.offset {
+            Some(l) => match resolve_pure_value(&l.value)? {
+                Value::I32(i) => i as usize,
+                Value::I64(i) => i as usize,
+                _ => 0,
+            },
+            None => 0,
+        };
+        if let Some(l) = limit {
+            rows = rows[offset..(offset + l).min(rows.len())].to_vec();
+        }
+        if !query.order_by.is_empty() {
+            let tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
+            let column_aliases = gen_column_aliases(&tables);
+            let index_refs = get_index_refs(&column_aliases);
+            let cmp: ComparisonSolver = solve_comparison(&query.order_by, &column_aliases, &index_refs)?;
+            rows.sort_unstable_by(|a, b| resolve_comparison(&cmp, a, b));
+        }
+    }
+    Ok((columns, rows))
 }
 
 pub fn execute_update(
@@ -280,7 +279,7 @@ pub fn execute_update(
                         }
                     }
                     SetExpr::Select(v) => {
-                        let (_, rows) = parse_select(&v, user)?;
+                        let (_, rows) = parse_select(&v, user, None)?;
                         all_data = rows;
                     }
                     _ => {
@@ -340,7 +339,7 @@ pub fn drop_table(
 pub fn select(
     columns: Vec<SelectItem>,
     pred: Option<PredicateSolver>,
-    table_names: Vec<(String, String)>,
+    table_names: &Vec<(String, String)>,
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
 ) -> Result<(Vec<String>, Vec<Row>), String> {
@@ -587,7 +586,7 @@ fn resolve_columns(
 ) -> Result<Vec<ValueSolver>, String> {
     columns
         .into_iter()
-        .map(|item| resolve_selects(item, column_names, tables, column_aliases, index_refs))
+        .map(|item| resolve_selects(item, column_names, &tables, column_aliases, index_refs))
         .flatten_ok()
         .collect::<Result<Vec<ValueSolver>, String>>()
 }
@@ -718,7 +717,7 @@ pub mod tests {
         .unwrap();
 
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -806,7 +805,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         // Check that the schema is correct
         assert_eq!(result.0[0], "id".to_string());
@@ -902,7 +901,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "T.id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -977,7 +976,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -1071,7 +1070,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "T1.id".to_string());
         assert_eq!(result.0[1], "country".to_string());
@@ -1169,7 +1168,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let _ = select(columns.to_owned(), None, tables, &new_db, &user).unwrap_err();
+        let _ = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap_err();
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -1223,7 +1222,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user);
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -1283,7 +1282,7 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user);
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user);
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -1352,7 +1351,7 @@ pub mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "T.id".to_string());
         assert_eq!(result.0[1], "T.name".to_string());
@@ -1484,7 +1483,7 @@ pub mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "T.id".to_string());
         assert_eq!(result.0[1], "T.name".to_string());
@@ -1640,7 +1639,7 @@ pub mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, tables, &new_db, &user).unwrap();
+        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
 
         assert_eq!(result.0[0], "id".to_string());
         assert_eq!(result.0[1], "name".to_string());
