@@ -93,7 +93,6 @@ impl DatabaseConnection for Connection {
                         .create_temp_branch_directory(user)
                         .map_err(|e| Status::internal(e))?;
                 }
-
                 let resp = query::execute_update(&tree, user, &request.query)
                     .map_err(|e| Status::internal(e))?;
                 Ok(Response::new(to_update_result(resp)))

@@ -17,6 +17,14 @@ use crate::{
     util::row::RowLocation,
 };
 
+use crate::{
+    fileio::{
+        databaseio::*,
+        header::*,
+        tableio::{self, *},
+    },
+    util::dbtype::Value,
+};
 use itertools::Itertools;
 use sqlparser::ast::{Expr, Ident, SelectItem, SetExpr, Statement};
 
@@ -38,29 +46,27 @@ pub fn execute_query(
         match a {
             Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
-                    let mut columns = Vec::new();
-                    for c in s.projection.iter() {
-                        columns.push(c.clone());
-                    }
-                    let mut table_names = Vec::new();
-                    for t in s.from.iter() {
-                        let table_name = t.to_string();
-                        let table_name: Vec<&str> = table_name.split(" ").collect();
-                        if table_name.len() == 3 {
-                            table_names
-                                .push((table_name[0].to_string(), table_name[2].to_string()));
-                        } else {
-                            table_names.push((table_name[0].to_string(), "".to_string()));
-                        }
-                    }
-                    user.append_command(&command);
-                    let pred: Option<PredicateSolver> = match &s.selection {
-                        Some(pred) => {
-                            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
-                        }
+                    let (columns, mut rows) = parse_select(s, user)?;
+                    let limit: Option<usize> = match &q.limit {
+                        Some(l) => match resolve_pure_value(l)? {
+                            Value::I32(i) => Some(i as usize),
+                            Value::I64(i) => Some(i as usize),
+                            _ => None,
+                        },
                         None => None,
                     };
-                    return select(columns, pred, table_names, get_db_instance()?, user);
+                    let offset: usize = match &q.offset {
+                        Some(l) => match resolve_pure_value(&l.value)? {
+                            Value::I32(i) => i as usize,
+                            Value::I64(i) => i as usize,
+                            _ => 0,
+                        },
+                        None => 0,
+                    };
+                    if let Some(l) = limit {
+                        rows = rows[offset..(offset + l).min(rows.len())].to_vec();
+                    }
+                    return Ok((columns, rows));
                 }
                 _ => print!("Not a select\n"),
             },
@@ -68,6 +74,37 @@ pub fn execute_query(
         };
     }
     Err("No query found".to_string())
+}
+
+fn parse_select(
+    s: &Box<sqlparser::ast::Select>,
+    user: &mut User,
+) -> Result<(Vec<String>, Vec<Row>), String> {
+    let mut columns = Vec::new();
+    for c in s.projection.iter() {
+        columns.push(c.clone());
+    }
+    let mut table_names = Vec::new();
+    for t in s.from.iter() {
+        let table_name = t.to_string();
+        let table_name: Vec<&str> = table_name.split(" ").collect();
+        if table_name.len() == 3 {
+            table_names.push((table_name[0].to_string(), table_name[2].to_string()));
+        } else {
+            table_names.push((table_name[0].to_string(), "".to_string()));
+        }
+    }
+    let pred: Option<SolvePredicate> = match &s.selection {
+        Some(pred) => Some(where_clause(
+            pred,
+            table_names.clone(),
+            get_db_instance()?,
+            user,
+        )?),
+        None => None,
+    };
+
+    select(columns, pred, table_names, get_db_instance()?, user)
 }
 
 pub fn execute_update(
@@ -183,6 +220,31 @@ pub fn execute_update(
                 };
                 results.push(delete(final_table, pred, get_db_instance()?, user)?.0);
             }
+            Statement::Drop {
+                object_type,
+                if_exists,
+                names,
+                cascade: _,
+                purge: _,
+            } => {
+                if object_type.clone() == sqlparser::ast::ObjectType::Table {
+                    if names.len() != 1 {
+                        return Err("Can only drop one table at a time".to_string());
+                    }
+
+                    let table_name: String = names[0].to_string();
+
+                    // If the table doesn't exist on this branch, return an error
+                    if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
+                    {
+                        return Err(format!("Table {} does not exist", table_name));
+                    }
+
+                    let result: TableRemoveDiff =
+                        drop_table(&table_name, get_db_instance()?, user)?;
+                    results.push(format!("Table dropped: {}", result.table_name));
+                }
+            }
             Statement::CreateTable { name, columns, .. } => {
                 let table_name = name.0[0].value.to_string();
                 let mut schema = Schema::new();
@@ -208,15 +270,18 @@ pub fn execute_update(
                         for row in values_list {
                             let mut data = Vec::new();
                             for k in row {
-                                let map = HashMap::new();
                                 data.push(
                                     // We don't need any additional information to solve this, hence the empty vectors and maps
                                     // Here, we effectively convert the Expr's into our Value types
-                                    resolve_value(&solve_value(&k, &vec![], &map)?, &vec![])?,
+                                    resolve_pure_value(&k)?,
                                 );
                             }
                             all_data.push(data);
                         }
+                    }
+                    SetExpr::Select(v) => {
+                        let (_, rows) = parse_select(&v, user)?;
+                        all_data = rows;
                     }
                     _ => {
                         return Err("Expected a Values statement".to_string());

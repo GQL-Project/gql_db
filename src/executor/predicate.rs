@@ -60,6 +60,14 @@ pub fn resolve_comparison(
     }
 }
 
+// Resolve a pure value without a row, such as in `select 5 + 5`
+pub fn resolve_pure_value(expr: &Expr) -> Result<Value, String> {
+    Ok(resolve_value(
+        &solve_value(&expr, &vec![], &HashMap::new())?,
+        &vec![],
+    )?)
+}
+
 /// We know a lot of information already about the expression, so we can 'reduce' it
 /// into just a function that takes a row and outputs true or false. This way, we don't
 /// have to re-parse the function every time, and we have a direct function to call
@@ -889,4 +897,5 @@ mod tests {
 
         delete_db_instance().unwrap();
     }
+
 }

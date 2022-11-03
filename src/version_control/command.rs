@@ -27,6 +27,13 @@ pub struct Log {
     message: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Schema {
+    table_name: String,
+    table_schema: Vec<String>,
+    schema_type: Vec<String>,
+}
+
 /// This function implements the GQL log command
 pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     let branch_name: String = user.get_current_branch_name();
@@ -132,12 +139,32 @@ pub fn del_branch(
             }
         }
     }
-    // delete branch head
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+    let branches_instance = get_db_instance()?.get_branch_file_mut();
+
+    // Find the node that this branch branched off of
+    let mut temp_node: BranchNode =
+        branch_heads_instance.get_branch_node_from_head(branch_name, branches_instance)?;
+    loop {
+        let temp_node_opt: Option<BranchNode> =
+            branches_instance.get_prev_branch_node(&temp_node)?;
+        if temp_node_opt.is_some() {
+            temp_node = temp_node_opt.unwrap();
+            if temp_node.branch_name != *branch_name {
+                // We need to update the num kids of the node that this branch branched off of
+                temp_node.num_kids -= 1;
+                branches_instance.update_branch_node(&temp_node)?;
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // delete branch head
     branch_heads_instance.delete_branch_head(branch_name)?;
 
     // delete all the rows where branch name = the branch head
-    let branches_instance = get_db_instance()?.get_branch_file_mut();
     branches_instance.delete_branch_node(branch_name)?;
 
     let result_string = format!("Branch {} deleted", &branch_name);
@@ -230,6 +257,15 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     let branch_name: String = user.get_current_branch_name();
     let branches_from_head: &Branches = get_db_instance()?.get_branch_file();
 
+    // Checking the branch's status to ensure if the user is up-to-date
+    let behind_check = user.get_status();
+    if behind_check.1 {
+        return Err(
+            "ERR: Cannot revert when behind! Consider using Discard to delete your changes."
+                .to_string(),
+        );
+    }
+
     // seperate to make debug easier
     let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
 
@@ -304,6 +340,7 @@ pub fn discard(user: &mut User) -> Result<(), String> {
     }
 
     user.set_is_on_temp_commit(false);
+    user.set_commands(&Vec::new());
 
     Ok(())
 }
@@ -329,7 +366,7 @@ pub fn info(hash: &String) -> Result<String, String> {
 }
 
 /// This function outputs all of the possible tables and Schemas in the current branch
-pub fn schema_table(user: &User) -> Result<String, String> {
+pub fn schema_table(user: &User) -> Result<(String, String), String> {
     // Get the list of all the tables in the database
     let instance = get_db_instance()?;
     let all_table_paths = instance.get_table_paths(user);
@@ -341,12 +378,13 @@ pub fn schema_table(user: &User) -> Result<String, String> {
     }
 
     if page_read.clone().len() == 0 {
-        return Ok("No tables in current branch".to_string());
+        return Ok(("No tables in current branch!".to_string(), "".to_string()));
     }
 
     // Call read_schema for each table
     let mut schemas: Vec<Vec<String>> = Vec::new();
     let mut schema_types: Vec<Vec<Column>> = Vec::new();
+    let mut schema_objects: Vec<Schema> = Vec::new();
     for page_num in page_read.clone() {
         let schema_object = read_schema(&page_num)?;
         schemas.push(
@@ -376,19 +414,29 @@ pub fn schema_table(user: &User) -> Result<String, String> {
         );
         let mut builder = Builder::default();
         builder.set_columns(schemas[i].clone());
-        builder.add_record(
-            schema_types[i]
-                .clone()
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>(),
-        );
+
+        let schemaz = schema_types[i]
+            .clone()
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
+        builder.add_record(schemaz.clone());
+
         let mut table_schema = builder.build();
         table_schema.with(Style::rounded());
         log_string = format!("{}\n{}\n\n", log_string, table_schema);
+
+        // for the -j
+        let schema_object = Schema {
+            table_name: table_names.clone().unwrap()[i].clone(),
+            table_schema: schemas[i].clone(),
+            schema_type: schemaz.clone(),
+        };
+        schema_objects.push(schema_object);
     }
 
-    Ok(log_string.to_string())
+    let json = serde_json::to_string(&schema_objects).unwrap();
+    Ok((log_string, json))
 }
 
 #[cfg(test)]
@@ -409,10 +457,7 @@ mod tests {
             dbtype::*,
             row::Row,
         },
-        version_control::{
-            commit::Commit,
-            diff::{Diff, InsertDiff},
-        },
+        version_control::{commit::Commit, diff::Diff},
     };
 
     use super::*;
@@ -936,6 +981,22 @@ mod tests {
         )
         .unwrap();
 
+        // Create a commit on the main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table & Added Rows;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+
         // Making temp_changes
         let rows2: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("Dick Grayson".to_string())],
@@ -983,9 +1044,12 @@ mod tests {
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
         ];
-        let mut table1_info =
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        let mut _table1_info =
             create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
-        user.append_diff(&Diff::TableCreate(table1_info.1));
 
         // Create a commit on the main branch
         let node_commit1 = get_db_instance()
@@ -998,14 +1062,36 @@ mod tests {
             )
             .unwrap();
 
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+
         // Insert rows into the table on main
         let rows: Vec<Row> = vec![
             vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
             vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
             vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
         ];
-        let insert_diff: InsertDiff = (table1_info.0).insert_rows(rows).unwrap();
-        user.append_diff(&Diff::Insert(insert_diff));
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // To copy a single table to that dir
+        std::fs::copy(
+            (_table1_info.0).path.clone(),
+            format!(
+                "{}{}{}.db",
+                copy_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
 
         // Create commit on main branch
         let _node_commit2 = get_db_instance()
@@ -1017,18 +1103,6 @@ mod tests {
                 None,
             )
             .unwrap();
-
-        // To copy a single table to that dir
-        std::fs::copy(
-            (table1_info.0).path.clone(),
-            format!(
-                "{}{}{}.db",
-                copy_dir,
-                std::path::MAIN_SEPARATOR,
-                &table_name1
-            ),
-        )
-        .unwrap();
 
         // Reverting commit 2
         let _revert_commit = revert(&mut user, &(node_commit1.1).hash).unwrap();
@@ -1095,7 +1169,7 @@ mod tests {
         let result = parse_vc_cmd(query, &mut user, all_users.clone());
 
         delete_db_instance().unwrap();
-        assert!(result.unwrap() == "No tables in current branch".to_string());
+        assert!(result.unwrap() == "No tables in current branch!".to_string());
     }
 
     // Tries to get the all the table in a branch with a table
