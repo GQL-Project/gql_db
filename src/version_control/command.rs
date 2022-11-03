@@ -136,9 +136,11 @@ pub fn del_branch(
     let branches_instance = get_db_instance()?.get_branch_file_mut();
 
     // Find the node that this branch branched off of
-    let mut temp_node: BranchNode = branch_heads_instance.get_branch_node_from_head(branch_name, branches_instance)?;
-    loop  {
-        let temp_node_opt: Option<BranchNode> = branches_instance.get_prev_branch_node(&temp_node)?;
+    let mut temp_node: BranchNode =
+        branch_heads_instance.get_branch_node_from_head(branch_name, branches_instance)?;
+    loop {
+        let temp_node_opt: Option<BranchNode> =
+            branches_instance.get_prev_branch_node(&temp_node)?;
         if temp_node_opt.is_some() {
             temp_node = temp_node_opt.unwrap();
             if temp_node.branch_name != *branch_name {
@@ -147,8 +149,7 @@ pub fn del_branch(
                 branches_instance.update_branch_node(&temp_node)?;
                 break;
             }
-        }
-        else {
+        } else {
             break;
         }
     }

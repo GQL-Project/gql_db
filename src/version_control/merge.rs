@@ -89,32 +89,32 @@ pub fn create_merge_diffs(
                                     insert_source_diff.table_name
                                 )
                             );
-                        }
-                        else if conflict_res_algo == MergeConflictResolutionAlgo::UseSource {
+                        } else if conflict_res_algo == MergeConflictResolutionAlgo::UseSource {
                             // Get the table remove diff from target_diffs_on_the_table if it exists
-                            let remove_table_diff_target_option =
-                                target_diffs_on_the_table
-                                    .iter()
-                                    .find_map(|diff| match diff {
-                                        Diff::TableRemove(tab_remove_diff) => Some(tab_remove_diff),
-                                        _ => None,
-                                    });
-                            
+                            let remove_table_diff_target_option = target_diffs_on_the_table
+                                .iter()
+                                .find_map(|diff| match diff {
+                                    Diff::TableRemove(tab_remove_diff) => Some(tab_remove_diff),
+                                    _ => None,
+                                });
+
                             if remove_table_diff_target_option.is_some() {
-                                let remove_table_diff_target: &TableRemoveDiff = remove_table_diff_target_option.unwrap();
-                                let create_table_target_premerge: TableCreateDiff = TableCreateDiff {
-                                    table_name: remove_table_diff_target.table_name.clone(),
-                                    schema: remove_table_diff_target.schema.clone(),
-                                };
-                                prev_merge_diffs.push(Diff::TableCreate(create_table_target_premerge));
+                                let remove_table_diff_target: &TableRemoveDiff =
+                                    remove_table_diff_target_option.unwrap();
+                                let create_table_target_premerge: TableCreateDiff =
+                                    TableCreateDiff {
+                                        table_name: remove_table_diff_target.table_name.clone(),
+                                        schema: remove_table_diff_target.schema.clone(),
+                                    };
+                                prev_merge_diffs
+                                    .push(Diff::TableCreate(create_table_target_premerge));
                                 let insert_table_target_premerge: InsertDiff = InsertDiff {
                                     table_name: remove_table_diff_target.table_name.clone(),
                                     schema: remove_table_diff_target.schema.clone(),
                                     rows: remove_table_diff_target.rows_removed.clone(),
                                 };
                                 prev_merge_diffs.push(Diff::Insert(insert_table_target_premerge));
-                            }
-                            else {
+                            } else {
                                 return Err(
                                     format!(
                                         "Merge Conflict: Table Create Diff for {} not found in target branch", 
@@ -122,8 +122,7 @@ pub fn create_merge_diffs(
                                     )
                                 );
                             }
-                        }
-                        else if conflict_res_algo == MergeConflictResolutionAlgo::UseTarget {
+                        } else if conflict_res_algo == MergeConflictResolutionAlgo::UseTarget {
                             continue;
                         }
                     }
@@ -228,32 +227,32 @@ pub fn create_merge_diffs(
                                     update_source_diff.table_name
                                 )
                             );
-                        }
-                        else if conflict_res_algo == MergeConflictResolutionAlgo::UseSource {
+                        } else if conflict_res_algo == MergeConflictResolutionAlgo::UseSource {
                             // Get the table remove diff from target_diffs_on_the_table if it exists
-                            let remove_table_diff_target_option =
-                                target_diffs_on_the_table
-                                    .iter()
-                                    .find_map(|diff| match diff {
-                                        Diff::TableRemove(tab_remove_diff) => Some(tab_remove_diff),
-                                        _ => None,
-                                    });
-                            
+                            let remove_table_diff_target_option = target_diffs_on_the_table
+                                .iter()
+                                .find_map(|diff| match diff {
+                                    Diff::TableRemove(tab_remove_diff) => Some(tab_remove_diff),
+                                    _ => None,
+                                });
+
                             if remove_table_diff_target_option.is_some() {
-                                let remove_table_diff_target: &TableRemoveDiff = remove_table_diff_target_option.unwrap();
-                                let create_table_target_premerge: TableCreateDiff = TableCreateDiff {
-                                    table_name: remove_table_diff_target.table_name.clone(),
-                                    schema: remove_table_diff_target.schema.clone(),
-                                };
-                                prev_merge_diffs.push(Diff::TableCreate(create_table_target_premerge));
+                                let remove_table_diff_target: &TableRemoveDiff =
+                                    remove_table_diff_target_option.unwrap();
+                                let create_table_target_premerge: TableCreateDiff =
+                                    TableCreateDiff {
+                                        table_name: remove_table_diff_target.table_name.clone(),
+                                        schema: remove_table_diff_target.schema.clone(),
+                                    };
+                                prev_merge_diffs
+                                    .push(Diff::TableCreate(create_table_target_premerge));
                                 let insert_table_target_premerge: InsertDiff = InsertDiff {
                                     table_name: remove_table_diff_target.table_name.clone(),
                                     schema: remove_table_diff_target.schema.clone(),
                                     rows: remove_table_diff_target.rows_removed.clone(),
                                 };
                                 prev_merge_diffs.push(Diff::Insert(insert_table_target_premerge));
-                            }
-                            else {
+                            } else {
                                 return Err(
                                     format!(
                                         "Merge Conflict: Table Create Diff for {} not found in target branch", 
@@ -261,8 +260,7 @@ pub fn create_merge_diffs(
                                     )
                                 );
                             }
-                        }
-                        else if conflict_res_algo == MergeConflictResolutionAlgo::UseTarget {
+                        } else if conflict_res_algo == MergeConflictResolutionAlgo::UseTarget {
                             continue;
                         }
                     }
@@ -362,32 +360,32 @@ pub fn create_merge_diffs(
                                     remove_source_diff.table_name
                                 )
                             );
-                        } 
-                        else if conflict_res_algo == MergeConflictResolutionAlgo::UseSource {
+                        } else if conflict_res_algo == MergeConflictResolutionAlgo::UseSource {
                             // Get the table remove diff from target_diffs_on_the_table if it exists
-                            let remove_table_diff_target_option =
-                                target_diffs_on_the_table
-                                    .iter()
-                                    .find_map(|diff| match diff {
-                                        Diff::TableRemove(tab_remove_diff) => Some(tab_remove_diff),
-                                        _ => None,
-                                    });
-                            
+                            let remove_table_diff_target_option = target_diffs_on_the_table
+                                .iter()
+                                .find_map(|diff| match diff {
+                                    Diff::TableRemove(tab_remove_diff) => Some(tab_remove_diff),
+                                    _ => None,
+                                });
+
                             if remove_table_diff_target_option.is_some() {
-                                let remove_table_diff_target: &TableRemoveDiff = remove_table_diff_target_option.unwrap();
-                                let create_table_target_premerge: TableCreateDiff = TableCreateDiff {
-                                    table_name: remove_table_diff_target.table_name.clone(),
-                                    schema: remove_table_diff_target.schema.clone(),
-                                };
-                                prev_merge_diffs.push(Diff::TableCreate(create_table_target_premerge));
+                                let remove_table_diff_target: &TableRemoveDiff =
+                                    remove_table_diff_target_option.unwrap();
+                                let create_table_target_premerge: TableCreateDiff =
+                                    TableCreateDiff {
+                                        table_name: remove_table_diff_target.table_name.clone(),
+                                        schema: remove_table_diff_target.schema.clone(),
+                                    };
+                                prev_merge_diffs
+                                    .push(Diff::TableCreate(create_table_target_premerge));
                                 let insert_table_target_premerge: InsertDiff = InsertDiff {
                                     table_name: remove_table_diff_target.table_name.clone(),
                                     schema: remove_table_diff_target.schema.clone(),
                                     rows: remove_table_diff_target.rows_removed.clone(),
                                 };
                                 prev_merge_diffs.push(Diff::Insert(insert_table_target_premerge));
-                            }
-                            else {
+                            } else {
                                 return Err(
                                     format!(
                                         "Merge Conflict: Table Create Diff for {} not found in target branch", 
@@ -395,8 +393,7 @@ pub fn create_merge_diffs(
                                     )
                                 );
                             }
-                        }
-                        else if conflict_res_algo == MergeConflictResolutionAlgo::UseTarget {
+                        } else if conflict_res_algo == MergeConflictResolutionAlgo::UseTarget {
                             continue;
                         }
                     }
@@ -658,10 +655,11 @@ fn handle_merge_conflicts(
             } // end target_remove_diff
 
             // Get the target table remove diff
-            let target_table_remove_diff_opt = target_table_diff.iter().find_map(|diff| match diff {
-                Diff::TableRemove(table_del_diff) => Some(table_del_diff),
-                _ => None,
-            });
+            let target_table_remove_diff_opt =
+                target_table_diff.iter().find_map(|diff| match diff {
+                    Diff::TableRemove(table_del_diff) => Some(table_del_diff),
+                    _ => None,
+                });
 
             // If the target has a table removed, we have a merge conflict
             if let Some(_target_table_remove_diff) = target_table_remove_diff_opt {
