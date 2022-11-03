@@ -421,7 +421,7 @@ mod tests {
         },
         version_control::{
             commit::Commit,
-            diff::{Diff, InsertDiff},
+            diff::{Diff},
         },
     };
 
@@ -947,7 +947,7 @@ mod tests {
         .unwrap();
 
         // Create a commit on the main branch
-        let node_commit1 = get_db_instance()
+        get_db_instance()
             .unwrap()
             .create_commit_and_node(
                 &"First Commit".to_string(),
