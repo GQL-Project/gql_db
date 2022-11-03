@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 
 use super::predicate::{
-    resolve_predicate, resolve_value, solve_predicate, solve_value, SolvePredicate, SolveValue,
-};
-use crate::fileio::{
-    databaseio::*,
-    header::*,
-    tableio::{self, *},
+    resolve_predicate, resolve_pure_value, resolve_value, solve_predicate, solve_value,
+    SolvePredicate, SolveValue,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::Row;
 use crate::version_control::diff::*;
+use crate::{
+    fileio::{
+        databaseio::*,
+        header::*,
+        tableio::{self, *},
+    },
+    util::dbtype::Value,
+};
 use itertools::Itertools;
 use sqlparser::ast::{Expr, Ident, SelectItem, SetExpr, Statement};
 
@@ -29,7 +33,27 @@ pub fn execute_query(
         match a {
             Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
-                    return parse_select(s, user);
+                    let (columns, mut rows) = parse_select(s, user)?;
+                    let limit: Option<usize> = match &q.limit {
+                        Some(l) => match resolve_pure_value(l)? {
+                            Value::I32(i) => Some(i as usize),
+                            Value::I64(i) => Some(i as usize),
+                            _ => None,
+                        },
+                        None => None,
+                    };
+                    let offset: usize = match &q.offset {
+                        Some(l) => match resolve_pure_value(&l.value)? {
+                            Value::I32(i) => i as usize,
+                            Value::I64(i) => i as usize,
+                            _ => 0,
+                        },
+                        None => 0,
+                    };
+                    if let Some(l) = limit {
+                        rows = rows[offset..(offset + l).min(rows.len())].to_vec();
+                    }
+                    return Ok((columns, rows));
                 }
                 _ => print!("Not a select\n"),
             },
@@ -66,7 +90,8 @@ fn parse_select(
         )?),
         None => None,
     };
-    return select(columns, pred, table_names, get_db_instance()?, user);
+
+    select(columns, pred, table_names, get_db_instance()?, user)
 }
 
 pub fn execute_update(
@@ -131,11 +156,10 @@ pub fn execute_update(
                         for row in values_list {
                             let mut data = Vec::new();
                             for k in row {
-                                let map = HashMap::new();
                                 data.push(
                                     // We don't need any additional information to solve this, hence the empty vectors and maps
                                     // Here, we effectively convert the Expr's into our Value types
-                                    resolve_value(&solve_value(&k, &vec![], &map)?, &vec![])?,
+                                    resolve_pure_value(&k)?,
                                 );
                             }
                             all_data.push(data);
