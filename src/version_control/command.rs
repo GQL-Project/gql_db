@@ -313,6 +313,7 @@ pub fn discard(user: &mut User) -> Result<(), String> {
     }
 
     user.set_is_on_temp_commit(false);
+    user.set_commands(&Vec::new());
 
     Ok(())
 }
