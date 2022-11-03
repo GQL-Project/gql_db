@@ -61,7 +61,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     }
                 }
                 VersionControlSubCommand::Info { commit: hash } => command::info(&hash),
-                VersionControlSubCommand::Status => Ok(user.get_status()),
+                VersionControlSubCommand::Status => Ok(user.get_status().0),
                 VersionControlSubCommand::CreateBranch { branch_name } => {
                     get_db_instance()?
                         .create_branch(&branch_name, user)
@@ -149,7 +149,8 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     ))
                 }
                 VersionControlSubCommand::RevertCommit { commit } => {
-                    Ok(format!("Reverted Commit at hash: {}", commit))
+                    let revert_results = command::revert(user, &commit)?;
+                    Ok(format!("Reverted Commit at hash: {}", revert_results.hash))
                 }
                 VersionControlSubCommand::SchemaTable { json } => {
                     let schema_results = command::schema_table(user)?;
@@ -160,6 +161,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     }
                    // command::schema_table(user)
                 },
+                VersionControlSubCommand::DiscardChanges => {
+                    command::discard(user)?;
+                    Ok("Discarded changes".to_string())
+                }
             }
         }
         Err(e) => Err(e.to_string()),
@@ -292,12 +297,12 @@ mod tests {
     #[test]
     #[serial]
     fn test_parse_vc_cmd10() {
-        let query = "GQL revert commit_hash";
+        let query = "GQL revert commit_hash commit_hash2";
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let all_users: Vec<User> = Vec::new();
         let result = parse_vc_cmd(query, &mut user, all_users);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -315,11 +320,13 @@ mod tests {
     #[serial]
     fn test_parse_vc_cmd12() {
         let query = "GQL status";
+        fcreate_db_instance("gql_log_db_instance_4");
         // Create a new user on the main branch
         let mut user: User = User::new("test_user".to_string());
         let all_users: Vec<User> = Vec::new();
         let result = parse_vc_cmd(query, &mut user, all_users);
         assert!(result.is_ok());
+        delete_db_instance().unwrap();
     }
 
     #[test]

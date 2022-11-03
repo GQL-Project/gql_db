@@ -3,6 +3,7 @@ use super::pageio::PAGE_SIZE;
 use super::tableio::*;
 use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
+use crate::version_control::command::del_branch;
 use crate::version_control::diff::*;
 use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
 use crate::version_control::{commit::Commit, merge::*};
@@ -251,6 +252,17 @@ impl Database {
             let non_temp_branch_dir: String =
                 self.get_branch_path_from_name(&user.get_current_branch_name());
             construct_tables_from_diffs(&non_temp_branch_dir, &user.get_diffs())?;
+
+            // Get the temp branch directory
+            let temp_branch_dir: String = self.get_current_working_branch_path(user);
+
+            // Delete the temp branch directory
+            std::fs::remove_dir_all(&temp_branch_dir).map_err(|e| {
+                "Database::create_commit_and_node() Error: ".to_owned() + &e.to_string()
+            })?;
+
+            // Set the user back to the non-temp version of the branch
+            user.set_is_on_temp_commit(false);
         }
 
         // Clear the diffs for the user
@@ -273,16 +285,15 @@ impl Database {
         for entry in std::fs::read_dir(&branch_path)
             .map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?
         {
-            let entry = entry
-                .map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?;
+            let entry =
+                entry.map_err(|e| "Database::get_tables() Error: ".to_owned() + &e.to_string())?;
             let path = entry.path();
             let file_name = path.file_name();
             if file_name.is_some() {
                 let table_name = file_name.unwrap().to_str().unwrap().to_string();
                 if table_name.ends_with(".db") {
                     tables.push((&table_name[0..table_name.len() - 3]).to_string());
-                }
-                else {
+                } else {
                     tables.push(table_name.to_string());
                 }
             }
@@ -877,22 +888,7 @@ impl Database {
 
         // 8. Delete source branch (optionally)
         if do_delete_src_branch {
-            // Delete the branch directory if it exists
-            let src_branch_path: String = self.get_branch_path_from_name(&src_branch_name);
-            if Path::new(&src_branch_path).exists() {
-                std::fs::remove_dir_all(&src_branch_path).map_err(|e| {
-                    format!(
-                        "Database::merge_branches() Error: Cannot Remove Branch Directory: {}",
-                        e
-                    )
-                })?;
-            }
-
-            // Delete the branch nodes from the branches file
-            // TODO: wait for Aryan's change to delete all branch nodes until there is a branching node
-
-            // Delete the branch from the branch_heads
-            self.branch_heads.delete_branch_head(&src_branch_name)?;
+            del_branch(user, &src_branch_name, false, vec![user.clone()])?;
         }
 
         Ok(commit)
@@ -1281,7 +1277,7 @@ impl Database {
     }
 
     /// Returns the temporary database's path for a user: <path>/<db_name>/<db_name>-<branch_name>-<user_id>
-    fn get_temp_db_dir_path(&self, user: &User) -> String {
+    pub fn get_temp_db_dir_path(&self, user: &User) -> String {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
@@ -3244,6 +3240,61 @@ mod tests {
         );
 
         // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_temp_branch_removed_on_commit() {
+        // This will test creating a branch off of main then checking merge conflicts to it
+        let db_name: String = "test_temp_branch_removed_on_commit_db".to_string();
+
+        // Create a new database
+        fcreate_db_instance(&db_name);
+
+        // Create a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Set the user on a temporary commit
+        user.set_is_on_temp_commit(true);
+
+        // Get the temp branch dir
+        let table_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
+
+        // Create the temp branch dir
+        std::fs::create_dir_all(&table_dir).unwrap();
+
+        // Create new table things
+        let table_name: String = "test_table".to_string();
+        let table_path: String =
+            table_dir.clone() + &"/".to_string() + &table_name + &".db".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        create_table(&table_name, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Assert that the table is created in table_dir
+        assert_eq!(std::path::Path::new(&table_path).exists(), true);
+
+        // Create a commit on the main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit on Main - Created test_table".to_string(),
+                &"Create;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Assert that the table is not in the table_dir and that the temp branch is deleted
+        assert_eq!(std::path::Path::new(&table_path).exists(), false);
+        assert_eq!(std::path::Path::new(&table_dir).exists(), false);
+
+        // Delete the db instance
         delete_db_instance().unwrap();
     }
 

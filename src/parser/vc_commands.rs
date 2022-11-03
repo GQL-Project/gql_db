@@ -48,6 +48,9 @@ pub enum VersionControlSubCommand {
         /// The commit to revert
         commit: String,
     },
+    /// Discards the temporary changes made in the working directory
+    #[clap(aliases = &["discard"])]
+    DiscardChanges,
     /// Creates a new branch with the given name
     #[clap(aliases = &["create", "branch"])]
     CreateBranch {

@@ -50,7 +50,7 @@ impl Column {
             DataType::Varchar(Some(size)) => Column::String(size as u16),
             DataType::Char(None) => Column::String(1),
             DataType::Varchar(None) => Column::String(1),
-            _ => Err("Unsupported data type")?,
+            _ => Err(format!("Unsupported data type: {}", data_type.data_type))?,
         };
         if is_nullable {
             Ok(Column::Nullable(Box::new(data_col)))
