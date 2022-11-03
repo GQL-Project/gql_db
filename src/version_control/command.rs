@@ -419,10 +419,7 @@ mod tests {
             dbtype::*,
             row::Row,
         },
-        version_control::{
-            commit::Commit,
-            diff::{Diff},
-        },
+        version_control::{commit::Commit, diff::Diff},
     };
 
     use super::*;
