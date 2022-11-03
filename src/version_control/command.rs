@@ -25,6 +25,13 @@ pub struct Log {
     message: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Schema {
+    table_name: String,
+    table_schema: Vec<String>,
+    schema_type: Vec<String>,
+}
+
 /// This function implements the GQL log command
 pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
     let branch_name: String = user.get_current_branch_name();
@@ -331,7 +338,7 @@ pub fn info(hash: &String) -> Result<String, String> {
 }
 
 /// This function outputs all of the possible tables and Schemas in the current branch
-pub fn schema_table(user: &User) -> Result<String, String> {
+pub fn schema_table(user: &User) -> Result<(String, String), String> {
     // Get the list of all the tables in the database
     let instance = get_db_instance()?;
     let all_table_paths = instance.get_table_paths(user);
@@ -343,12 +350,13 @@ pub fn schema_table(user: &User) -> Result<String, String> {
     }
 
     if page_read.clone().len() == 0 {
-        return Ok("No tables in current branch".to_string());
+        return Ok(("No tables in current branch!".to_string(), "".to_string()));
     }
 
     // Call read_schema for each table
     let mut schemas: Vec<Vec<String>> = Vec::new();
     let mut schema_types: Vec<Vec<Column>> = Vec::new();
+    let mut schema_objects: Vec<Schema> = Vec::new();
     for page_num in page_read.clone() {
         let schema_object = read_schema(&page_num)?;
         schemas.push(
@@ -372,13 +380,25 @@ pub fn schema_table(user: &User) -> Result<String, String> {
         log_string = format!("{}\nTable: {}\n", log_string, table_names.clone().unwrap()[i]);
         let mut builder = Builder::default();
         builder.set_columns(schemas[i].clone());
-        builder.add_record(schema_types[i].clone().iter().map(|x| x.to_string()).collect::<Vec<String>>());
+
+        let schemaz = schema_types[i].clone().iter().map(|x| x.to_string()).collect::<Vec<String>>();
+        builder.add_record(schemaz.clone());
+
         let mut table_schema = builder.build();
         table_schema.with(Style::rounded());
         log_string = format!("{}\n{}\n\n", log_string, table_schema);
+
+        // for the -j
+        let schema_object = Schema {
+            table_name: table_names.clone().unwrap()[i].clone(),
+            table_schema: schemas[i].clone(),
+            schema_type: schemaz.clone(),
+        };
+        schema_objects.push(schema_object);
     }
 
-    Ok(log_string.to_string())
+    let json = serde_json::to_string(&schema_objects).unwrap();
+    Ok((log_string, json))
 }
 
 #[cfg(test)]
@@ -839,13 +859,13 @@ mod tests {
         let result = parse_vc_cmd(query, &mut user, all_users.clone());
 
         delete_db_instance().unwrap();
-        assert!(result.unwrap() == "No tables in current branch".to_string());
+        assert!(result.unwrap() == "No tables in current branch!".to_string());
     }
 
     // Tries to get the all the table in a branch with a table
     #[test]
     #[serial]
-    fn tecarogst_tables1() {
+    fn test_tables1() {
         let query = "GQL table";
         // Create a new user on the main branch
         fcreate_db_instance("gql_tables_test");
@@ -861,7 +881,6 @@ mod tests {
             &mut user,
         )
         .unwrap();
-
 
         let result = parse_vc_cmd(query, &mut user, all_users.clone());
 

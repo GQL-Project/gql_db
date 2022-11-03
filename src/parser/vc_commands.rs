@@ -94,5 +94,9 @@ pub enum VersionControlSubCommand {
     },
     /// Returns all of tables in the current branch
     #[clap(aliases = &["table", "schema", "scehma_table"])]
-    SchemaTable,
+    SchemaTable {
+        /// Displays the log in json format (default is false)
+        #[arg(long, short, default_value = "false")]
+        json: bool,
+    },
 }
