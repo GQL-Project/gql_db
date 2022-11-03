@@ -29,31 +29,7 @@ pub fn execute_query(
         match a {
             Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
-                    let mut columns = Vec::new();
-                    for c in s.projection.iter() {
-                        columns.push(c.clone());
-                    }
-                    let mut table_names = Vec::new();
-                    for t in s.from.iter() {
-                        let table_name = t.to_string();
-                        let table_name: Vec<&str> = table_name.split(" ").collect();
-                        if table_name.len() == 3 {
-                            table_names
-                                .push((table_name[0].to_string(), table_name[2].to_string()));
-                        } else {
-                            table_names.push((table_name[0].to_string(), "".to_string()));
-                        }
-                    }
-                    let pred: Option<SolvePredicate> = match &s.selection {
-                        Some(pred) => Some(where_clause(
-                            pred,
-                            table_names.clone(),
-                            get_db_instance()?,
-                            user,
-                        )?),
-                        None => None,
-                    };
-                    return select(columns, pred, table_names, get_db_instance()?, user);
+                    return parse_select(s, user);
                 }
                 _ => print!("Not a select\n"),
             },
@@ -61,6 +37,36 @@ pub fn execute_query(
         };
     }
     Err("No query found".to_string())
+}
+
+fn parse_select(
+    s: &Box<sqlparser::ast::Select>,
+    user: &mut User,
+) -> Result<(Vec<String>, Vec<Row>), String> {
+    let mut columns = Vec::new();
+    for c in s.projection.iter() {
+        columns.push(c.clone());
+    }
+    let mut table_names = Vec::new();
+    for t in s.from.iter() {
+        let table_name = t.to_string();
+        let table_name: Vec<&str> = table_name.split(" ").collect();
+        if table_name.len() == 3 {
+            table_names.push((table_name[0].to_string(), table_name[2].to_string()));
+        } else {
+            table_names.push((table_name[0].to_string(), "".to_string()));
+        }
+    }
+    let pred: Option<SolvePredicate> = match &s.selection {
+        Some(pred) => Some(where_clause(
+            pred,
+            table_names.clone(),
+            get_db_instance()?,
+            user,
+        )?),
+        None => None,
+    };
+    return select(columns, pred, table_names, get_db_instance()?, user);
 }
 
 pub fn execute_update(
@@ -134,6 +140,10 @@ pub fn execute_update(
                             }
                             all_data.push(data);
                         }
+                    }
+                    SetExpr::Select(v) => {
+                        let (_, rows) = parse_select(&v, user)?;
+                        all_data = rows;
                     }
                     _ => {
                         return Err("Expected a Values statement".to_string());
