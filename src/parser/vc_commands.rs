@@ -87,7 +87,7 @@ pub enum VersionControlSubCommand {
         strategy: String,
     },
     /// Deletes the given branch
-    #[clap(aliases = &["delete"])]
+    #[clap(aliases = &["delete", "del"])]
     DeleteBranch {
         /// The name of the branch to delete
         branch_name: String,

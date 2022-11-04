@@ -14,7 +14,7 @@ use tabled::{builder::Builder, Style};
 
 use std::fs;
 
-use super::diff::revert_tables_from_diffs;
+use super::diff::{reverse_diffs, revert_tables_from_diffs};
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
@@ -309,6 +309,10 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
         // Reverting the diffs
         revert_tables_from_diffs(&branch_path, &diffs)?;
 
+        let reversed_diffs = reverse_diffs(&diffs)?;
+        for curr_diff in reversed_diffs {
+            user.append_diff(&curr_diff);
+        }
         // Creating a revert commit
         let revert_message = format!("Reverted to commit {}", commit_hash);
         let revert_command = format!("gql revert {}", commit_hash);
