@@ -914,4 +914,86 @@ mod tests {
 
         delete_db_instance().unwrap();
     }
+
+    #[test]
+    #[serial]
+    fn test_offset() {
+        let mut user = create_demo_db("offset");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        let (_, results) = execute_query(
+            &parse("select * from personal_info offset 2;", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(results[0][0], Value::I32(1));
+        assert_eq!(results[1][0], Value::I32(2));
+        assert_eq!(results[2][0], Value::I32(24));
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_limit() {
+        let mut user = create_demo_db("limit"); 
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        //Case 1: Limit is 5
+        let (_, results) = execute_query(
+            &parse("select * from personal_info limit 5;", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        assert_eq!(results.len(), 5);
+
+        //Case 2: Limit is 2
+        let (_, results) = execute_query(
+            &parse("select * from personal_info limit 2;", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    #[serial]
+    fn test_limit_and_offset() {
+        let mut user = create_demo_db("limit_&_offset"); 
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+        let (_, results) = execute_query(
+            &parse("select * from personal_info offset 2 limit 2;", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0][0], Value::I32(24));
+        assert_eq!(results[1][0], Value::I32(4));
+
+        let (_, results) = execute_query(
+            &parse("select * from personal_info offset 2 limit 3;", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0][0], Value::I32(24));
+        assert_eq!(results[1][0], Value::I32(4));
+
+        delete_db_instance().unwrap();
+    }
+
 }
