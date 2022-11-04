@@ -92,6 +92,9 @@ fn parse_select(
             },
             None => 0,
         };
+        if offset >= rows.len() {
+            return Ok((columns, Vec::new()));
+        }
         if let Some(l) = limit {
             rows = rows[offset..(offset + l).min(rows.len())].to_vec();
         }
