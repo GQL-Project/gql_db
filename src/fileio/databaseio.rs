@@ -1798,7 +1798,7 @@ mod tests {
                 "T.age".to_string(),
             ]),
             None,
-            vec![("test_table".to_string(), "T".to_string())],
+            &vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
         )
@@ -1932,7 +1932,7 @@ mod tests {
                 "T.age".to_string(),
             ]),
             None,
-            vec![("test_table".to_string(), "T".to_string())],
+            &vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
         )
@@ -1983,7 +1983,7 @@ mod tests {
                 "T.age".to_string(),
             ]),
             None,
-            vec![("test_table".to_string(), "T".to_string())],
+            &vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
         )

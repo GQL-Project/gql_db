@@ -1,5 +1,9 @@
 use super::{databaseio::Database, header::*, pageio::*, rowio::*};
-use crate::{user::userdata::User, util::row::*, version_control::diff::*};
+use crate::{
+    user::userdata::User,
+    util::{dbtype::Value, row::*},
+    version_control::diff::*,
+};
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
 
@@ -250,10 +254,16 @@ impl Table {
                     ));
                 }
             }
-
-            write_row(&self.schema, &mut page, &row.row, row.rownum)?;
+            let row_coerced = row
+                .row
+                .iter()
+                .cloned()
+                .zip(&self.schema)
+                .map(|(val, (_, col))| col.coerce_type(val))
+                .collect::<Result<Vec<Value>, String>>()?;
+            write_row(&self.schema, &mut page, &row_coerced, row.rownum)?;
             // Add the row to the diff
-            diff.rows.push(row.clone());
+            diff.rows.push(row);
         }
         // Write the last page
         write_page(pagenum, &self.path, page.as_ref())?;

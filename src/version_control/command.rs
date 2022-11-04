@@ -415,7 +415,11 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
         let mut builder = Builder::default();
         builder.set_columns(schemas[i].clone());
 
-        let schemaz = schema_types[i].clone().iter().map(|x| x.to_string()).collect::<Vec<String>>();
+        let schemaz = schema_types[i]
+            .clone()
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
         builder.add_record(schemaz.clone());
 
         let mut table_schema = builder.build();
