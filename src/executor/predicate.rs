@@ -600,7 +600,7 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::execute_query,
+        executor::query::{execute_query, execute_update},
         fileio::databaseio::{delete_db_instance, get_db_instance},
         parser::parser::parse,
         util::{bench::create_demo_db, dbtype::Value},
@@ -911,6 +911,89 @@ mod tests {
             &"".to_string(),
         )
         .unwrap_err();
+
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_subquery1() {
+        let mut user = create_demo_db("subquery");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let (_, results) = execute_query(
+            &parse("select * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let _res = execute_update(
+            &parse(
+                "insert into personal_info select * from personal_info;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+
+        let (_, new_results) = execute_query(
+            &parse("select * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(new_results.len() == results.len() * 2);
+
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_subquery2() {
+        let mut user = create_demo_db("subquery");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let (_, results) = execute_query(
+            &parse("select * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let (_, condition_results) = execute_query(
+            &parse("select * from personal_info where id < 5", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let _res = execute_update(
+            &parse(
+                "insert into personal_info select * from personal_info where id < 5;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+
+        let (_, new_results) = execute_query(
+            &parse("select * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(new_results.len() == results.len() + condition_results.len());
 
         delete_db_instance().unwrap();
     }
