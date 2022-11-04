@@ -30,47 +30,29 @@ impl ToString for Diff {
     fn to_string(&self) -> String {
         match self {
             Diff::Insert(diff) => format!(
-                "\nROW INSERTED\nRow {:?} was Inserted in table {} with schemas {:?}",
-                diff.rows
-                    .iter()
-                    .map(|rowinfo| rowinfo.pagenum)
-                    .collect::<Vec<u32>>()
-                    .clone(),
-                diff.table_name.clone(),
-                diff.schema.clone()
+                "\nROW INSERTED\n{} rows were inserted in table {} with Schemas {:?}",
+                diff.rows.len(),
+                diff.table_name,
+                diff.schema
             ),
             Diff::Update(diff) => format!(
-                "\nROW UPDATE\nRow {:?} was Replaced by {:?} in table {} with Schemas {:?}",
-                diff.old_rows
-                    .iter()
-                    .map(|rowinfo| rowinfo.pagenum)
-                    .collect::<Vec<u32>>()
-                    .clone(),
-                diff.rows
-                    .iter()
-                    .map(|rowinfo| rowinfo.pagenum)
-                    .collect::<Vec<u32>>()
-                    .clone(),
-                diff.table_name.clone(),
-                diff.schema.clone()
+                "\nROW UPDATE\n{} rows were replaced in table {} with Schemas {:?}",
+                diff.old_rows.len(),
+                diff.table_name,
+                diff.schema
             ),
             Diff::Remove(diff) => format!(
-                "\nDELETE ROW\nRow {:?} was Deleted in table {} with schemas {:?}",
-                diff.rows
-                    .iter()
-                    .map(|rowinfo| rowinfo.pagenum)
-                    .collect::<Vec<u32>>()
-                    .clone(),
-                diff.table_name.clone(),
-                diff.schema.clone()
+                "\nDELETE ROW\n{} rows were deleted in table {} with Schemas {:?}",
+                diff.rows.len(),
+                diff.table_name,
+                diff.schema
             ),
             Diff::TableCreate(diff) => format!(
                 "\nCREATED TABLE\nCreated Table Named: {} with Schemas {:?}",
-                diff.table_name.clone(),
-                diff.schema.clone()
+                diff.table_name, diff.schema
             ),
             Diff::TableRemove(diff) => {
-                format!("\nREMOVED TABLE\nRemoved Table {}", diff.table_name.clone())
+                format!("\nREMOVED TABLE\nRemoved Table {}", diff.table_name)
             }
         }
     }
