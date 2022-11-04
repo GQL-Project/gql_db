@@ -939,7 +939,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_limit() {
-        let mut user = create_demo_db("limit"); 
+        let mut user = create_demo_db("limit");
         get_db_instance()
             .unwrap()
             .switch_branch(&"main".to_string(), &mut user)
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_limit_and_offset() {
-        let mut user = create_demo_db("limit_&_offset"); 
+        let mut user = create_demo_db("limit_&_offset");
         get_db_instance()
             .unwrap()
             .switch_branch(&"main".to_string(), &mut user)
@@ -995,5 +995,4 @@ mod tests {
 
         delete_db_instance().unwrap();
     }
-
 }
