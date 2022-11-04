@@ -14,7 +14,7 @@ use tabled::{builder::Builder, Style};
 
 use std::fs;
 
-use super::diff::{revert_tables_from_diffs, reverse_diffs};
+use super::diff::{reverse_diffs, revert_tables_from_diffs};
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,

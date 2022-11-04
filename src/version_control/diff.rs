@@ -360,17 +360,17 @@ pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
     for diff in flipped_diffs {
         match diff {
             Diff::Update(update_diff) => {
-                let curr_diff: Diff = Diff::Update( UpdateDiff {
+                let curr_diff: Diff = Diff::Update(UpdateDiff {
                     table_name: update_diff.table_name.clone(),
                     schema: update_diff.schema.clone(),
                     rows: update_diff.old_rows.clone(),
                     old_rows: update_diff.rows.clone(),
-                }) ;
+                });
                 inverted_diffs.push(curr_diff);
             }
             // We remove rows instead of inserting as we're reverting the change
             Diff::Insert(insert_diff) => {
-                let curr_diff: Diff = Diff::Remove( RemoveDiff {
+                let curr_diff: Diff = Diff::Remove(RemoveDiff {
                     table_name: insert_diff.table_name.clone(),
                     schema: insert_diff.schema.clone(),
                     rows: insert_diff.rows.clone(), //Rows that will be removed
@@ -379,7 +379,7 @@ pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
             }
             // Insert instead of remove as we're reverting the change
             Diff::Remove(remove_diff) => {
-                let curr_diff: Diff = Diff::Insert( InsertDiff {
+                let curr_diff: Diff = Diff::Insert(InsertDiff {
                     table_name: remove_diff.table_name.clone(),
                     schema: remove_diff.schema.clone(),
                     rows: remove_diff.rows.clone(), //Rows that will be inserted
@@ -387,7 +387,7 @@ pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
                 inverted_diffs.push(curr_diff);
             }
             Diff::TableCreate(table_create_diff) => {
-                let curr_diff: Diff = Diff::TableRemove( TableRemoveDiff {
+                let curr_diff: Diff = Diff::TableRemove(TableRemoveDiff {
                     table_name: table_create_diff.table_name.clone(),
                     schema: table_create_diff.schema.clone(),
                     rows_removed: Vec::new(),
@@ -395,7 +395,7 @@ pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
                 inverted_diffs.push(curr_diff);
             }
             Diff::TableRemove(table_remove_diff) => {
-                let curr_diff: Diff = Diff::TableCreate( TableCreateDiff {
+                let curr_diff: Diff = Diff::TableCreate(TableCreateDiff {
                     table_name: table_remove_diff.table_name.clone(),
                     schema: table_remove_diff.schema.clone(),
                 });
