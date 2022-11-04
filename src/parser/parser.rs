@@ -375,6 +375,20 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_parse_vc_cmd17() {
+        let query = "GQL log -j";
+        fcreate_db_instance("gql_log_db_instance_4");
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        let all_users: Vec<User> = Vec::new();
+        let result = parse_vc_cmd(query, &mut user, all_users);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
     fn test_parse_sql_cmd() {
         let query = "SELECT * FROM test_table";
         let result = parse(query, false);
