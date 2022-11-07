@@ -90,8 +90,14 @@ impl Iterator for Table {
     fn next(&mut self) -> Option<Self::Item> {
         // Load the first page, only when iteration begins.
         if self.page_num == 0 {
-            load_page(1, &self.path, self.page.as_mut()).ok()?;
-            self.page_num = 1;
+            // Find the first data page in the file
+            loop {
+                self.page_num += 1;
+                let page_type: PageType = load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
+                if page_type == PageType::Data {
+                    break;
+                }
+            }
         }
         let mut rowinfo = None;
         // Keep reading rows until we find one that isn't empty, or we run out of rows.
@@ -99,10 +105,20 @@ impl Iterator for Table {
             if self.page_num >= self.max_pages {
                 return None;
             }
+            // If the row is out of the page bounds, load the next data page.
             if check_bounds(self.get_offset(), self.schema_size).is_err() {
-                load_page(self.page_num + 1, &self.path, self.page.as_mut()).ok()?;
-                self.page_num += 1;
-                self.row_num = 0;
+                // Find the next data page in the file
+                loop {
+                    if self.page_num >= self.max_pages {
+                        return None;
+                    }
+                    self.page_num += 1;
+                    let page_type: PageType = load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
+                    if page_type == PageType::Data {
+                        self.row_num = 0;
+                        break;
+                    }
+                }
             }
             if let Some(row) = read_row(&self.schema, self.page.as_ref(), self.row_num) {
                 rowinfo = Some(RowInfo {
@@ -592,6 +608,44 @@ mod tests {
         }
         // Assert that we have 56 rows with the value 3 (the value we inserted)
         assert_eq!(count, 56);
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
+    #[serial]
+    fn test_small_replaces() {
+        let path = "test_replacerator".to_string();
+        let table = create_table(&path);
+        let row = vec![
+            Value::I32(3),
+            Value::String("Alexander Hamilton".to_string()),
+            Value::I32(60),
+        ];
+        let rows: Vec<Vec<Value>> = repeat(row).take(2).collect();
+        // We're essentially inserting 56 rows into the table, right in the middle of two pages
+        let mut rowinfos: Vec<RowInfo> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| RowInfo {
+                row: row.clone(),
+                pagenum: if i == 0 { 1 } else { 2 },
+                rownum: if i == 0 { 47 } else { 48 },
+            })
+            .collect();
+
+        rowinfos.shuffle(&mut rand::thread_rng());
+        table.rewrite_rows(rowinfos).unwrap();
+
+        let mut count = 0;
+        for rowinfo in table.clone() {
+            if rowinfo.row[0] == Value::I32(3) {
+                count += 1;
+            }
+        }
+        
+        // Assert that we have 56 rows with the value 3 (the value we inserted)
+        assert_eq!(count, 2);
         // Clean up by removing file
         clean_table(&path);
     }
