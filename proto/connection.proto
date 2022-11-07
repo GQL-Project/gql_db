@@ -9,10 +9,16 @@ package db_connection;
  * This allows us to form a general implementation for all platforms.
  * Messages are the data objects passed between the client and server.
  * Services are functions that can be called on the server.
-*/
-
-/* Request/Argument Types */
-
+ */
+ 
+ /* Request/Argument Types */
+ 
+ // Arguments for Login
+ message LoginRequest {
+     string username = 13;
+     string password = 14;
+ }
+ 
 // Arguments used for queries and any updates.
 message QueryRequest {
     string id = 10;
@@ -64,7 +70,7 @@ message CellValue {
 // Services are the "functions" exposed by the server.
 service DatabaseConnection {
     // We can optionally have a VC query function here, or just parse that within Update
-    rpc ConnectDB(google.protobuf.Empty) returns (ConnectResult);
+    rpc ConnectDB(LoginRequest) returns (ConnectResult);
     rpc DisconnectDB(ConnectResult) returns (google.protobuf.Empty);
     rpc RunQuery(QueryRequest) returns (QueryResult);
     rpc RunUpdate(QueryRequest) returns (UpdateResult);
