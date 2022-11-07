@@ -1,4 +1,6 @@
-use super::{databaseio::Database, header::*, pageio::*, rowio::*};
+use std::collections::HashMap;
+
+use super::{databaseio::Database, header::*, pageio::*, rowio::*, index::*};
 use crate::{
     user::userdata::User,
     util::{dbtype::Value, row::*},
@@ -17,6 +19,7 @@ pub struct Table {
     pub row_num: u16,
     pub max_pages: u32,
     pub schema_size: usize,
+    pub indexes: HashMap<IndexKey, u32>
 }
 
 impl Table {
@@ -57,6 +60,7 @@ impl Table {
             page_num: 0,
             row_num: 0,
             max_pages: header.num_pages,
+            indexes: header.indexes
         })
     }
 
@@ -176,6 +180,7 @@ pub fn create_table_in_dir(
     let header = Header {
         num_pages: 2,
         schema: schema.clone(),
+        indexes: HashMap::new(),
     };
     write_header(&table_path, &header)?;
 
@@ -321,6 +326,7 @@ impl Table {
                     let new_header: Header = Header {
                         num_pages: self.max_pages,
                         schema: self.schema.clone(),
+                        indexes: self.indexes.clone(),
                     };
                     write_header(&self.path, &new_header)?;
                 }
@@ -372,6 +378,7 @@ impl Table {
                 let new_header: Header = Header {
                     num_pages: self.max_pages,
                     schema: self.schema.clone(),
+                    indexes: self.indexes.clone(),
                 };
                 write_header(&self.path, &new_header)?;
             }
@@ -529,6 +536,16 @@ impl Table {
         }
     }
 }
+
+impl Table {
+    /// Create an index on one or more columns
+    pub fn create_index(
+        columns: Vec<String>
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -643,7 +660,7 @@ mod tests {
                 count += 1;
             }
         }
-        
+
         // Assert that we have 56 rows with the value 3 (the value we inserted)
         assert_eq!(count, 2);
         // Clean up by removing file
@@ -664,6 +681,7 @@ mod tests {
         let header = Header {
             num_pages: 3,
             schema: schema.clone(),
+            indexes: HashMap::new(),
         };
         write_header(&filepath, &header).unwrap();
         let page = [0u8; PAGE_SIZE];
@@ -1103,6 +1121,7 @@ mod tests {
         let header = Header {
             num_pages: 3,
             schema: schema.clone(),
+            indexes: HashMap::new(),
         };
         write_header(&filepath, &header).unwrap();
         let row = vec![

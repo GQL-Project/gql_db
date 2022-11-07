@@ -125,6 +125,7 @@ impl CommitFile {
             let header = Header {
                 num_pages: 2,
                 schema,
+                indexes: HashMap::new(),
             };
             write_header(&header_path, &header)?;
 

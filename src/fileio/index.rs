@@ -1,0 +1,1 @@
+pub type IndexKey = Vec<u8>; // The vector of column indices that make up the index

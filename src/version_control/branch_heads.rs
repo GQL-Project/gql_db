@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::fileio::{header::*, pageio::*, tableio::*, *};
 use crate::util::{dbtype::*, row::*};
 use crate::version_control::branches::*;
@@ -62,6 +64,7 @@ impl BranchHEADs {
             let header = Header {
                 num_pages: 2,
                 schema,
+                indexes: HashMap::new(),
             };
             write_header(&filepath, &header)?;
 

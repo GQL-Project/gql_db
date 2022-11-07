@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::{branch_heads::*, diff::*};
 use crate::fileio::{
     databaseio::{self},
@@ -125,6 +127,7 @@ impl Branches {
             let header = Header {
                 num_pages: 2,
                 schema,
+                indexes: HashMap::new(),
             };
             write_header(&filepath, &header)?;
 

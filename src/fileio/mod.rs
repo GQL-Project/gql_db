@@ -5,3 +5,4 @@ pub mod header;
 pub mod pageio;
 pub mod rowio;
 pub mod tableio;
+pub mod index;
