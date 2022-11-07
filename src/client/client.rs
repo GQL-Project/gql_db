@@ -6,17 +6,18 @@ use tonic::Request;
 
 use crate::client::result_parse;
 use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
-use crate::server::server::db_connection::{ConnectResult, QueryRequest};
+use crate::server::server::db_connection::{ConnectResult, LoginRequest, QueryRequest};
 
 const GQL_PROMPT: &str = "GQL> ";
 const DEFAULT_IP: &str = "[::1]";
 const DEFAULT_PORT: &str = "50051";
+const DEFAULT_USERNAME: &str = "admin";
+const DEFAULT_PASSWORD: &str = "admin";
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query for IP address and port of server
-    let mut client: DatabaseConnectionClient<Channel> = query_for_ip_port().await?;
+    let (mut client, request) = query_for_ip_port().await?;
 
-    let request: Request<()> = tonic::Request::new(());
     let response: ConnectResult = client.connect_db(request).await?.into_inner();
 
     loop {
@@ -105,9 +106,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Indefinitely loops until a successful connection is made
-async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dyn std::error::Error>>
-{
+async fn query_for_ip_port(
+) -> Result<(DatabaseConnectionClient<Channel>, LoginRequest), Box<dyn std::error::Error>> {
     let client: DatabaseConnectionClient<Channel>;
+    let mut request: LoginRequest;
 
     // Loop until we successfully connect
     loop {
@@ -134,6 +136,33 @@ async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dy
         if port.is_empty() {
             port = DEFAULT_PORT.to_string();
         }
+
+        /* Query for username */
+        print!("{}", "Enter Username> ");
+        io::stdout().flush()?;
+        let mut username: String = String::new();
+        // store user input
+        io::stdin().read_line(&mut username)?;
+        username = username.replace("\n", "").trim().to_string();
+        if username.is_empty() {
+            username = DEFAULT_USERNAME.to_string();
+        }
+
+        /* Query for password */
+        print!("{}", "Enter Password> ");
+        io::stdout().flush()?;
+        let mut password: String = String::new();
+        // store user input
+        io::stdin().read_line(&mut password)?;
+        password = password.replace("\n", "").trim().to_string();
+        if password.is_empty() {
+            password = DEFAULT_PASSWORD.to_string();
+        }
+
+        request = LoginRequest {
+            username: username,
+            password: password,
+        };
 
         // Attempt to connect to server
         let conn_str: String = format!("http://{}:{}", ip_address, port);
@@ -165,5 +194,5 @@ async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dy
             }
         }
     }
-    Ok(client)
+    Ok((client, request))
 }
