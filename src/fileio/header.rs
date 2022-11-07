@@ -36,7 +36,10 @@ pub fn write_schema(page: &mut Page, schema: &Schema) -> Result<(), String> {
 // Not sure if it's better to have a file or the page passed in,
 // this can be changed later on.
 pub fn read_header(file: &String) -> Result<Header, String> {
-    let buf = read_page(0, &file)?;
+    let (buf, page_type) = read_page(0, &file)?;
+    if page_type != PageType::Header {
+        return Err(format!("Error page 0 is not a header page in {}", file));
+    }
     let num_pages = read_type(&buf, 0)?;
     let schema = read_schema(&buf)?;
     Ok(Header { num_pages, schema })
@@ -46,7 +49,7 @@ pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
     let mut buf = Box::new([0u8; PAGE_SIZE]);
     write_type(buf.as_mut(), 0, header.num_pages)?;
     write_schema(buf.as_mut(), &header.schema)?;
-    write_page(0, &file, buf.as_ref())?;
+    write_page(0, &file, buf.as_ref(), PageType::Header)?;
     Ok(())
 }
 

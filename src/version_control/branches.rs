@@ -130,7 +130,7 @@ impl Branches {
 
             // Write a blank page to the table
             let page = [0u8; PAGE_SIZE];
-            write_page(1, &filepath, &page)?;
+            write_page(1, &filepath, &page, PageType::Data)?;
         }
 
         Ok(Branches {

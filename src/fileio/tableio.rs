@@ -165,7 +165,7 @@ pub fn create_table_in_dir(
 
     // Write a blank page to the table
     let page = [0u8; PAGE_SIZE];
-    write_page(1, &table_path, &page)?;
+    write_page(1, &table_path, &page, PageType::Data)?;
 
     // Return the table and the diff
     Ok((
@@ -229,10 +229,10 @@ impl Table {
         // To reduce page updates, we sort the rows by page number.
         rows.sort();
         let mut pagenum = rows[0].pagenum;
-        let mut page = read_page(pagenum, &self.path)?;
+        let (mut page, page_type) = read_page(pagenum, &self.path)?;
         for row in rows {
             if pagenum != row.pagenum {
-                write_page(pagenum, &self.path, page.as_ref())?;
+                write_page(pagenum, &self.path, page.as_ref(), page_type.clone())?;
                 pagenum = row.pagenum;
                 load_page(row.pagenum, &self.path, page.as_mut())?;
             }
@@ -266,7 +266,7 @@ impl Table {
             diff.rows.push(row);
         }
         // Write the last page
-        write_page(pagenum, &self.path, page.as_ref())?;
+        write_page(pagenum, &self.path, page.as_ref(), page_type)?;
         Ok(diff)
     }
 
@@ -287,12 +287,12 @@ impl Table {
         }
 
         let mut pagenum = 1;
-        let mut page = read_page(pagenum, &self.path)?;
+        let (mut page, page_type) = read_page(pagenum, &self.path)?;
         for row in rows {
             // Keep track of the rownum that we insert the row into
             let mut rownum_inserted: Option<u16> = insert_row(&self.schema, page.as_mut(), &row)?;
             while rownum_inserted.is_none() {
-                write_page(pagenum, &self.path, page.as_ref())?;
+                write_page(pagenum, &self.path, page.as_ref(), page_type.clone())?;
                 pagenum += 1;
                 if pagenum > self.max_pages
                     || load_page(pagenum, &self.path, page.as_mut()).is_err()
@@ -318,7 +318,7 @@ impl Table {
             });
         }
         // Write the last page
-        write_page(pagenum, &self.path, page.as_mut())?;
+        write_page(pagenum, &self.path, page.as_mut(), page_type)?;
         Ok(diff)
     }
 
@@ -342,6 +342,7 @@ impl Table {
         rows.sort();
         let mut pagenum: u32 = 0;
         let mut page: Box<Page> = Box::new([0; 4096]);
+        let mut page_type: PageType = PageType::Data;
         for rowinfo in rows {
             pagenum = rowinfo.pagenum;
 
@@ -349,7 +350,7 @@ impl Table {
             while rowinfo.pagenum >= self.max_pages {
                 let new_page = Box::new([0; 4096]);
                 self.max_pages += 1;
-                write_page(self.max_pages - 1, &self.path, new_page.as_ref())?;
+                write_page(self.max_pages - 1, &self.path, new_page.as_ref(), PageType::Data)?;
 
                 // Update the header
                 let new_header: Header = Header {
@@ -359,11 +360,11 @@ impl Table {
                 write_header(&self.path, &new_header)?;
             }
             // Read in the page
-            page = read_page(rowinfo.pagenum, &self.path)?;
+            (page, page_type) = read_page(rowinfo.pagenum, &self.path)?;
 
             // Write the row to the page at the row number
             write_row(&self.schema, page.as_mut(), &rowinfo.row, rowinfo.rownum)?;
-            write_page(rowinfo.pagenum, &self.path, page.as_ref())?;
+            write_page(rowinfo.pagenum, &self.path, page.as_ref(), page_type.clone())?;
 
             // Add the information to the diff
             diff.rows.push(RowInfo {
@@ -373,7 +374,7 @@ impl Table {
             });
         }
         // Write the last page
-        write_page(pagenum, &self.path, page.as_mut())?;
+        write_page(pagenum, &self.path, page.as_mut(), page_type)?;
         Ok(diff)
     }
 
@@ -396,12 +397,12 @@ impl Table {
 
         // Keep track of the row number we are removing
         let mut curr_page = 1;
-        let mut page = read_page(curr_page, &self.path)?;
+        let (mut page, page_type) = read_page(curr_page, &self.path)?;
         for row_location in rows {
             let pagenum: u32 = row_location.pagenum;
             let rownum: u16 = row_location.rownum;
             if curr_page != pagenum {
-                write_page(curr_page, &self.path, page.as_ref())?;
+                write_page(curr_page, &self.path, page.as_ref(), page_type.clone())?;
                 curr_page = pagenum;
                 load_page(pagenum, &self.path, page.as_mut())?;
             }
@@ -427,14 +428,14 @@ impl Table {
             }
         }
         // Write the last page
-        write_page(curr_page, &self.path, page.as_ref())?;
+        write_page(curr_page, &self.path, page.as_ref(), page_type)?;
         Ok(diff)
     }
 
     /// Get the row from the table specified by the tuple (pagenum, rownum)
     pub fn get_row(&self, row_location: &RowLocation) -> Result<Row, String> {
         // Read the page from the table file
-        let page: Page = *read_page(row_location.pagenum, &self.path)?;
+        let page: Page = *read_page(row_location.pagenum, &self.path)?.0;
 
         // Get the row from the page based on the schema size
         match read_row(&self.schema, &page, row_location.rownum) {
@@ -461,7 +462,7 @@ impl Table {
                 num_rows_empty: 0,
             };
 
-            let page: Page = *read_page(pagenum, &self.path)?;
+            let page: Page = *read_page(pagenum, &self.path)?.0;
             let mut rownum: u16 = 0;
             loop {
                 match is_row_present(&self.schema, &page, rownum) {
@@ -612,7 +613,7 @@ mod tests {
         };
         write_header(&filepath, &header).unwrap();
         let page = [0u8; PAGE_SIZE];
-        write_page(1, &filepath, &page).unwrap();
+        write_page(1, &filepath, &page, PageType::Data).unwrap();
         let mut table = Table::new(&"".to_string(), &path.to_string(), None).unwrap();
         //Adding in 1st entry
         let row1 = vec![
@@ -1057,7 +1058,7 @@ mod tests {
         ];
         let mut page = [0u8; PAGE_SIZE];
         while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
-        write_page(1, &filepath, &page).unwrap();
+        write_page(1, &filepath, &page, PageType::Data).unwrap();
 
         let row = vec![
             Value::I32(2),
@@ -1066,7 +1067,7 @@ mod tests {
         ];
         let mut page = [0u8; PAGE_SIZE];
         while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
-        write_page(2, &filepath, &page).unwrap();
+        write_page(2, &filepath, &page, PageType::Data).unwrap();
         // Clean up by removing file
         Table::new(&"".to_string(), &path.to_string(), None).unwrap()
     }

@@ -1,3 +1,4 @@
+use crate::fileio::pageio::PageType;
 use crate::{fileio::databaseio::*, user::userdata::User};
 
 use crate::{
@@ -377,8 +378,13 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 
     let mut page_read: Vec<Box<Page>> = Vec::new();
     for path in all_table_paths.clone().unwrap() {
-        let page = read_page(0, &path)?;
-        page_read.push(page);
+        let (page, page_type) = read_page(0, &path)?;
+        if page_type == PageType::Header {
+            page_read.push(page);
+        }
+        else {
+            return Err(format!("Page 0 in {} is not a header page", path));
+        }
     }
 
     if page_read.clone().len() == 0 {
