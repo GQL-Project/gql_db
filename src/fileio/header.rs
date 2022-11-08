@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use super::{pageio::*, index::*};
+use super::pageio::*;
 use crate::util::dbtype::Column;
+use crate::btree::btree::*;
 pub struct Header {
     pub num_pages: u32,
     pub schema: Schema,
-    pub indexes: HashMap<IndexKey, u32>,
+    pub indexes: HashMap<ColsInIndex, u32>,
 }
 
 pub type SchemaCol = (String, Column);
@@ -52,13 +53,13 @@ pub fn read_header(file: &String) -> Result<Header, String> {
     index_offset += 4;
 
     // Read indexes from page
-    let mut indexes: HashMap<IndexKey, u32> = HashMap::new();
+    let mut indexes: HashMap<ColsInIndex, u32> = HashMap::new();
     for _ in 0..num_indexes {
         // Read the number of columns that compose this specific index
         let num_cols_in_idx: u16 = read_type::<u16>(&buf, index_offset)?;
         index_offset += 2;
 
-        let mut index_key: IndexKey = Vec::new();
+        let mut index_key: ColsInIndex = Vec::new();
         for _ in 0..num_cols_in_idx {
             // Read the column index
             let col_idx: u8 = read_type::<u8>(&buf, index_offset)?;
@@ -187,7 +188,7 @@ mod tests {
             ("col2".to_string(), Column::String(50)),
             ("col3".to_string(), Column::Float),
         ];
-        let mut indexes: HashMap<IndexKey, u32> = HashMap::new();
+        let mut indexes: HashMap<ColsInIndex, u32> = HashMap::new();
         indexes.insert(vec![0], 1);
         indexes.insert(vec![1], 2);
         indexes.insert(vec![2], 3);
@@ -195,6 +196,7 @@ mod tests {
         indexes.insert(vec![0, 2], 5);
         indexes.insert(vec![1, 2], 6);
         indexes.insert(vec![0, 1, 2], 7);
+        indexes.insert(vec![2, 0, 1], 7);
         let header: Header = Header {
             num_pages: 10,
             schema,

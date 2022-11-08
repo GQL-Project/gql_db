@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     String(String),
     I32(i32),
@@ -19,7 +19,7 @@ pub enum Value {
     Null,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Column {
     // Strings have a given length value (in bytes).
     String(u16),
@@ -354,6 +354,50 @@ impl PartialOrd for Value {
             (Value::Null, _) => Some(Ordering::Less),
             (_, Value::Null) => Some(Ordering::Greater),
             _ => None,
+        }
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+        // TODO: implement this
+    }
+}
+
+impl Eq for Value {}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::I32(x), Value::I32(y)) => x == y,
+            (Value::I64(x), Value::I64(y)) => x == y,
+            (Value::Float(x), Value::Float(y)) => x == y,
+            (Value::Double(x), Value::Double(y)) => x == y,
+            (Value::Bool(x), Value::Bool(y)) => x == y,
+            (Value::Timestamp(x), Value::Timestamp(y)) => x == y,
+            (Value::String(x), Value::String(y)) => x == y,
+            // Type coercions
+            (Value::I64(x), Value::I32(y)) => x == &(*y as i64),
+            (Value::I64(x), Value::Double(y)) => (*x as f64) == *y,
+            (Value::I64(x), Value::Float(y)) => (*x as f32) == *y,
+
+            (Value::I32(x), Value::I64(y)) => (*x as i64) == *y,
+            (Value::I32(x), Value::Float(y)) => (*x as f32) == *y,
+            (Value::I32(x), Value::Double(y)) => (*x as f64) == *y,
+
+            (Value::Float(x), Value::I32(y)) => x == &(*y as f32),
+            (Value::Float(x), Value::I64(y)) => x == &(*y as f32),
+            (Value::Float(x), Value::Double(y)) => x == &(*y as f32),
+
+            (Value::Double(x), Value::I32(y)) => x == &(*y as f64),
+            (Value::Double(x), Value::I64(y)) => x == &(*y as f64),
+            (Value::Double(x), Value::Float(y)) => x == &(*y as f64),
+            // Null cases
+            (Value::Null, Value::Null) => true,
+            (Value::Null, _) => false,
+            (_, Value::Null) => false,
+            _ => false,
         }
     }
 }

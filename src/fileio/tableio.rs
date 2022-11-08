@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use super::{databaseio::Database, header::*, pageio::*, rowio::*, index::*};
+use super::{databaseio::Database, header::*, pageio::*, rowio::*};
 use crate::{
     user::userdata::User,
     util::{dbtype::Value, row::*},
     version_control::diff::*,
+    btree::{internal_index_page::*, btree::*},
 };
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
@@ -19,7 +20,7 @@ pub struct Table {
     pub row_num: u16,
     pub max_pages: u32,
     pub schema_size: usize,
-    pub indexes: HashMap<IndexKey, u32>
+    pub indexes: HashMap<ColsInIndex, u32>
 }
 
 impl Table {
@@ -540,8 +541,34 @@ impl Table {
 impl Table {
     /// Create an index on one or more columns
     pub fn create_index(
+        &mut self,
         columns: Vec<String>
     ) -> Result<(), String> {
+        // Get the index key composed of those column names
+        let index_key: ColsInIndex = col_names_to_cols_in_index(&columns, &self.schema)?;
+
+        // Check that the index doesn't already exist
+        if self.indexes.contains_key(&index_key) {
+            return Err(format!("Index already exists on columns: {:?}", columns));
+        }
+
+        // Get the first empty page to use for the index
+        let index_pagenum: u32 = self.max_pages;
+        let new_page: Page = [0; PAGE_SIZE];
+        self.max_pages += 1;
+        write_page(index_pagenum, &self.path, &new_page, PageType::Index)?;
+
+        // Create the index
+        self.indexes.insert(index_key.clone(), index_pagenum);
+
+        // Update the header
+        let new_header: Header = Header {
+            num_pages: self.max_pages,
+            schema: self.schema.clone(),
+            indexes: self.indexes.clone(),
+        };
+        write_header(&self.path, &new_header)?;
+
         Ok(())
     }
 }
