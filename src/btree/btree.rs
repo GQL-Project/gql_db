@@ -130,5 +130,102 @@ mod tests {
         let index1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
         let index2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
         assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Less);
+
+        let index3: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index4: IndexKey = vec![Value::I32(1), Value::String("b".to_string())];
+        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Less);
+
+        let index5: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index6: IndexKey = vec![Value::I32(2), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Less);
+
+        let index7: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index8: IndexKey = vec![Value::I32(1), Value::String("az".to_string())];
+        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Less);
+
+        let index9: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        let index10: IndexKey = vec![Value::Bool(true), Value::Float(1.0124), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index9, &index10), KeyComparison::Less);
+
+        let index11: IndexKey = vec![Value::Bool(false), Value::Float(1.0123), Value::String("a".to_string())];
+        let index12: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index11, &index12), KeyComparison::Less);
+
+        let index13: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
+        let index14: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:24".to_string()).unwrap())];
+        assert_eq!(compare_indexes(&index13, &index14), KeyComparison::Less);
+    }
+
+    #[test]
+    fn test_compare_indexes_greater() {
+        let index1: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+        let index2: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Greater);
+
+        let index3: IndexKey = vec![Value::I32(1), Value::String("b".to_string())];
+        let index4: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Greater);
+
+        let index5: IndexKey = vec![Value::I32(2), Value::String("a".to_string())];
+        let index6: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Greater);
+
+        let index7: IndexKey = vec![Value::I32(1), Value::String("az".to_string())];
+        let index8: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Greater);
+
+        let index9: IndexKey = vec![Value::Bool(true), Value::Float(1.0124), Value::String("a".to_string())];
+        let index10: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index9, &index10), KeyComparison::Greater);
+
+        let index11: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        let index12: IndexKey = vec![Value::Bool(false), Value::Float(1.0123), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index11, &index12), KeyComparison::Greater);
+
+        let index13: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:24".to_string()).unwrap())];
+        let index14: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
+        assert_eq!(compare_indexes(&index13, &index14), KeyComparison::Greater);
+    }
+
+    #[test]
+    fn test_compare_indexes_equal() {
+        let index1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index2: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Equal);
+
+        let index3: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        let index4: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Equal);
+
+        let index5: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        let index6: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
+        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Equal);
+
+        let index7: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
+        let index8: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
+        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Equal);
+    }
+
+    #[test]
+    fn test_incomparable_indexes() {
+        let index1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index2: IndexKey = vec![Value::Bool(true), Value::String("b".to_string())];
+        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Incomparable);
+
+        let index3: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index4: IndexKey = vec![Value::I32(2), Value::Null];
+        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Incomparable);
+
+        let index5: IndexKey = vec![Value::Float(1.00123)];
+        let index6: IndexKey = vec![Value::String("b".to_string())];
+        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Incomparable);
+
+        let index7: IndexKey = vec![Value::Double(1.123)];
+        let index8: IndexKey = vec![Value::I64(123)];
+        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Incomparable);
+
+        let index9: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
+        let index10: IndexKey = vec![Value::Double(123.002)];
+        assert_eq!(compare_indexes(&index9, &index10), KeyComparison::Incomparable);
     }
 }
