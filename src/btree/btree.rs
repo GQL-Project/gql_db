@@ -7,10 +7,23 @@ pub type ColsInIndex = Vec<u8>;
 pub type IndexKeyType = Vec<Column>;
 /// The vector of column values that make up the index key
 pub type IndexKey = Vec<Value>;
-/// The page number that the key points to
-pub type InternalIndexValue = u32;
+
+/// The value of an index in an internal index page
+#[derive(Debug, Clone)]
+pub struct InternalIndexValue {
+    /// The page number that the key points to
+    pub pagenum: u32,
+}
+
 /// The (pagenum, rownum) that the key points to
-pub type LeafIndexValue = (u32, u16);
+#[derive(Debug, Clone)]
+pub struct LeafIndexValue {
+    /// The page number that the key points to
+    pub pagenum: u32,
+    /// The row number that the key points to
+    pub rownum: u16,
+}
+
 /// The result of a key comparison operation
 #[derive(Debug, PartialEq, Clone)]
 pub enum KeyComparison {

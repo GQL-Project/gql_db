@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::size_of};
 use super::btree::*;
 use crate::fileio::{header::*, pageio::*};
 
@@ -40,5 +40,18 @@ impl LeafIndexPage {
             cols_used_in_index,
             key_size,
         })
+    }
+
+    /// Returns true if there is room for another index and value in this page.
+    pub fn has_room(&self) -> bool {
+        let all_keys_size: usize = self.indexes.len() * self.key_size as usize;
+        let all_values_size: usize = self.indexes.len() * size_of::<LeafIndexValue>();
+        let combined_size: usize = all_keys_size + all_values_size;
+
+        // If we have room for another key and value, return true
+        if combined_size + self.key_size as usize + size_of::<LeafIndexValue>() <= PAGE_SIZE {
+            return true;
+        }
+        false
     }
 }

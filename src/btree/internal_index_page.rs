@@ -49,27 +49,23 @@ impl InternalIndexPage {
     }
 
     /// Inserts a new index and value into this page.
+    /// Returns true if successfully inserted, false if there is no room.
     pub fn insert_index(
         &mut self, 
         new_index_key: IndexKey, 
         new_index_value: InternalIndexValue
-    ) -> Result<(), String> {
-        // Check that the index key is the correct type
-        for (i, col) in self.index_key_type.iter().enumerate() {
-            //if col != &new_index_key[i] {
-            //    return Err(format!(
-            //        "InternalIndexPage::insert_index: Index key is not the correct type. Expected {:?} but got {:?}",
-            //        col, new_index_key[i]
-            //    ));
-            //}
+    ) -> Result<bool, String> {
+        // Check that the index keys are comparable
+        if !are_comparable_index_types(&self.index_key_type, &get_index_key_type(&new_index_key)) {
+            return Err(format!(
+                "Index key {:?} is not comparable to index key type {:?}",
+                new_index_key, self.index_key_type
+            ));
         }
 
         // Check that there is room for this index
         if !self.has_room() {
-            return Err(format!(
-                "InternalIndexPage::insert_index: This page is full. Cannot insert index {:?} with value {:?}",
-                new_index_key, new_index_value
-            ));
+            return Ok(false);
         }
 
         // Find the index to insert the new key at
@@ -79,7 +75,7 @@ impl InternalIndexPage {
         //self.index_keys.insert(insert_idx, new_index_key);
         //self.index_values.insert(insert_idx, new_index_value);
 
-        Ok(())
+        Ok(true)
     }
 
     /// Returns true if there is room for another index and value in this page.
