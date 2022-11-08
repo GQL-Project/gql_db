@@ -1,5 +1,8 @@
+use crate::fileio::pageio::*;
+use crate::fileio::rowio::*;
 use crate::util::dbtype::*;
 use crate::fileio::header::*;
+use crate::util::row::Row;
 
 /// The vector of column indices that make up the index
 pub type ColsInIndex = Vec<u8>;
@@ -113,6 +116,38 @@ pub fn compare_indexes(
     KeyComparison::Equal
 }
 
+/// Writes an index key to a page at a specific offset
+pub fn write_index_key_at_offset(index_key: &IndexKey, index_key_type: &IndexKeyType, page: &mut Page, offset: usize) -> Result<(), String> {
+    // Convert the IndexKey to a Schema with empty column names
+    let schema: Schema = index_key_type.iter().map(|col| ("".to_string(), col.clone())).collect();
+    write_row_at_offset(&schema, page, index_key, offset)
+}
+
+/// Writes an internal index value to a page at a specific offset
+pub fn write_internal_index_value_at_offset(index_value: &InternalIndexValue, page: &mut Page, offset: usize) -> Result<(), String> {
+    // Convert the InternalIndexValue to a Schema with empty column names
+    let schema: Schema = vec![
+        ("pagenum".to_string(), Column::I32),
+    ];
+    let row: Row = vec![
+        Value::I32(index_value.pagenum as i32),
+    ];
+    write_row_at_offset(&schema, page, &row, offset)
+}
+
+/// Writes a leaf index value to a page at a specific offset
+pub fn write_leaf_index_value_at_offset(index_value: &LeafIndexValue, page: &mut Page, offset: usize) -> Result<(), String> {
+    // Convert the InternalIndexValue to a Schema with empty column names
+    let schema: Schema = vec![
+        ("pagenum".to_string(), Column::I32),
+        ("rownum".to_string(), Column::I32),
+    ];
+    let row: Row = vec![
+        Value::I32(index_value.pagenum as i32),
+        Value::I32(index_value.rownum as i32),
+    ];
+    write_row_at_offset(&schema, page, &row, offset)
+}
 
 #[cfg(test)]
 mod tests {
