@@ -1,279 +1,200 @@
 use crate::fileio::pageio::*;
 use crate::fileio::rowio::*;
+use crate::fileio::tableio::*;
 use crate::util::dbtype::*;
 use crate::fileio::header::*;
-use crate::util::row::Row;
+use crate::util::row::*;
+use super::indexes::*;
+use super::leaf_index_page::*;
+use super::internal_index_page::*;
 
-/// The vector of column indices that make up the index
-pub type ColsInIndex = Vec<u8>;
-/// The vector of column types that make up the index key
-pub type IndexKeyType = Vec<Column>;
-/// The vector of column values that make up the index key
-pub type IndexKey = Vec<Value>;
-
-/// The value of an index in an internal index page
-#[derive(Debug, Clone)]
-pub struct InternalIndexValue {
-    /// The page number that the key points to
-    pub pagenum: u32,
+pub struct BTree {
+    index_key_type: IndexKeyType, // The type of the index keys
 }
 
-/// The (pagenum, rownum) that the key points to
-#[derive(Debug, Clone)]
-pub struct LeafIndexValue {
-    /// The page number that the key points to
-    pub pagenum: u32,
-    /// The row number that the key points to
-    pub rownum: u16,
-}
+impl BTree {
+    /// Create an index on one or more columns
+    pub fn create_btree_index(
+        table_dir: &String,
+        table_name: &String,
+        table_extension: Option<&String>, // Optionally specify a file extension. Defaults to TABLE_FILE_EXTENSION.
+        columns: Vec<String>
+    ) -> Result<Self, String> {
+        let mut table: Table = Table::new(table_dir, table_name, table_extension)?;
+        
+        // Get the index key composed of those column names
+        let index_id: IndexID = col_names_to_index_id(&columns, &table.schema)?;
+        let index_key_type: IndexKeyType = cols_id_to_index_key_type(&index_id, &table.schema);
 
-/// The result of a key comparison operation
-#[derive(Debug, PartialEq, Clone)]
-pub enum KeyComparison {
-    /// The first key is less than the second key
-    Less,
-    /// The keys are equal
-    Equal,
-    /// The first key is greater than the second key
-    Greater,
-    /// The two keys are incomparable
-    Incomparable,
-}
+        // Check that the index doesn't already exist
+        if table.indexes.contains_key(&index_id) {
+            return Err(format!("Index already exists on columns: {:?}", columns));
+        }
 
+        // Get the first empty page to use for the index
+        //let index_pagenum: u32 = table.max_pages;
+        /*
+        let new_page: Page = [0; PAGE_SIZE];
+        table.max_pages += 1;
+        write_page(index_pagenum, &table.path, &new_page, PageType::Index)?;
+        */
 
-/// Maps the column names to the column indices in the schema to create an IndexKey.
-/// Note: the col_names must be in order of the index. For example, if the index is
-/// on (col1, col2), then col_names must be \["col1", "col2"\], NOT \["col2", "col1"\].
-pub fn col_names_to_cols_in_index(
-    col_names: &Vec<String>,
-    schema: &Schema
-) -> Result<ColsInIndex, String> {
-    let mut index_key: ColsInIndex = Vec::new();
-    'outer: for col_name in col_names {
-        for (i, col) in schema.iter().enumerate() {
-            if col.0 == *col_name {
-                index_key.push(i as u8);
-                continue 'outer;
+        // Keep track of the index's top level table page
+        //table.indexes.insert(index_id.clone(), index_pagenum);
+
+        // Get the rows in the table
+        let mut table_rows: Vec<RowInfo> = Vec::new();
+        for rowinfo in table.clone() {
+            table_rows.push(rowinfo);
+        }
+        let num_rows: usize = table_rows.len();
+        // Sort all the rows using the index key
+        table_rows.sort_by(|a, b| compare_rows_using_index_id(&a.row, &b.row, &index_id));
+
+        // The number of pages per level is built from the bottom up.
+        // The number of pages at the bottom level (idx 0) is the number of leaf pages.
+        let mut num_pages_per_level: Vec<u32> = Vec::new();
+
+        // Calculate how many rows pointers we can fit on a single leaf page
+        let max_pointers_per_leaf: usize = LeafIndexPage::get_max_index_pointers_per_page(&index_key_type);
+
+        // Calculate how many leaf pages we need to store all the rows
+        // Double it because we want to keep the leaves between 50% and 100% full
+        let num_leaf_pages: u32 = ((num_rows as f64 / max_pointers_per_leaf as f64).ceil() as u32) * 2;
+        num_pages_per_level.push(num_leaf_pages);
+
+        // Calculate how many pointers we can fit on a single internal page
+        let max_pointers_per_internal: usize = InternalIndexPage::get_max_index_pointers_per_page(&index_key_type);
+
+        // Calculate how many internal nodes we need to point to all the leaf pages
+        let mut pages_on_level_below: u32 = num_leaf_pages;
+        loop {
+            // Divide the max_pointers_per_internal by 2 because we want to keep the internal nodes between 50% and 100% full 
+            let num_internal_pages_for_level: u32 = (pages_on_level_below as f64 / (max_pointers_per_internal as f64 / 2 as f64)).ceil() as u32;
+            num_pages_per_level.push(num_internal_pages_for_level);
+            if num_internal_pages_for_level == 1 {
+                break;
+            }
+            pages_on_level_below = num_internal_pages_for_level;
+        }
+
+        // Create the leaf pages
+        let mut leaf_pages: Vec<LeafIndexPage> = Vec::new();
+        for _ in 0..num_leaf_pages {
+            let leaf_page: LeafIndexPage = LeafIndexPage::new(
+                table.path.clone(), 
+                table.max_pages, 
+                &index_id, 
+                &index_key_type
+            )?;
+            table.max_pages += 1;
+            leaf_pages.push(leaf_page);
+        }
+
+        // Fill the leaf pages with the rows
+        let mut leaf_page_idx: usize = 0;
+        let mut rows_in_leaf_page: usize = 0;
+        for row in table_rows {
+            leaf_pages[leaf_page_idx].add_pointer_to_row(&row)?;
+            rows_in_leaf_page += 1;
+            if rows_in_leaf_page > (max_pointers_per_leaf / 2) {
+                // Advance the leaf page idx up until the last leaf page
+                if leaf_page_idx < (leaf_pages.len() - 1) {
+                    leaf_page_idx += 1;
+                }
+                rows_in_leaf_page = 0;
             }
         }
-        return Err(format!("Column {} not found in schema", col_name));
-    }
-    Ok(index_key)
-}
 
-/// Checks if two index key types are comparable
-pub fn are_comparable_index_types(
-    index1: &IndexKeyType,
-    index2: &IndexKeyType
-) -> bool {
-    if index1.len() != index2.len() {
-        return false;
-    }
-    for (i, col) in index1.iter().enumerate() {
-        if col != &index2[i] {
-            return false;
+        // Write the leaf pages to disk
+        for leaf_page in leaf_pages.clone() {
+            leaf_page.write_page()?;
         }
-    }
-    true
-}
 
-/// Checks if two index keys are comparable
-pub fn are_comparable_indexes(
-    index1: &IndexKey,
-    index2: &IndexKey
-) -> bool {
-    are_comparable_index_types(
-        &get_index_key_type(&index1), 
-        &get_index_key_type(&index2)
-    )
-}
-
-/// Gets the index key type from the index key
-pub fn get_index_key_type(
-    index_key: &IndexKey
-) -> IndexKeyType {
-    index_key.iter().map(|val| val.get_coltype()).collect()
-}
-
-/// This compares two index keys and returns the result of the comparison.
-pub fn compare_indexes(
-    index1: &IndexKey,
-    index2: &IndexKey
-) -> KeyComparison {
-    // Check that the keys are comparable
-    if !are_comparable_indexes(&index1, &index2) {
-        return KeyComparison::Incomparable;
-    }
-
-    // Compare the keys
-    for (i, col) in index1.iter().enumerate() {
-        match col.clone().cmp(&index2[i]) {
-            std::cmp::Ordering::Less => return KeyComparison::Less,
-            std::cmp::Ordering::Equal => continue,
-            std::cmp::Ordering::Greater => return KeyComparison::Greater,
+        // For each leaf page, get the page number, and the lowest value IndexKey in the page
+        let mut pages_on_level_below: Vec<(u32, IndexKey)> = Vec::new();
+        for leaf_page in leaf_pages {
+            if let Some(smallest_key) = leaf_page.get_lowest_index_key() {
+                pages_on_level_below.push((leaf_page.get_pagenum(), smallest_key));
+            }
+            else {
+                return Err(format!("Leaf page {} has no index keys", leaf_page.get_pagenum()));
+            }
         }
-    }
-    KeyComparison::Equal
-}
 
-/// Writes an index key to a page at a specific offset
-pub fn write_index_key_at_offset(index_key: &IndexKey, index_key_type: &IndexKeyType, page: &mut Page, offset: usize) -> Result<(), String> {
-    // Convert the IndexKey to a Schema with empty column names
-    let schema: Schema = index_key_type.iter().map(|col| ("".to_string(), col.clone())).collect();
-    write_row_at_offset(&schema, page, index_key, offset)
-}
+        // Create the internal pages for each level starting from the bottom
+        let mut internal_pages: Vec<Vec<InternalIndexPage>> = Vec::new();
+        for level in 1..num_pages_per_level.len() {
+            let mut internal_pages_for_level: Vec<InternalIndexPage> = Vec::new();
+            let mut internal_page_idx: usize = 0;
+            let mut num_pointers_in_page: Option<usize> = None;
+            // Insert each page on the level below into an internal page within this level
+            for (page_below, page_below_lowest_key) in pages_on_level_below {
+                // Create a new internal page if we need to
+                if num_pointers_in_page.is_none() {
+                    let internal_page: InternalIndexPage = InternalIndexPage::new(
+                        table.path.clone(), 
+                        table.max_pages, 
+                        &index_id, 
+                        &index_key_type,
+                        &InternalIndexValue { pagenum: page_below },
+                        (level + 1) as u8
+                    )?;
+                    table.max_pages += 1;
+                    num_pointers_in_page = Some(1);
+                    internal_pages_for_level.push(internal_page);
+                }
+                // Insert the page on the level below into the current internal page
+                else {
+                    internal_pages_for_level[internal_page_idx].add_pointer_to_page(&page_below_lowest_key, &InternalIndexValue { pagenum: page_below })?;
+                    num_pointers_in_page = Some(num_pointers_in_page.unwrap() + 1);
 
-/// Writes an internal index value to a page at a specific offset
-pub fn write_internal_index_value_at_offset(index_value: &InternalIndexValue, page: &mut Page, offset: usize) -> Result<(), String> {
-    // Convert the InternalIndexValue to a Schema with empty column names
-    let schema: Schema = vec![
-        ("pagenum".to_string(), Column::I32),
-    ];
-    let row: Row = vec![
-        Value::I32(index_value.pagenum as i32),
-    ];
-    write_row_at_offset(&schema, page, &row, offset)
-}
+                    // If the internal page is bet, advance to the next one
+                    if num_pointers_in_page.unwrap() > (max_pointers_per_internal / 2) {
+                        num_pointers_in_page = None;
+                        internal_page_idx += 1;
+                        // Advance the leaf page idx up until the last leaf page
+                        if internal_page_idx < (num_pages_per_level[level] - 1) as usize {
+                            internal_page_idx += 1;
+                        }
+                    }
+                }
+            }
+            // We should have filled part of every page on this level
+            assert_eq!(internal_page_idx, num_pages_per_level[level] as usize);
 
-/// Writes a leaf index value to a page at a specific offset
-pub fn write_leaf_index_value_at_offset(index_value: &LeafIndexValue, page: &mut Page, offset: usize) -> Result<(), String> {
-    // Convert the InternalIndexValue to a Schema with empty column names
-    let schema: Schema = vec![
-        ("pagenum".to_string(), Column::I32),
-        ("rownum".to_string(), Column::I32),
-    ];
-    let row: Row = vec![
-        Value::I32(index_value.pagenum as i32),
-        Value::I32(index_value.rownum as i32),
-    ];
-    write_row_at_offset(&schema, page, &row, offset)
-}
+            // Update pages_on_level_below with the pages on this level
+            pages_on_level_below = Vec::new();
+            for internal_page in internal_pages_for_level.clone() {
+                if let Some(smallest_key) = internal_page.get_lowest_index_key() {
+                    pages_on_level_below.push((internal_page.get_pagenum(), smallest_key));
+                }
+                else {
+                    return Err(format!("Internal page {} has no index keys", internal_page.get_pagenum()));
+                }
+            }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::util::dbtype::Column;
+            internal_pages.push(internal_pages_for_level);
+        }
 
-    #[test]
-    fn test_col_names_to_cols_in_index() {
-        let schema: Schema = vec![
-            ("col1".to_string(), Column::I32),
-            ("col2".to_string(), Column::String(40)),
-            ("col3".to_string(), Column::Float),
-        ];
-        let col_names: Vec<String> = vec!["col1".to_string(), "col3".to_string()];
-        let index_key: ColsInIndex = col_names_to_cols_in_index(&col_names, &schema).unwrap();
-        assert_eq!(index_key, vec![0, 2]);
+        // Write the internal pages to disk
+        for internal_pages_for_level in internal_pages.clone() {
+            for internal_page in internal_pages_for_level {
+                internal_page.write_page()?;
+            }
+        }
 
-        let col_names: Vec<String> = vec!["col3".to_string(), "col2".to_string(), "col1".to_string()];
-        let index_key: ColsInIndex = col_names_to_cols_in_index(&col_names, &schema).unwrap();
-        assert_eq!(index_key, vec![2, 1, 0]);
 
-        let col_names: Vec<String> = vec!["col3".to_string(), "col4".to_string(), "col1".to_string()];
-        assert_eq!(col_names_to_cols_in_index(&col_names, &schema).is_err(), true);
-    }
+        // Update the header
+        let new_header: Header = Header {
+            num_pages: table.max_pages,
+            schema: table.schema.clone(),
+            index_top_level_pages: table.indexes.clone(),
+        };
+        write_header(&table.path, &new_header)?;
 
-    #[test]
-    fn test_compare_indexes_less() {
-        let index1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
-        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Less);
-
-        let index3: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index4: IndexKey = vec![Value::I32(1), Value::String("b".to_string())];
-        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Less);
-
-        let index5: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index6: IndexKey = vec![Value::I32(2), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Less);
-
-        let index7: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index8: IndexKey = vec![Value::I32(1), Value::String("az".to_string())];
-        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Less);
-
-        let index9: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        let index10: IndexKey = vec![Value::Bool(true), Value::Float(1.0124), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index9, &index10), KeyComparison::Less);
-
-        let index11: IndexKey = vec![Value::Bool(false), Value::Float(1.0123), Value::String("a".to_string())];
-        let index12: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index11, &index12), KeyComparison::Less);
-
-        let index13: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
-        let index14: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:24".to_string()).unwrap())];
-        assert_eq!(compare_indexes(&index13, &index14), KeyComparison::Less);
-    }
-
-    #[test]
-    fn test_compare_indexes_greater() {
-        let index1: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
-        let index2: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Greater);
-
-        let index3: IndexKey = vec![Value::I32(1), Value::String("b".to_string())];
-        let index4: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Greater);
-
-        let index5: IndexKey = vec![Value::I32(2), Value::String("a".to_string())];
-        let index6: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Greater);
-
-        let index7: IndexKey = vec![Value::I32(1), Value::String("az".to_string())];
-        let index8: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Greater);
-
-        let index9: IndexKey = vec![Value::Bool(true), Value::Float(1.0124), Value::String("a".to_string())];
-        let index10: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index9, &index10), KeyComparison::Greater);
-
-        let index11: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        let index12: IndexKey = vec![Value::Bool(false), Value::Float(1.0123), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index11, &index12), KeyComparison::Greater);
-
-        let index13: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:24".to_string()).unwrap())];
-        let index14: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
-        assert_eq!(compare_indexes(&index13, &index14), KeyComparison::Greater);
-    }
-
-    #[test]
-    fn test_compare_indexes_equal() {
-        let index1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index2: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Equal);
-
-        let index3: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        let index4: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Equal);
-
-        let index5: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        let index6: IndexKey = vec![Value::Bool(true), Value::Float(1.0123), Value::String("a".to_string())];
-        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Equal);
-
-        let index7: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
-        let index8: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
-        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Equal);
-    }
-
-    #[test]
-    fn test_incomparable_indexes() {
-        let index1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index2: IndexKey = vec![Value::Bool(true), Value::String("b".to_string())];
-        assert_eq!(compare_indexes(&index1, &index2), KeyComparison::Incomparable);
-
-        let index3: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index4: IndexKey = vec![Value::I32(2), Value::Null];
-        assert_eq!(compare_indexes(&index3, &index4), KeyComparison::Incomparable);
-
-        let index5: IndexKey = vec![Value::Float(1.00123)];
-        let index6: IndexKey = vec![Value::String("b".to_string())];
-        assert_eq!(compare_indexes(&index5, &index6), KeyComparison::Incomparable);
-
-        let index7: IndexKey = vec![Value::Double(1.123)];
-        let index8: IndexKey = vec![Value::I64(123)];
-        assert_eq!(compare_indexes(&index7, &index8), KeyComparison::Incomparable);
-
-        let index9: IndexKey = vec![Value::Timestamp(parse_time(&"2020-01-23 12:00:23".to_string()).unwrap())];
-        let index10: IndexKey = vec![Value::Double(123.002)];
-        assert_eq!(compare_indexes(&index9, &index10), KeyComparison::Incomparable);
+        Ok(BTree {
+            index_key_type,
+        })
     }
 }

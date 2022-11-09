@@ -3,3 +3,4 @@
 pub mod internal_index_page;
 pub mod leaf_index_page;
 pub mod btree;
+pub mod indexes;

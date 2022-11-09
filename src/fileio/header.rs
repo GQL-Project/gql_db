@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use super::pageio::*;
 use crate::util::dbtype::Column;
-use crate::btree::btree::*;
+use crate::btree::indexes::*;
 pub struct Header {
     pub num_pages: u32,
     pub schema: Schema,
-    pub indexes: HashMap<ColsInIndex, u32>,
+    pub index_top_level_pages: HashMap<IndexID, u32>,
 }
 
 pub type SchemaCol = (String, Column);
@@ -53,13 +53,13 @@ pub fn read_header(file: &String) -> Result<Header, String> {
     index_offset += 4;
 
     // Read indexes from page
-    let mut indexes: HashMap<ColsInIndex, u32> = HashMap::new();
+    let mut indexes: HashMap<IndexID, u32> = HashMap::new();
     for _ in 0..num_indexes {
         // Read the number of columns that compose this specific index
         let num_cols_in_idx: u16 = read_type::<u16>(&buf, index_offset)?;
         index_offset += 2;
 
-        let mut index_key: ColsInIndex = Vec::new();
+        let mut index_key: IndexID = Vec::new();
         for _ in 0..num_cols_in_idx {
             // Read the column index
             let col_idx: u8 = read_type::<u8>(&buf, index_offset)?;
@@ -72,7 +72,7 @@ pub fn read_header(file: &String) -> Result<Header, String> {
         indexes.insert(index_key, index_pagenum);
     }
     
-    Ok(Header { num_pages, schema, indexes })
+    Ok(Header { num_pages, schema, index_top_level_pages: indexes })
 }
 
 pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
@@ -82,11 +82,11 @@ pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
 
     // Write number of indexes to header
     let mut index_offset: usize = 5 + (header.schema.len() * 54);
-    write_type(buf.as_mut(), index_offset, header.indexes.len() as u32)?;
+    write_type(buf.as_mut(), index_offset, header.index_top_level_pages.len() as u32)?;
     index_offset += 4;
 
     // Write indexes to header
-    for (index_cols, pagenum) in &header.indexes {
+    for (index_cols, pagenum) in &header.index_top_level_pages {
         // Write the number of columns that compose this specific index
         write_type(buf.as_mut(), index_offset, index_cols.len() as u16)?;
         index_offset += 2;
@@ -143,7 +143,7 @@ mod tests {
         let header = Header {
             num_pages: 10,
             schema,
-            indexes: HashMap::new(),
+            index_top_level_pages: HashMap::new(),
         };
         let path = "test.db".to_string();
         create_file(&path).unwrap();
@@ -168,7 +168,7 @@ mod tests {
         let header = Header {
             num_pages: 245,
             schema,
-            indexes: HashMap::new(),
+            index_top_level_pages: HashMap::new(),
         };
         let path = "test1.db".to_string();
         create_file(&path).unwrap();
@@ -188,7 +188,7 @@ mod tests {
             ("col2".to_string(), Column::String(50)),
             ("col3".to_string(), Column::Float),
         ];
-        let mut indexes: HashMap<ColsInIndex, u32> = HashMap::new();
+        let mut indexes: HashMap<IndexID, u32> = HashMap::new();
         indexes.insert(vec![0], 1);
         indexes.insert(vec![1], 2);
         indexes.insert(vec![2], 3);
@@ -200,7 +200,7 @@ mod tests {
         let header: Header = Header {
             num_pages: 10,
             schema,
-            indexes,
+            index_top_level_pages: indexes,
         };
         let path: String = "test2.db".to_string();
         create_file(&path).unwrap();
@@ -208,7 +208,7 @@ mod tests {
         let header2: Header = read_header(&path).unwrap();
         assert_eq!(header.num_pages, header2.num_pages);
         assert_eq!(header.schema, header2.schema);
-        assert_eq!(header.indexes, header2.indexes);
+        assert_eq!(header.index_top_level_pages, header2.index_top_level_pages);
         // Clean up
         std::fs::remove_file("test2.db").unwrap();
     }

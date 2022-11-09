@@ -5,7 +5,7 @@ use crate::{
     user::userdata::User,
     util::{dbtype::Value, row::*},
     version_control::diff::*,
-    btree::{internal_index_page::*, btree::*},
+    btree::{internal_index_page::*, indexes::*, btree::*},
 };
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
@@ -20,7 +20,7 @@ pub struct Table {
     pub row_num: u16,
     pub max_pages: u32,
     pub schema_size: usize,
-    pub indexes: HashMap<ColsInIndex, u32>
+    pub indexes: HashMap<IndexID, u32>
 }
 
 impl Table {
@@ -61,7 +61,7 @@ impl Table {
             page_num: 0,
             row_num: 0,
             max_pages: header.num_pages,
-            indexes: header.indexes
+            indexes: header.index_top_level_pages
         })
     }
 
@@ -181,7 +181,7 @@ pub fn create_table_in_dir(
     let header = Header {
         num_pages: 2,
         schema: schema.clone(),
-        indexes: HashMap::new(),
+        index_top_level_pages: HashMap::new(),
     };
     write_header(&table_path, &header)?;
 
@@ -327,7 +327,7 @@ impl Table {
                     let new_header: Header = Header {
                         num_pages: self.max_pages,
                         schema: self.schema.clone(),
-                        indexes: self.indexes.clone(),
+                        index_top_level_pages: self.indexes.clone(),
                     };
                     write_header(&self.path, &new_header)?;
                 }
@@ -379,7 +379,7 @@ impl Table {
                 let new_header: Header = Header {
                     num_pages: self.max_pages,
                     schema: self.schema.clone(),
-                    indexes: self.indexes.clone(),
+                    index_top_level_pages: self.indexes.clone(),
                 };
                 write_header(&self.path, &new_header)?;
             }
@@ -538,41 +538,6 @@ impl Table {
     }
 }
 
-impl Table {
-    /// Create an index on one or more columns
-    pub fn create_index(
-        &mut self,
-        columns: Vec<String>
-    ) -> Result<(), String> {
-        // Get the index key composed of those column names
-        let index_key: ColsInIndex = col_names_to_cols_in_index(&columns, &self.schema)?;
-
-        // Check that the index doesn't already exist
-        if self.indexes.contains_key(&index_key) {
-            return Err(format!("Index already exists on columns: {:?}", columns));
-        }
-
-        // Get the first empty page to use for the index
-        let index_pagenum: u32 = self.max_pages;
-        let new_page: Page = [0; PAGE_SIZE];
-        self.max_pages += 1;
-        write_page(index_pagenum, &self.path, &new_page, PageType::Index)?;
-
-        // Create the index
-        self.indexes.insert(index_key.clone(), index_pagenum);
-
-        // Update the header
-        let new_header: Header = Header {
-            num_pages: self.max_pages,
-            schema: self.schema.clone(),
-            indexes: self.indexes.clone(),
-        };
-        write_header(&self.path, &new_header)?;
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -708,7 +673,7 @@ mod tests {
         let header = Header {
             num_pages: 3,
             schema: schema.clone(),
-            indexes: HashMap::new(),
+            index_top_level_pages: HashMap::new(),
         };
         write_header(&filepath, &header).unwrap();
         let page = [0u8; PAGE_SIZE];
@@ -1148,7 +1113,7 @@ mod tests {
         let header = Header {
             num_pages: 3,
             schema: schema.clone(),
-            indexes: HashMap::new(),
+            index_top_level_pages: HashMap::new(),
         };
         write_header(&filepath, &header).unwrap();
         let row = vec![
