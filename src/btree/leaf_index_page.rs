@@ -47,6 +47,7 @@ impl LeafIndexPage {
         })
     }
 
+    /// Loads a leaf index page from disk at the specified page number.
     pub fn load_from_table(
         table_path: String,
         pagenum: u32,
@@ -293,7 +294,7 @@ impl LeafIndexPage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::dbtype::{Column, Value};
+    use crate::{util::dbtype::{Column, Value}, fileio::tableio::create_table_in_dir};
 
     #[test]
     fn test_read_write_index_key() {
@@ -480,6 +481,94 @@ mod tests {
         assert_eq!(
             LeafIndexPage::read_index_value(&index_key_type, &page, 3).unwrap(),
             index_value4
+        );
+    }
+
+    #[test]
+    fn test_leaf_load_from_table() {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("test_leaf_load_from_table");
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(10)];
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
+        let leaf_page_num: u32 = 2;
+
+        // Create the table
+        let table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        write_page(leaf_page_num, &table.path, &[0; PAGE_SIZE], PageType::LeafIndex).unwrap();
+        
+        // Create the leaf page
+        let mut leaf_page: LeafIndexPage = LeafIndexPage::new(
+            table.path.clone(),
+            leaf_page_num,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Create the index keys and values
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+
+        let index_value1: LeafIndexValue = LeafIndexValue { pagenum: 3, rownum: 0 };
+        let index_value2: LeafIndexValue = LeafIndexValue { pagenum: 4, rownum: 123 };
+        let index_value3: LeafIndexValue = LeafIndexValue { pagenum: 219, rownum: 89 };
+
+        // Write the index keys and values to the page structure
+        LeafIndexPage::write_index_key(&index_key1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        LeafIndexPage::write_index_key(&index_key2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        LeafIndexPage::write_index_value(&index_value1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        LeafIndexPage::write_index_value(&index_value2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        LeafIndexPage::write_index_value(&index_value3, &index_key_type, &mut leaf_page.page, 2).unwrap();
+
+        // Write the page to disk
+        leaf_page.write_page().unwrap();
+
+        // Load the page from disk
+        let loaded_leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+            table.path.clone(),
+            leaf_page_num,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Check that the index keys and values are correct
+        assert_eq!(
+            LeafIndexPage::read_index_key(&index_key_type, &loaded_leaf_page.page, 0).unwrap(),
+            index_key1
+        );
+        assert_eq!(
+            LeafIndexPage::read_index_key(&index_key_type, &loaded_leaf_page.page, 1).unwrap(),
+            index_key2
+        );
+        assert_eq!(
+            LeafIndexPage::read_index_value(&index_key_type, &loaded_leaf_page.page, 0).unwrap(),
+            index_value1
+        );
+        assert_eq!(
+            LeafIndexPage::read_index_value(&index_key_type, &loaded_leaf_page.page, 1).unwrap(),
+            index_value2
+        );
+        assert_eq!(
+            LeafIndexPage::read_index_value(&index_key_type, &loaded_leaf_page.page, 2).unwrap(),
+            index_value3
+        );
+
+        // Check that the attributes are correct
+        assert_eq!(
+            loaded_leaf_page.index_id,
+            index_id
+        );
+        assert_eq!(
+            loaded_leaf_page.index_key_type,
+            index_key_type
+        );
+        assert_eq!(
+            loaded_leaf_page.pagenum,
+            leaf_page_num
         );
     }
 }

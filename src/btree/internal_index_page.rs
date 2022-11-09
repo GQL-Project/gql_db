@@ -5,11 +5,11 @@ use itertools::Itertools;
 use super::indexes::*;
 use crate::{fileio::{header::*, pageio::*, rowio::write_row, tableio::Table}, util::dbtype::Column};
 
-const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>();
+const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
 
 /// This represents an index page for the btree.
 /// It is formatted on disk like so:
-/// | NumValues<u16> | IndexValue | IndexKey | IndexValue | IndexKey | ... | IndexValue |
+/// | NumValues<u16> | PageDepth<u8> | IndexValue | IndexKey | IndexValue | IndexKey | ... | IndexValue |
 /// where there is 1 more index value than index keys.
 /// Every InternalIndexPage is stored with at least 1 value.
 /// The leftmost IndexValue ALWAYS points to another page.
@@ -39,7 +39,8 @@ impl InternalIndexPage {
     ) -> Result<Self, String> {
         let mut page: Page = [0; PAGE_SIZE];
         // write the number of values to the page
-        write_type(&mut page, 0, 0u16)?;
+        write_type::<u16>(&mut page, 0, 1u16)?;
+        write_type::<u8>(&mut page, size_of::<u16>(), node_depth_in_tree as u8)?;
 
         // Get the size of an individual key
         let key_size: u8 = get_index_key_type_size(&index_key_type) as u8;
@@ -59,12 +60,61 @@ impl InternalIndexPage {
             page,
         })
     }
+    
+    /// Loads a leaf index page from disk at the specified page number.
+    pub fn load_from_table(
+        table_path: String,
+        pagenum: u32,
+        index_id: &IndexID,
+        index_key_type: &IndexKeyType,
+    ) -> Result<Self, String> {
+        let (page, page_type) = read_page(pagenum, &table_path)?;
+        if page_type != PageType::InternalIndex {
+            return Err(format!(
+                "Error page {} is not a leaf index page in {}",
+                pagenum, table_path
+            ));
+        }
+
+        // Get the size of an individual key
+        let key_size: u8 = get_index_key_type_size(&index_key_type) as u8;
+
+        // Read the number of values and page_depth from the page
+        let num_values: u16 = read_type::<u16>(&page, 0)?;
+        let page_depth: u8 = read_type::<u8>(&page, size_of::<u16>())?;
+
+        // Read the values from the page.
+        // There are 1 more values than keys.
+        let mut keys: Vec<IndexKey> = Vec::new();
+        let mut values: Vec<InternalIndexValue> = Vec::new();
+        for i in 0..num_values - 1 {
+            let index_key: IndexKey = Self::read_index_key(&index_key_type, &page, i as usize)?;
+            keys.push(index_key);
+        }
+        for i in 0..num_values {
+            let index_value: InternalIndexValue = Self::read_index_value(&index_key_type, &page, i as usize)?;
+            values.push(index_value);
+        }
+
+        Ok(InternalIndexPage {
+            table_path,
+            pagenum,
+            index_keys: keys,
+            index_values: values,
+            index_key_type: index_key_type.clone(),
+            index_id: index_id.clone(),
+            key_size,
+            page_depth,
+            page: *page,
+        })
+    }
 
     /// Writes the page to disk at the specified page number.
     pub fn write_page(
         &mut self
     ) -> Result<(), String> {
         write_type::<u16>(&mut self.page, 0, self.index_values.len() as u16)?;
+        write_type::<u8>(&mut self.page, size_of::<u16>(), self.page_depth as u8)?;
         write_page(self.pagenum, &self.table_path, &self.page, PageType::InternalIndex)?;
         Ok(())
     }
@@ -251,7 +301,7 @@ impl InternalIndexPage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::dbtype::{Column, Value};
+    use crate::{util::dbtype::{Column, Value}, fileio::tableio::create_table_in_dir};
 
     #[test]
     fn test_read_write_index_key() {
@@ -438,6 +488,101 @@ mod tests {
         assert_eq!(
             InternalIndexPage::read_index_value(&index_key_type, &page, 3).unwrap(),
             index_value4
+        );
+    }
+
+    #[test]
+    fn test_internal_load_from_table() {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("test_leaf_load_from_table");
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(10)];
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
+        let internal_page_num: u32 = 2;
+        let internal_page_depth: u8 = 7;
+
+        // Create the table
+        let table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        write_page(internal_page_num, &table.path, &[0; PAGE_SIZE], PageType::InternalIndex).unwrap();
+
+        // Create the index keys and values
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+
+        let index_value1: InternalIndexValue = InternalIndexValue { pagenum: 3 };
+        let index_value2: InternalIndexValue = InternalIndexValue { pagenum: 4 };
+        let index_value3: InternalIndexValue = InternalIndexValue { pagenum: 219 };
+        
+        // Create the leaf page
+        let mut leaf_page: InternalIndexPage = InternalIndexPage::new(
+            table.path.clone(),
+            internal_page_num,
+            &index_id,
+            &index_key_type,
+            &index_value1,
+            internal_page_depth
+        ).unwrap();
+
+        // Write the index keys and values to the page structure
+        InternalIndexPage::write_index_key(&index_key1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        InternalIndexPage::write_index_key(&index_key2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        InternalIndexPage::write_index_value(&index_value1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        InternalIndexPage::write_index_value(&index_value2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        InternalIndexPage::write_index_value(&index_value3, &index_key_type, &mut leaf_page.page, 2).unwrap();
+
+        // Write the page to disk
+        leaf_page.write_page().unwrap();
+
+        // Load the page from disk
+        let loaded_internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
+            table.path.clone(),
+            internal_page_num,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Check that the index keys and values are correct
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &loaded_internal_page.page, 0).unwrap(),
+            index_key1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &loaded_internal_page.page, 1).unwrap(),
+            index_key2
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &loaded_internal_page.page, 0).unwrap(),
+            index_value1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &loaded_internal_page.page, 1).unwrap(),
+            index_value2
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &loaded_internal_page.page, 2).unwrap(),
+            index_value3
+        );
+
+        // Check that the attributes are correct
+        assert_eq!(
+            loaded_internal_page.pagenum,
+            internal_page_num
+        );
+        assert_eq!(
+            loaded_internal_page.index_id,
+            index_id
+        );
+        assert_eq!(
+            loaded_internal_page.index_key_type,
+            index_key_type
+        );
+        assert_eq!(
+            loaded_internal_page.page_depth,
+            internal_page_depth
         );
     }
 }
