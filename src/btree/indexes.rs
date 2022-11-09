@@ -5,6 +5,7 @@ use crate::fileio::rowio::*;
 use crate::util::dbtype::*;
 use crate::fileio::header::*;
 use crate::util::row::Row;
+use crate::util::row::RowLocation;
 
 /// The vector of column indices that make up the index
 /// For example, if the index is on columns 1, 3, and 4, then this would be [1, 3, 4]
@@ -54,6 +55,14 @@ impl LeafIndexValue {
     /// Gets the size of the index value in bytes when written to disk
     pub fn size() -> usize {
         size_of::<u32>() + size_of::<u16>()
+    }
+
+    /// Returns the index value as a row location
+    pub fn to_row_location(&self) -> RowLocation {
+        RowLocation {
+            pagenum: self.pagenum,
+            rownum: self.rownum,
+        }
     }
 }
 

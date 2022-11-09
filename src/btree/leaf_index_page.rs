@@ -161,7 +161,6 @@ impl LeafIndexPage {
         if self.indexes
             .iter()
             .map(|(key, _)| key)
-            .sorted()
             .find(|key| 
                 compare_indexes(key, index_key) == KeyComparison::Equal
             )
@@ -293,6 +292,8 @@ impl LeafIndexPage {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
     use crate::{util::dbtype::{Column, Value}, fileio::tableio::create_table_in_dir};
 
@@ -485,6 +486,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_leaf_load_from_table() {
         let table_dir: String = String::from("./testing");
         let table_name: String = String::from("test_leaf_load_from_table");
@@ -570,5 +572,121 @@ mod tests {
             loaded_leaf_page.pagenum,
             leaf_page_num
         );
+
+        // Clean up the testing table
+        clean_up_tests();
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_row_locations_from_key() {
+        let (table, 
+            leaf_pagenum, 
+            index_key_type, 
+            index_id,
+            index_keys,
+            index_values) = create_testing_table_and_leaf_page();
+
+        // Load the page from disk
+        let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+            table.path.clone(),
+            leaf_pagenum,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Check that the correct row locations are returned
+        assert_eq!(
+            leaf_page.get_rows_locations_from_key(&index_keys[0]).unwrap(),
+            vec![index_values[0].to_row_location()]
+        );
+        assert_eq!(
+            leaf_page.get_rows_locations_from_key(&index_keys[1]).unwrap(),
+            vec![index_values[1].to_row_location()]
+        );
+        assert_eq!(
+            leaf_page.get_rows_locations_from_key(&index_keys[2]).unwrap(),
+            vec![index_values[2].to_row_location()]
+        );
+        assert_eq!(
+            leaf_page.get_rows_locations_from_key(&index_keys[3]).unwrap(),
+            vec![index_values[3].to_row_location()]
+        );
+
+        // Test a key that doesn't exist in the leaf
+        assert_eq!(
+            leaf_page.get_rows_locations_from_key(&vec![Value::I32(1), Value::String("new_key".to_string())]).unwrap().len(),
+            0  
+        );
+
+        // Clean up the testing table
+        clean_up_tests();
+    }
+
+    /// Creates a testing table and leaf page with 4 index keys and values.
+    fn create_testing_table_and_leaf_page() -> (Table, u32, IndexKeyType, IndexID, Vec<IndexKey>, Vec<LeafIndexValue>) {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("testing_leaf_page_table");
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(10)];
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
+        let leaf_page_num: u32 = 2;
+
+        // Create the table
+        let table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        write_page(leaf_page_num, &table.path, &[0; PAGE_SIZE], PageType::LeafIndex).unwrap();
+        
+        // Create the leaf page
+        let mut leaf_page: LeafIndexPage = LeafIndexPage::new(
+            table.path.clone(),
+            leaf_page_num,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Create the index keys and values
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+        let index_key3: IndexKey = vec![Value::I32(3), Value::String("c".to_string())];
+        let index_key4: IndexKey = vec![Value::I32(4), Value::String("d".to_string())];
+
+        let index_value1: LeafIndexValue = LeafIndexValue { pagenum: 3, rownum: 0 };
+        let index_value2: LeafIndexValue = LeafIndexValue { pagenum: 4, rownum: 123 };
+        let index_value3: LeafIndexValue = LeafIndexValue { pagenum: 219, rownum: 89 };
+        let index_value4: LeafIndexValue = LeafIndexValue { pagenum: 219, rownum: 90 };
+
+        // Write the index keys and values to the page structure
+        LeafIndexPage::write_index_key(&index_key1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        LeafIndexPage::write_index_key(&index_key2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        LeafIndexPage::write_index_key(&index_key3, &index_key_type, &mut leaf_page.page, 2).unwrap();
+        LeafIndexPage::write_index_key(&index_key4, &index_key_type, &mut leaf_page.page, 3).unwrap();
+        LeafIndexPage::write_index_value(&index_value1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        LeafIndexPage::write_index_value(&index_value2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        LeafIndexPage::write_index_value(&index_value3, &index_key_type, &mut leaf_page.page, 2).unwrap();
+        LeafIndexPage::write_index_value(&index_value4, &index_key_type, &mut leaf_page.page, 3).unwrap();
+
+        leaf_page.indexes.push((index_key1.clone(), index_value1.clone()));
+        leaf_page.indexes.push((index_key2.clone(), index_value2.clone()));
+        leaf_page.indexes.push((index_key3.clone(), index_value3.clone()));
+        leaf_page.indexes.push((index_key4.clone(), index_value4.clone()));
+
+        // Write the page to disk
+        leaf_page.write_page().unwrap();
+
+        (
+            table, leaf_page_num,
+            index_key_type,
+            index_id,
+            vec![index_key1, index_key2, index_key3, index_key4],
+            vec![index_value1, index_value2, index_value3, index_value4]
+        )
+    }
+
+    fn clean_up_tests() {
+        std::fs::remove_dir_all("./testing").unwrap();
     }
 }

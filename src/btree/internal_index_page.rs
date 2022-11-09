@@ -11,6 +11,8 @@ const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
 /// It is formatted on disk like so:
 /// | NumValues<u16> | PageDepth<u8> | IndexValue | IndexKey | IndexValue | IndexKey | ... | IndexValue |
 /// where there is 1 more index value than index keys.
+/// IndexKeys:      | 1  | 5  | 9  | 15 |
+/// IndexValues: | <1 | <5 | <9 | <15 | >=15 |
 /// Every InternalIndexPage is stored with at least 1 value.
 /// The leftmost IndexValue ALWAYS points to another page.
 /// If there are no keys in the page, that means the page pointer in the lefmost IndexValue points to an empty page.
@@ -214,21 +216,74 @@ impl InternalIndexPage {
         false
     }
 
-    /*
-    fn get_pages_below_from_key(
+    /// Gets the internal index values that match the index key.
+    /// Returns a vector of InternalIndexValue.
+    fn get_index_values_from_key(
         &self,
         index_key: &IndexKey
-    ) -> Result<Vec<u32>, String> {
-        let mut pages_below: Vec<u32> = Vec::new();
-        for (key, value) in self.index_keys.clone().iter().zip(self.index_values.iter()) {
-            if compare_indexes(&key, &index_key) == KeyComparison::Greater {
-                break;
+    ) -> Result<Vec<InternalIndexValue>, String> {
+        // If there are no keys
+        if self.index_keys.len() == 0 {
+            // There is always an index value in an internal page, even with no keys.
+            if self.index_values.len() == 0 {
+                return Err(format!("get_index_values_from_key(): Internal page {} has no index values.", self.pagenum));
             }
-            pages_below.push(value.get_page_num());
+            return Ok(vec![self.index_values[0].clone()]);
         }
-        Ok(pages_below)
+        else {
+            let mut pointers: Vec<InternalIndexValue> = Vec::new();
+            for (i, key) in self.index_keys.iter().enumerate() {
+                // IndexKeys:      | 1  | 5  | 9  | 15 |
+                // IndexValues: | <1 | <5 | <9 | <15 | >=15 |
+                let comparison: KeyComparison = compare_indexes(&key, &index_key);
+                match comparison {
+                    KeyComparison::Equal => {
+                        // we found the key, but we need to check for duplicate keys because we can have
+                        // duplicate index values pointing to multiple pages.
+                        let mut j: usize = i + 1;
+                        loop {
+                            pointers.push(self.index_values[j].clone());
+                            if j + 1 >= self.index_keys.len() {
+                                break;
+                            }
+                            if compare_indexes(&self.index_keys[j + 1], &index_key) != KeyComparison::Equal {
+                                break;
+                            }
+                            j += 1;
+                        };
+                        break;
+                    },
+                    // If the key is greater than our index_key, then we want the value from index i
+                    // and break out of the loop
+                    KeyComparison::Greater => {
+                        if self.index_values.len() > i {
+                            pointers.push(self.index_values[i].clone());
+                            break;
+                        }
+                        else {
+                            return Err(
+                                format!(
+                                    "get_index_values_from_key(): Internal page {} doesn't have an index value at {}.",
+                                    self.pagenum,
+                                    i
+                                )
+                            );
+                        }
+                    },
+                    _ => {},
+                }
+            }
+            // We need to return the last index value if we didn't find a match
+            if pointers.len() == 0 {
+                // There is always an index value in an internal page, even with no keys.
+                if self.index_values.len() == 0 {
+                    return Err(format!("get_index_values_from_key(): Internal page {} has no index values.", self.pagenum));
+                }
+                pointers.push(self.index_values[self.index_values.len() - 1].clone());
+            }
+            return Ok(pointers);
+        }
     }
-    */
 
     /***********************************************************************************************/
     /*                                       Private Static Methods                                */
@@ -300,6 +355,8 @@ impl InternalIndexPage {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
     use crate::{util::dbtype::{Column, Value}, fileio::tableio::create_table_in_dir};
 
@@ -584,5 +641,145 @@ mod tests {
             loaded_internal_page.page_depth,
             internal_page_depth
         );
+
+        // Clean up tests
+        clean_up_tests();
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_row_locations_from_key() {
+        let (table, 
+            internal_pagenum, 
+            index_key_type, 
+            index_id,
+            index_keys,
+            index_values) = create_testing_table_and_internal_page();
+
+        // Load the page from disk
+        let internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
+            table.path.clone(),
+            internal_pagenum,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Check that the correct row locations are returned
+        assert_eq!(
+            internal_page.get_index_values_from_key(&index_keys[0]).unwrap(),
+            vec![index_values[1].clone()]
+        );
+        assert_eq!(
+            internal_page.get_index_values_from_key(&index_keys[1]).unwrap(),
+            vec![index_values[2].clone()]
+        );
+        assert_eq!(
+            internal_page.get_index_values_from_key(&index_keys[2]).unwrap(),
+            vec![index_values[3].clone()]
+        );
+        assert_eq!(
+            internal_page.get_index_values_from_key(&index_keys[3]).unwrap(),
+            vec![index_values[4].clone()]
+        );
+
+        // Test a key that is greater than all the other keys in the page
+        assert_eq!(
+            internal_page.get_index_values_from_key(&vec![Value::I32(4), Value::String("e".to_string())]).unwrap(),
+            vec![index_values[4].clone()]
+        );
+
+        // Test a key that is less than all the other keys in the page
+        assert_eq!(
+            internal_page.get_index_values_from_key(&vec![Value::I32(0), Value::String("a".to_string())]).unwrap(),
+            vec![index_values[0].clone()]
+        );
+
+        // Test keys that are in between the 2nd and 3rd keys in the page
+        assert_eq!(
+            internal_page.get_index_values_from_key(&vec![Value::I32(2), Value::String("c".to_string())]).unwrap(),
+            vec![index_values[2].clone()]
+        );
+        assert_eq!(
+            internal_page.get_index_values_from_key(&vec![Value::I32(3), Value::String("a".to_string())]).unwrap(),
+            vec![index_values[2].clone()]
+        );
+
+        // Clean up the testing table
+        clean_up_tests();
+    }
+
+    /// Creates a testing table and leaf page with 4 index keys and values.
+    fn create_testing_table_and_internal_page() -> (Table, u32, IndexKeyType, IndexID, Vec<IndexKey>, Vec<InternalIndexValue>) {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("testing_internal_page_table");
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(10)];
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
+        let internal_page_num: u32 = 2;
+
+        // Create the table
+        let table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        write_page(internal_page_num, &table.path, &[0; PAGE_SIZE], PageType::LeafIndex).unwrap();
+
+        // Create the index keys and values
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+        let index_key3: IndexKey = vec![Value::I32(3), Value::String("c".to_string())];
+        let index_key4: IndexKey = vec![Value::I32(4), Value::String("d".to_string())];
+
+        let index_value1: InternalIndexValue = InternalIndexValue { pagenum: 3 };
+        let index_value2: InternalIndexValue = InternalIndexValue { pagenum: 4 };
+        let index_value3: InternalIndexValue = InternalIndexValue { pagenum: 219 };
+        let index_value4: InternalIndexValue = InternalIndexValue { pagenum: 219 };
+        let index_value5: InternalIndexValue = InternalIndexValue { pagenum: 578 };
+        
+        // Create the leaf page
+        let mut internal_page: InternalIndexPage = InternalIndexPage::new(
+            table.path.clone(),
+            internal_page_num,
+            &index_id,
+            &index_key_type,
+            &index_value1,
+            1
+        ).unwrap();
+
+        // Write the index keys and values to the page structure
+        InternalIndexPage::write_index_key(&index_key1, &index_key_type, &mut internal_page.page, 0).unwrap();
+        InternalIndexPage::write_index_key(&index_key2, &index_key_type, &mut internal_page.page, 1).unwrap();
+        InternalIndexPage::write_index_key(&index_key3, &index_key_type, &mut internal_page.page, 2).unwrap();
+        InternalIndexPage::write_index_key(&index_key4, &index_key_type, &mut internal_page.page, 3).unwrap();
+        InternalIndexPage::write_index_value(&index_value2, &index_key_type, &mut internal_page.page, 1).unwrap();
+        InternalIndexPage::write_index_value(&index_value3, &index_key_type, &mut internal_page.page, 2).unwrap();
+        InternalIndexPage::write_index_value(&index_value4, &index_key_type, &mut internal_page.page, 3).unwrap();
+        InternalIndexPage::write_index_value(&index_value5, &index_key_type, &mut internal_page.page, 4).unwrap();
+
+        internal_page.index_keys.push(index_key1.clone());
+        internal_page.index_keys.push(index_key2.clone());
+        internal_page.index_keys.push(index_key3.clone());
+        internal_page.index_keys.push(index_key4.clone());
+
+        internal_page.index_values.push(index_value2.clone());
+        internal_page.index_values.push(index_value3.clone());
+        internal_page.index_values.push(index_value4.clone());
+        internal_page.index_values.push(index_value5.clone());
+
+        // Write the page to disk
+        internal_page.write_page().unwrap();
+
+        (
+            table, internal_page_num,
+            index_key_type,
+            index_id,
+            vec![index_key1, index_key2, index_key3, index_key4],
+            vec![index_value1, index_value2, index_value3, index_value4, index_value5]
+        )
+    }
+
+    fn clean_up_tests() {
+        std::fs::remove_dir_all("./testing").unwrap();
     }
 }
