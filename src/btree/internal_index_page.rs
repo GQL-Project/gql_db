@@ -167,7 +167,9 @@ impl InternalIndexPage {
     /*                                       Private Static Methods                                */
     /***********************************************************************************************/
 
-    /// Writes an index key to a page at a specific offset
+    /// Writes an index key to a page at a specific index key's index
+    /// Note: This is the index key's index.
+    /// i.e. the first index key is index_idx=0, the second index key is index_idx=1, etc.
     fn write_index_key(
         index_key: &IndexKey,
         index_key_type: &IndexKeyType,
@@ -181,7 +183,9 @@ impl InternalIndexPage {
         write_index_key_at_offset(index_key, index_key_type, page, offset)
     }
 
-    /// Writes an index key to a page at a specific offset
+    /// Writes an index key to a page at a specific index value's index
+    /// Note: This is the index value's index, not the index key's index.
+    /// i.e. the first index value is index value_idx=0, the second index value is index value_idx=1, etc.
     fn write_index_value(
         index_value: &InternalIndexValue, 
         index_key_type: &IndexKeyType,
@@ -193,5 +197,230 @@ impl InternalIndexPage {
                             (value_idx * InternalIndexValue::size()) +              // The offset of the index values
                             INTERNAL_PAGE_HEADER_SIZE;                              // The offset of the page header
         write_internal_index_value_at_offset(index_value, page, offset)
+    }
+
+    /// Reads an index key from a page at a specific index key's index
+    /// Note: This is the index key's index.
+    /// i.e. the first index key is index_idx=0, the second index key is index_idx=1, etc.
+    fn read_index_key(
+        index_key_type: &IndexKeyType,
+        page: &Page, 
+        index_idx: usize
+    ) -> Result<IndexKey, String> {
+        // Calculte the offset of the index_idx
+        let offset: usize = (index_idx * get_index_key_type_size(index_key_type)) + // The offset of the index keys
+                            ((index_idx + 1) * InternalIndexValue::size()) +        // The offset of the index values
+                            INTERNAL_PAGE_HEADER_SIZE;                              // The offset of the page header
+        read_index_key_at_offset(index_key_type, page, offset)
+    }
+
+    /// Reads an index value from a page at a specific index value's index
+    /// Note: This is the index value's index, not the index key's index.
+    /// i.e. the first index value is index value_idx=0, the second index value is index value_idx=1, etc.
+    fn read_index_value(
+        index_key_type: &IndexKeyType,
+        page: &Page, 
+        value_idx: usize
+    ) -> Result<InternalIndexValue, String> {
+        // Calculte the offset of the index_idx
+        let offset: usize = (value_idx * get_index_key_type_size(index_key_type)) + // The offset of the index keys
+                            (value_idx * InternalIndexValue::size()) +              // The offset of the index values
+                            INTERNAL_PAGE_HEADER_SIZE;                              // The offset of the page header
+        read_internal_index_value_at_offset(page, offset)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::dbtype::{Column, Value};
+
+    #[test]
+    fn test_read_write_index_key() {
+        let mut page: Page = [0; PAGE_SIZE];
+
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(20)];
+
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+        let index_key3: IndexKey = vec![Value::I32(3), Value::String("c".to_string())];
+
+        // Write index_key1 to the page at index_idx=0
+        InternalIndexPage::write_index_key(&index_key1, &index_key_type, &mut page, 0).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 0).unwrap(),
+            index_key1
+        );
+
+        // Write index_key2 to the page at index_idx=1
+        InternalIndexPage::write_index_key(&index_key2, &index_key_type, &mut page, 1).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 1).unwrap(),
+            index_key2
+        );
+
+        // Write index_key3 to the page at index_idx=2
+        InternalIndexPage::write_index_key(&index_key3, &index_key_type, &mut page, 2).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 2).unwrap(),
+            index_key3
+        );
+
+        // Read the index keys from the page
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 0).unwrap(),
+            index_key1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 1).unwrap(),
+            index_key2
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 2).unwrap(),
+            index_key3
+        );
+    }
+
+    #[test]
+    fn test_read_write_index_value() {
+        let mut page: Page = [0; PAGE_SIZE];
+
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(20)];
+
+        let index_value1: InternalIndexValue = InternalIndexValue { pagenum: 4 };
+        let index_value2: InternalIndexValue = InternalIndexValue { pagenum: 50 };
+        let index_value3: InternalIndexValue = InternalIndexValue { pagenum: 235 };
+
+        // Write index_value1 to the page at index_idx=0
+        InternalIndexPage::write_index_value(&index_value1, &index_key_type, &mut page, 0).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 0).unwrap(),
+            index_value1
+        );
+
+        // Write index_value2 to the page at index_idx=1
+        InternalIndexPage::write_index_value(&index_value2, &index_key_type, &mut page, 1).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 1).unwrap(),
+            index_value2
+        );
+
+        // Write index_value3 to the page at index_idx=2
+        InternalIndexPage::write_index_value(&index_value3, &index_key_type, &mut page, 2).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 2).unwrap(),
+            index_value3
+        );
+
+        // Read the index values from the page
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 0).unwrap(),
+            index_value1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 1).unwrap(),
+            index_value2
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 2).unwrap(),
+            index_value3
+        );
+    }
+
+    #[test]
+    fn test_read_write_index_key_values() {
+        let mut page: Page = [0; PAGE_SIZE];
+
+        let index_key_type: IndexKeyType = vec![Column::I32, Column::String(20)];
+
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+        let index_key3: IndexKey = vec![Value::I32(3), Value::String("c".to_string())];
+
+        let index_value1: InternalIndexValue = InternalIndexValue { pagenum: 3 };
+        let index_value2: InternalIndexValue = InternalIndexValue { pagenum: 4 };
+        let index_value3: InternalIndexValue = InternalIndexValue { pagenum: 50 };
+        let index_value4: InternalIndexValue = InternalIndexValue { pagenum: 235 };
+
+        // Write index_key1 and index_value1 to the page at index_idx=0
+        InternalIndexPage::write_index_key(&index_key1, &index_key_type, &mut page, 0).unwrap();
+        InternalIndexPage::write_index_value(&index_value1, &index_key_type, &mut page, 0).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 0).unwrap(),
+            index_key1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 0).unwrap(),
+            index_value1
+        );
+
+        // Write index_key2 and index_value2 to the page at index_idx=1
+        InternalIndexPage::write_index_key(&index_key2, &index_key_type, &mut page, 1).unwrap();
+        InternalIndexPage::write_index_value(&index_value2, &index_key_type, &mut page, 1).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 1).unwrap(),
+            index_key2
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 1).unwrap(),
+            index_value2
+        );
+
+        // Write index_key3 and index_value3 to the page at index_idx=2
+        InternalIndexPage::write_index_key(&index_key3, &index_key_type, &mut page, 2).unwrap();
+        InternalIndexPage::write_index_value(&index_value3, &index_key_type, &mut page, 2).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 2).unwrap(),
+            index_key3
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 2).unwrap(),
+            index_value3
+        );
+
+        // Write index_value4 to the page at index_idx=3
+        InternalIndexPage::write_index_value(&index_value4, &index_key_type, &mut page, 3).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 3).unwrap(),
+            index_value4
+        );
+
+        // Overwrite index_value2 with index_value4
+        InternalIndexPage::write_index_value(&index_value4, &index_key_type, &mut page, 1).unwrap();
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 1).unwrap(),
+            index_value4
+        );
+
+        // Read the index keys and values from the page
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 0).unwrap(),
+            index_key1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 0).unwrap(),
+            index_value1
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 1).unwrap(),
+            index_key2
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 1).unwrap(),
+            index_value4
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_key(&index_key_type, &page, 2).unwrap(),
+            index_key3
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 2).unwrap(),
+            index_value3
+        );
+        assert_eq!(
+            InternalIndexPage::read_index_value(&index_key_type, &page, 3).unwrap(),
+            index_value4
+        );
     }
 }
