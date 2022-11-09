@@ -9,9 +9,10 @@ pub type Page = [u8; PAGE_SIZE]; // Array of Size 4KB
 #[derive(Debug, Clone, PartialEq)]
 #[repr(u8)]
 pub enum PageType {
-    Header = 0,
-    Index  = 1,
-    Data   = 2,
+    Header        = 0,
+    InternalIndex = 1,
+    LeafIndex     = 2,
+    Data          = 3,
 }
 pub const PAGE_HEADER_SIZE: usize = 1; // 1 byte for page type
 
@@ -21,8 +22,9 @@ impl TryFrom<u8> for PageType {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(PageType::Header),
-            1 => Ok(PageType::Index),
-            2 => Ok(PageType::Data),
+            1 => Ok(PageType::InternalIndex),
+            2 => Ok(PageType::LeafIndex),
+            3 => Ok(PageType::Data),
             _ => Err(format!("Invalid page type: {}", value)),
         }
     }

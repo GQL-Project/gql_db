@@ -9,7 +9,7 @@ const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>();
 
 /// This represents an index page for the btree.
 /// It is formatted on disk like so:
-/// | NumValues<i16> | IndexValue | IndexKey | IndexValue | IndexKey | ... | IndexValue |
+/// | NumValues<u16> | IndexValue | IndexKey | IndexValue | IndexKey | ... | IndexValue |
 /// where there is 1 more index value than index keys.
 /// Every InternalIndexPage is stored with at least 1 value.
 /// The leftmost IndexValue ALWAYS points to another page.
@@ -52,7 +52,7 @@ impl InternalIndexPage {
             pagenum,
             index_keys: Vec::new(),
             index_key_type: index_key_type.clone(),
-            index_values: Vec::new(),
+            index_values: vec![initial_value.clone()],
             index_id: index_id.clone(),
             page_depth: node_depth_in_tree,
             key_size,
@@ -62,9 +62,10 @@ impl InternalIndexPage {
 
     /// Writes the page to disk at the specified page number.
     pub fn write_page(
-        &self
+        &mut self
     ) -> Result<(), String> {
-        write_page(self.pagenum, &self.table_path, &self.page, PageType::Index)?;
+        write_type::<u16>(&mut self.page, 0, self.index_values.len() as u16)?;
+        write_page(self.pagenum, &self.table_path, &self.page, PageType::InternalIndex)?;
         Ok(())
     }
 
@@ -93,8 +94,6 @@ impl InternalIndexPage {
         if !self.has_room() {
             return Ok(false);
         }
-        
-        let index_key_type: IndexKeyType = get_index_key_type(&index_key);
 
         // Find the index where we need to insert the key. Locate the first index where the key is greater than the index_key we're inserting.
         let mut idx_to_insert: Option<usize> = None;
@@ -103,13 +102,13 @@ impl InternalIndexPage {
                 idx_to_insert = Some(i);
 
                 // Insert the key at the index in the page
-                Self::write_index_key(&index_key, &index_key_type, &mut self.page, i)?;
-                Self::write_index_value(&index_value, &index_key_type, &mut self.page, i + 1)?;
+                Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, i)?;
+                Self::write_index_value(&index_value, &self.index_key_type, &mut self.page, i + 1)?;
 
                 // Write the rest of the keys and values that come after index i
                 for (j, (key, value)) in self.index_keys.clone().iter().zip(self.index_values.iter().skip(i + 1)).enumerate().skip(i) {
-                    Self::write_index_key(&key, &index_key_type, &mut self.page, j + 1)?;
-                    Self::write_index_value(&value, &index_key_type, &mut self.page, j + 2)?;
+                    Self::write_index_key(&key, &self.index_key_type, &mut self.page, j + 1)?;
+                    Self::write_index_value(&value, &self.index_key_type, &mut self.page, j + 2)?;
                 }
 
                 break;
@@ -118,13 +117,15 @@ impl InternalIndexPage {
         // If we didn't insert in the middle of the page, then we need to insert at the end
         if idx_to_insert.is_none() {
             idx_to_insert = Some(self.index_keys.len());
-            Self::write_index_key(&index_key, &index_key_type, &mut self.page, self.index_keys.len())?;
-            Self::write_index_value(&index_value, &index_key_type, &mut self.page, self.index_keys.len() + 1)?;
+            Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, self.index_keys.len())?;
+            Self::write_index_value(&index_value, &self.index_key_type, &mut self.page, self.index_keys.len() + 1)?;
         }
 
+        let vector_index_to_insert: usize = idx_to_insert.unwrap();
+
         // Insert the key into the hashmap
-        self.index_keys.insert(idx_to_insert.unwrap(), index_key.clone());
-        self.index_values.insert(idx_to_insert.unwrap() + 1, index_value.clone());
+        self.index_keys.insert(vector_index_to_insert, index_key.clone());
+        self.index_values.insert(vector_index_to_insert + 1, index_value.clone());
 
         Ok(true)
     }
@@ -162,6 +163,22 @@ impl InternalIndexPage {
         }
         false
     }
+
+    /*
+    fn get_pages_below_from_key(
+        &self,
+        index_key: &IndexKey
+    ) -> Result<Vec<u32>, String> {
+        let mut pages_below: Vec<u32> = Vec::new();
+        for (key, value) in self.index_keys.clone().iter().zip(self.index_values.iter()) {
+            if compare_indexes(&key, &index_key) == KeyComparison::Greater {
+                break;
+            }
+            pages_below.push(value.get_page_num());
+        }
+        Ok(pages_below)
+    }
+    */
 
     /***********************************************************************************************/
     /*                                       Private Static Methods                                */

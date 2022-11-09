@@ -68,19 +68,19 @@ pub fn get_index_key_type_size(
     index_key_type.iter().map(|col| col.size() as usize).sum()
 }
 
-/// Gets the index key type from the index key
-pub fn get_index_key_type(
-    index_key: &IndexKey
-) -> IndexKeyType {
-    index_key.iter().map(|val| val.get_coltype()).collect()
-}
-
 /// Gets the IndexKey from the row using the IndexID
 pub fn get_index_key_from_row(
     row: &Row,
     index_id: &IndexID
 ) -> IndexKey {
     index_id.iter().map(|col| row[*col as usize].clone()).collect()
+}
+
+/// Gets the index key type from the index key
+fn get_index_key_type(
+    index_key: &IndexKey
+) -> IndexKeyType {
+    index_key.iter().map(|val| val.get_coltype()).collect()
 }
 
 /*************************************************************************************************/
@@ -90,7 +90,7 @@ pub fn get_index_key_from_row(
 /// Maps the column names to the column indices in the schema to create an IndexKey.
 /// Note: the col_names must be in order of the index. For example, if the index is
 /// on (col1, col2), then col_names must be \["col1", "col2"\], NOT \["col2", "col1"\].
-pub fn col_names_to_index_id(
+pub fn create_index_id(
     col_names: &Vec<String>,
     schema: &Schema
 ) -> Result<IndexID, String> {
@@ -268,6 +268,7 @@ pub fn read_leaf_index_value_at_offset(
     Ok(LeafIndexValue { pagenum, rownum })
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,15 +282,15 @@ mod tests {
             ("col3".to_string(), Column::Float),
         ];
         let col_names: Vec<String> = vec!["col1".to_string(), "col3".to_string()];
-        let index_key: IndexID = col_names_to_index_id(&col_names, &schema).unwrap();
+        let index_key: IndexID = create_index_id(&col_names, &schema).unwrap();
         assert_eq!(index_key, vec![0, 2]);
 
         let col_names: Vec<String> = vec!["col3".to_string(), "col2".to_string(), "col1".to_string()];
-        let index_key: IndexID = col_names_to_index_id(&col_names, &schema).unwrap();
+        let index_key: IndexID = create_index_id(&col_names, &schema).unwrap();
         assert_eq!(index_key, vec![2, 1, 0]);
 
         let col_names: Vec<String> = vec!["col3".to_string(), "col4".to_string(), "col1".to_string()];
-        assert_eq!(col_names_to_index_id(&col_names, &schema).is_err(), true);
+        assert_eq!(create_index_id(&col_names, &schema).is_err(), true);
     }
 
     #[test]

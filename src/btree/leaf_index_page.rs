@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::size_of};
+use std::mem::size_of;
 use itertools::Itertools;
 
 use super::indexes::*;
@@ -8,17 +8,17 @@ const LEAF_PAGE_HEADER_SIZE: usize = size_of::<u16>();
 
 /// This represents an index page for the btree.
 /// It is formatted on disk like so:
-/// | NumValues<i16> | IndexValue | IndexKey | IndexValue | ... | IndexKey |
+/// | NumValues<u16> | IndexValue | IndexKey | IndexValue | ... | IndexKey |
 /// where there is an equal number of index values and index keys.
 #[derive(Debug, Clone)]
 pub struct LeafIndexPage {
-    table_path: String,                         // The path to the table this page belongs to
-    pagenum: u32,                               // The page number of this page
-    indexes: HashMap<IndexKey, LeafIndexValue>, // The values in this page
-    index_key_type: IndexKeyType,               // The type of the index keys
-    index_id: IndexID,                          // The columns used in this index
-    key_size: u8,                               // The size of an individual member of index_keys
-    page: Page,                                 // The page data
+    table_path: String,                       // The path to the table this page belongs to
+    pagenum: u32,                             // The page number of this page
+    indexes: Vec<(IndexKey, LeafIndexValue)>, // The values in this page
+    index_key_type: IndexKeyType,             // The type of the index keys
+    index_id: IndexID,                        // The columns used in this index
+    key_size: u8,                             // The size of an individual member of index_keys
+    page: Page,                               // The page data
 }
 
 impl LeafIndexPage {
@@ -39,7 +39,7 @@ impl LeafIndexPage {
         Ok(LeafIndexPage {
             table_path,
             pagenum,
-            indexes: HashMap::new(),
+            indexes: Vec::new(),
             index_key_type: index_key_type.clone(),
             index_id: index_id.clone(),
             key_size,
@@ -47,11 +47,52 @@ impl LeafIndexPage {
         })
     }
 
+    pub fn load_from_table(
+        table_path: String,
+        pagenum: u32,
+        index_id: &IndexID,
+        index_key_type: &IndexKeyType,
+    ) -> Result<Self, String> {
+        let (page, page_type) = read_page(pagenum, &table_path)?;
+        if page_type != PageType::LeafIndex {
+            return Err(format!(
+                "Error page {} is not a leaf index page in {}",
+                pagenum, table_path
+            ));
+        }
+
+        // Get the size of an individual key
+        let key_size: u8 = get_index_key_type_size(&index_key_type) as u8;
+
+        // Read the number of values from the page
+        let num_values: u16 = read_type::<u16>(&page, 0)?;
+
+        // Read the values from the page
+        let mut indexes: Vec<(IndexKey, LeafIndexValue)> = Vec::new();
+        for i in 0..num_values {
+            let index_key: IndexKey = Self::read_index_key(&index_key_type, &page, i as usize)?;
+            let index_value: LeafIndexValue = Self::read_index_value(&index_key_type, &page, i as usize)?;
+            indexes.push((index_key, index_value));
+        }
+
+        Ok(LeafIndexPage {
+            table_path,
+            pagenum,
+            indexes,
+            index_key_type: index_key_type.clone(),
+            index_id: index_id.clone(),
+            key_size,
+            page: *page,
+        })
+    }
+
     /// Writes the page to disk at the specified page number.
     pub fn write_page(
-        &self
+        &mut self
     ) -> Result<(), String> {
-        write_page(self.pagenum, &self.table_path, &self.page, PageType::Index)?;
+        // Write the number of values to the page
+        write_type::<u16>(&mut self.page, 0, self.indexes.len() as u16)?;
+        write_page(self.pagenum, &self.table_path, &self.page, PageType::LeafIndex)?;
         Ok(())
     }
 
@@ -72,7 +113,6 @@ impl LeafIndexPage {
 
         // Get the IndexKey from the row info
         let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
-        let index_key_type: IndexKeyType = get_index_key_type(&index_key);
         let index_value: LeafIndexValue = LeafIndexValue {
             pagenum: rowinfo.pagenum,
             rownum: rowinfo.rownum,
@@ -85,13 +125,13 @@ impl LeafIndexPage {
                 idx_to_insert = Some(i);
 
                 // Insert the key at the index in the page
-                Self::write_index_key(&index_key, &index_key_type, &mut self.page, i)?;
-                Self::write_index_value(&index_value, &index_key_type, &mut self.page, i)?;
+                Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, i)?;
+                Self::write_index_value(&index_value, &self.index_key_type, &mut self.page, i)?;
 
                 // Write the rest of the keys and values that come after index i
                 for (j, (key, value)) in self.indexes.clone().iter().enumerate().sorted().skip(i) {
-                    Self::write_index_key(&key, &index_key_type, &mut self.page, j + 1)?;
-                    Self::write_index_value(&value, &index_key_type, &mut self.page, j + 1)?;
+                    Self::write_index_key(&key, &self.index_key_type, &mut self.page, j + 1)?;
+                    Self::write_index_value(&value, &self.index_key_type, &mut self.page, j + 1)?;
                 }
 
                 break;
@@ -99,14 +139,50 @@ impl LeafIndexPage {
         }
         // If we didn't insert in the middle of the page, then we need to insert at the end
         if idx_to_insert.is_none() {
-            Self::write_index_key(&index_key, &index_key_type, &mut self.page, self.indexes.len())?;
-            Self::write_index_value(&index_value, &index_key_type, &mut self.page, self.indexes.len())?;
+            idx_to_insert = Some(self.indexes.len());
+            Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, self.indexes.len())?;
+            Self::write_index_value(&index_value, &self.index_key_type, &mut self.page, self.indexes.len())?;
         }
 
-        // Insert the key into the hashmap
-        self.indexes.insert(index_key.clone(), index_value.clone());
+        // Insert the key into the vector
+        self.indexes.insert(idx_to_insert.unwrap(), (index_key.clone(), index_value.clone()));
 
         Ok(true)
+    }
+
+    /// Gets the rows that match the given index key.
+    /// Returns a vector of RowLocations.
+    pub fn get_rows_locations_from_key(
+        &self,
+        index_key: &IndexKey
+    ) -> Result<Vec<RowLocation>, String> {
+        // Check if the index key is present
+        if self.indexes
+            .iter()
+            .map(|(key, _)| key)
+            .sorted()
+            .find(|key| 
+                compare_indexes(key, index_key) == KeyComparison::Equal
+            )
+            .is_some() {
+
+            // At least one key is present, so get the rows that match the key(s)
+            let mut rows: Vec<RowLocation> = Vec::new();
+            for (key, value) in self.indexes.clone() {
+                if compare_indexes(&key, index_key) == KeyComparison::Equal {
+                    rows.push(RowLocation {
+                        pagenum: value.pagenum,
+                        rownum: value.rownum
+                    });
+                }
+            }
+
+            return Ok(rows);
+        }
+        // The index is not present in the dictionary
+        else {
+            return Ok(Vec::new());
+        }
     }
 
     /// Gets the lowest valued index key in the page.

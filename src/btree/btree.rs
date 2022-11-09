@@ -9,7 +9,8 @@ use super::leaf_index_page::*;
 use super::internal_index_page::*;
 
 pub struct BTree {
-    index_key_type: IndexKeyType, // The type of the index keys
+    index_key_type: IndexKeyType,    // The type of the index keys
+    root_page: InternalIndexPage, // The highest level internal index page (root of the tree)
 }
 
 impl BTree {
@@ -23,7 +24,7 @@ impl BTree {
         let mut table: Table = Table::new(table_dir, table_name, table_extension)?;
         
         // Get the index key composed of those column names
-        let index_id: IndexID = col_names_to_index_id(&columns, &table.schema)?;
+        let index_id: IndexID = create_index_id(&columns, &table.schema)?;
         let index_key_type: IndexKeyType = cols_id_to_index_key_type(&index_id, &table.schema);
 
         // Check that the index doesn't already exist
@@ -97,7 +98,8 @@ impl BTree {
         for row in table_rows {
             leaf_pages[leaf_page_idx].add_pointer_to_row(&row)?;
             rows_in_leaf_page += 1;
-            if rows_in_leaf_page > (max_pointers_per_leaf / 2) {
+            // Evenly distribute the rows across the leaf pages
+            if rows_in_leaf_page > (num_rows / leaf_pages.len()) {
                 // Advance the leaf page idx up until the last leaf page
                 if leaf_page_idx < (leaf_pages.len() - 1) {
                     leaf_page_idx += 1;
@@ -107,7 +109,7 @@ impl BTree {
         }
 
         // Write the leaf pages to disk
-        for leaf_page in leaf_pages.clone() {
+        for mut leaf_page in leaf_pages.clone() {
             leaf_page.write_page()?;
         }
 
@@ -128,6 +130,7 @@ impl BTree {
             let mut internal_pages_for_level: Vec<InternalIndexPage> = Vec::new();
             let mut internal_page_idx: usize = 0;
             let mut num_pointers_in_page: Option<usize> = None;
+            let num_pages_on_level_below: usize = pages_on_level_below.len();
             // Insert each page on the level below into an internal page within this level
             for (page_below, page_below_lowest_key) in pages_on_level_below {
                 // Create a new internal page if we need to
@@ -150,10 +153,10 @@ impl BTree {
                     num_pointers_in_page = Some(num_pointers_in_page.unwrap() + 1);
 
                     // If the internal page is bet, advance to the next one
-                    if num_pointers_in_page.unwrap() > (max_pointers_per_internal / 2) {
+                    if num_pointers_in_page.unwrap() > (num_pages_on_level_below / num_pages_per_level[level] as usize) {
                         num_pointers_in_page = None;
                         internal_page_idx += 1;
-                        // Advance the leaf page idx up until the last leaf page
+                        // Advance the page idx up until the last page
                         if internal_page_idx < (num_pages_per_level[level] - 1) as usize {
                             internal_page_idx += 1;
                         }
@@ -161,7 +164,11 @@ impl BTree {
                 }
             }
             // We should have filled part of every page on this level
-            assert_eq!(internal_page_idx, num_pages_per_level[level] as usize);
+            assert_eq!(
+                internal_page_idx, 
+                (num_pages_per_level[level] - 1) as usize,
+                "Internal Index Pages on level {} were not all filled", level
+            );
 
             // Update pages_on_level_below with the pages on this level
             pages_on_level_below = Vec::new();
@@ -179,13 +186,16 @@ impl BTree {
 
         // Write the internal pages to disk
         for internal_pages_for_level in internal_pages.clone() {
-            for internal_page in internal_pages_for_level {
+            for mut internal_page in internal_pages_for_level {
                 internal_page.write_page()?;
             }
         }
 
+        // Get the root internal index page
+        let root_page: InternalIndexPage = internal_pages[internal_pages.len() - 1][0].clone();
 
         // Update the header
+        table.indexes.insert(index_id, root_page.get_pagenum());
         let new_header: Header = Header {
             num_pages: table.max_pages,
             schema: table.schema.clone(),
@@ -195,6 +205,59 @@ impl BTree {
 
         Ok(BTree {
             index_key_type,
+            root_page,
         })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_btree_index() {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("test_table");
+        let index_key_type: IndexKeyType = vec![Column::I32];
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
+        let table_rows: Vec<Row> = vec![
+            vec![Value::I32(1),  Value::String("a".to_string())],
+            vec![Value::I32(4),  Value::String("b".to_string())],
+            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(10), Value::String("d".to_string())],
+            vec![Value::I32(13), Value::String("e".to_string())],
+            vec![Value::I32(16), Value::String("f".to_string())],
+            vec![Value::I32(19), Value::String("g".to_string())],
+            vec![Value::I32(22), Value::String("h".to_string())],
+            vec![Value::I32(25), Value::String("i".to_string())],
+            vec![Value::I32(28), Value::String("j".to_string())],
+            vec![Value::I32(31), Value::String("k".to_string())],
+            vec![Value::I32(34), Value::String("l".to_string())],
+            vec![Value::I32(37), Value::String("m".to_string())],
+            vec![Value::I32(40), Value::String("n".to_string())],
+            vec![Value::I32(43), Value::String("o".to_string())],
+            vec![Value::I32(46), Value::String("p".to_string())],
+            vec![Value::I32(49), Value::String("q".to_string())],
+            vec![Value::I32(52), Value::String("r".to_string())],
+            vec![Value::I32(55), Value::String("s".to_string())],
+        ];
+
+        // Create the table
+        let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+
+        // Insert the rows
+        table.insert_rows(table_rows).unwrap();
+
+        // Create the index
+        let btree: BTree = BTree::create_btree_index(&table_dir, &table_name, None, index_column_names).unwrap();
+
+        let y = 0;
+        let z = 9;
     }
 }
