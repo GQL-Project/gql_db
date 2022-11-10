@@ -1,9 +1,7 @@
-use std::mem::size_of;
+use std::{mem::size_of, collections::HashSet};
 
-use itertools::Itertools;
-
-use super::indexes::*;
-use crate::{fileio::{header::*, pageio::*, rowio::write_row, tableio::Table}, util::dbtype::Column};
+use super::{indexes::*, leaf_index_page::LeafIndexPage};
+use crate::{fileio::{header::*, pageio::*, rowio::*}, util::row::*};
 
 const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
 
@@ -182,6 +180,59 @@ impl InternalIndexPage {
         Ok(true)
     }
 
+    /// Gets the rows that are stored from the specific index key
+    pub fn get_rows_from_key(
+        &self,
+        index_key: &IndexKey,
+        table_schema: &Schema
+    ) -> Result<Vec<RowInfo>, String> {
+        let leaf_pagenums: HashSet<u32> = self.get_leaf_pagenums_from_key(index_key)?;
+
+        // Get all the row locations we need to read the rows from
+        let mut row_locations: Vec<RowLocation> = Vec::new();
+        for leaf_pagenum in leaf_pagenums {
+            let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+                self.table_path.clone(),
+                leaf_pagenum,
+                &self.index_id,
+                &self.index_key_type
+            )?;
+            let leaf_row_locations: Vec<RowLocation> = leaf_page.get_row_locations_from_key(index_key)?;
+            row_locations.extend(leaf_row_locations);
+        }
+
+        // Sort the row_locations by pagenum so we reduce the number of page reads we need
+        row_locations.sort_by(|a, b| a.pagenum.cmp(&b.pagenum));
+
+        // Read the rows from the row locations
+        let mut rows: Vec<RowInfo> = Vec::new();
+        let mut current_pagenum: u32 = 0;
+        let mut current_page: Option<Page> = None;
+        for row_location in row_locations {
+            if current_pagenum != row_location.pagenum || current_page.is_none() {
+                current_pagenum = row_location.pagenum;
+                let (page, page_type) = read_page(current_pagenum, &self.table_path)?;
+                if page_type != PageType::Data {
+                    return Err(format!("Expected page type to be Data, but got {:?}", page_type));
+                }
+                current_page = Some(*page);
+            }
+            let row: Option<Row> = read_row(table_schema,&current_page.unwrap(), row_location.rownum);
+            if let Some(row_value) = row {
+                rows.push(RowInfo {
+                    row: row_value,
+                    pagenum: row_location.pagenum,
+                    rownum: row_location.rownum,
+                });
+            }
+            else {
+                return Err(format!("Could not read row from page {} row {}", row_location.pagenum, row_location.rownum));
+            }
+        }
+
+        Ok(rows)
+    }
+
     /***********************************************************************************************/
     /*                                       Public Static Methods                                 */
     /***********************************************************************************************/
@@ -214,6 +265,57 @@ impl InternalIndexPage {
             return true;
         }
         false
+    }
+
+    /// Gets the leaf page numbers that correspond to the index key provided.
+    /// Traverses all the index pages down to the leaf pages.
+    fn get_leaf_pagenums_from_key(
+        &self,
+        index_key: &IndexKey
+    ) -> Result<HashSet<u32>, String> {
+        let mut lowest_internal_pages: HashSet<u32> = HashSet::new();
+        
+        // Iterate through each level of index pages to get the lowest level internal pages
+        lowest_internal_pages.insert(self.pagenum);
+        for _ in 1..self.page_depth {
+            let current_page_numbers: HashSet<u32> = lowest_internal_pages.clone();
+            lowest_internal_pages = HashSet::new();
+
+            for page_number in current_page_numbers {
+                let page: InternalIndexPage = InternalIndexPage::load_from_table(
+                    self.table_path.clone(),
+                    page_number,
+                    &self.index_id,
+                    &self.index_key_type
+                ).unwrap();
+                let values_from_key: Vec<InternalIndexValue> = page.get_index_values_from_key(index_key)?;
+                let pages_below_this_page: Vec<u32> = values_from_key
+                    .iter()
+                    .map(|value| value.pagenum)
+                    .collect();
+
+                lowest_internal_pages.extend(pages_below_this_page);
+            }
+        }
+
+        // Get the leaf pages from the lowest level internal pages
+        let mut leaf_pages: HashSet<u32> = HashSet::new();
+        for page_number in lowest_internal_pages {
+            let page: InternalIndexPage = InternalIndexPage::load_from_table(
+                self.table_path.clone(),
+                page_number,
+                &self.index_id,
+                &self.index_key_type
+            ).unwrap();
+            let values_from_key: Vec<InternalIndexValue> = page.get_index_values_from_key(index_key)?;
+            let leaf_pages_below_this_page: Vec<u32> = values_from_key
+                .iter()
+                .map(|value| value.pagenum)
+                .collect();
+
+            leaf_pages.extend(leaf_pages_below_this_page);
+        }
+        Ok(leaf_pages)
     }
 
     /// Gets the internal index values that match the index key.
@@ -358,7 +460,7 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
-    use crate::{util::dbtype::{Column, Value}, fileio::tableio::create_table_in_dir};
+    use crate::{util::dbtype::*, fileio::tableio::*};
 
     #[test]
     fn test_read_write_index_key() {
@@ -549,6 +651,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_internal_load_from_table() {
         let table_dir: String = String::from("./testing");
         let table_name: String = String::from("test_leaf_load_from_table");
@@ -648,7 +751,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_get_row_locations_from_key() {
+    fn test_get_index_values_from_key() {
         let (table, 
             internal_pagenum, 
             index_key_type, 

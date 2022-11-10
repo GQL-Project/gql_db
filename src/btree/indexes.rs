@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::mem::size_of;
 use crate::fileio::pageio::*;
-use crate::fileio::rowio::*;
 use crate::util::dbtype::*;
 use crate::fileio::header::*;
 use crate::util::row::Row;

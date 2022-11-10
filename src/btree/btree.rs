@@ -1,7 +1,4 @@
-use crate::fileio::pageio::*;
-use crate::fileio::rowio::*;
 use crate::fileio::tableio::*;
-use crate::util::dbtype::*;
 use crate::fileio::header::*;
 use crate::util::row::*;
 use super::indexes::*;
@@ -9,8 +6,9 @@ use super::leaf_index_page::*;
 use super::internal_index_page::*;
 
 pub struct BTree {
-    index_key_type: IndexKeyType,    // The type of the index keys
+    index_key_type: IndexKeyType, // The type of the index keys
     root_page: InternalIndexPage, // The highest level internal index page (root of the tree)
+    table_schema: Schema,         // The schema of the table that this index is for
 }
 
 impl BTree {
@@ -31,17 +29,6 @@ impl BTree {
         if table.indexes.contains_key(&index_id) {
             return Err(format!("Index already exists on columns: {:?}", columns));
         }
-
-        // Get the first empty page to use for the index
-        //let index_pagenum: u32 = table.max_pages;
-        /*
-        let new_page: Page = [0; PAGE_SIZE];
-        table.max_pages += 1;
-        write_page(index_pagenum, &table.path, &new_page, PageType::Index)?;
-        */
-
-        // Keep track of the index's top level table page
-        //table.indexes.insert(index_id.clone(), index_pagenum);
 
         // Get the rows in the table
         let mut table_rows: Vec<RowInfo> = Vec::new();
@@ -115,7 +102,7 @@ impl BTree {
 
         // For each leaf page, get the page number, and the lowest value IndexKey in the page
         let mut pages_on_level_below: Vec<(u32, IndexKey)> = Vec::new();
-        for leaf_page in leaf_pages {
+        for leaf_page in leaf_pages.clone() {
             if let Some(smallest_key) = leaf_page.get_lowest_index_key() {
                 pages_on_level_below.push((leaf_page.get_pagenum(), smallest_key));
             }
@@ -141,7 +128,7 @@ impl BTree {
                         &index_id, 
                         &index_key_type,
                         &InternalIndexValue { pagenum: page_below },
-                        (level + 1) as u8
+                        level as u8
                     )?;
                     table.max_pages += 1;
                     num_pointers_in_page = Some(1);
@@ -206,26 +193,36 @@ impl BTree {
         Ok(BTree {
             index_key_type,
             root_page,
+            table_schema: table.schema.clone(),
         })
+    }
+
+    /// Gets the rows corresponding to the given index key
+    pub fn get_rows(
+        &self,
+        index_key: &IndexKey
+    ) -> Result<Vec<RowInfo>, String> {
+        self.root_page.get_rows_from_key(index_key, &self.table_schema)
     }
 }
 
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+    use crate::{version_control::diff::*, util::dbtype::*};
     use super::*;
 
     #[test]
+    #[serial]
     fn test_create_btree_index() {
         let table_dir: String = String::from("./testing");
-        let table_name: String = String::from("test_table");
-        let index_key_type: IndexKeyType = vec![Column::I32];
+        let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(10))
         ];
         let index_column_names: Vec<String> = vec!["id".to_string()];
-        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
         let table_rows: Vec<Row> = vec![
             vec![Value::I32(1),  Value::String("a".to_string())],
             vec![Value::I32(4),  Value::String("b".to_string())],
@@ -234,7 +231,7 @@ mod tests {
             vec![Value::I32(13), Value::String("e".to_string())],
             vec![Value::I32(16), Value::String("f".to_string())],
             vec![Value::I32(19), Value::String("g".to_string())],
-            vec![Value::I32(22), Value::String("h".to_string())],
+            vec![Value::I32(49), Value::String("h".to_string())],
             vec![Value::I32(25), Value::String("i".to_string())],
             vec![Value::I32(28), Value::String("j".to_string())],
             vec![Value::I32(31), Value::String("k".to_string())],
@@ -242,22 +239,60 @@ mod tests {
             vec![Value::I32(37), Value::String("m".to_string())],
             vec![Value::I32(40), Value::String("n".to_string())],
             vec![Value::I32(43), Value::String("o".to_string())],
-            vec![Value::I32(46), Value::String("p".to_string())],
-            vec![Value::I32(49), Value::String("q".to_string())],
-            vec![Value::I32(52), Value::String("r".to_string())],
-            vec![Value::I32(55), Value::String("s".to_string())],
+            vec![Value::I32(68), Value::String("p".to_string())],
+            vec![Value::I32(46), Value::String("q".to_string())],
+            vec![Value::I32(49), Value::String("r".to_string())],
+            vec![Value::I32(52), Value::String("s".to_string())],
+            vec![Value::I32(55), Value::String("t".to_string())],
         ];
 
         // Create the table
         let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
 
         // Insert the rows
-        table.insert_rows(table_rows).unwrap();
+        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(&table_dir, &table_name, None, index_column_names).unwrap();
+        let btree: BTree = BTree::create_btree_index(
+            &table_dir, 
+            &table_name, 
+            None, 
+            index_column_names
+        ).unwrap();
 
-        let y = 0;
-        let z = 9;
+        // Get the row that has a key of 1
+        let index_key: IndexKey = vec![Value::I32(1)];
+        let rows: Vec<RowInfo> = btree.get_rows(&index_key).unwrap();
+        // There should be one row with a key of 1
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0],
+            insert_diff.rows
+                .iter()
+                .find(|rowinfo| rowinfo.row[0] == Value::I32(1))
+                .unwrap()
+                .clone()
+        );
+
+        // Get the rows that have a key of 49
+        let index_key: IndexKey = vec![Value::I32(49)];
+        let rows: Vec<RowInfo> = btree.get_rows(&index_key).unwrap();
+        // There should be two rows with a key of 49
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows,
+            insert_diff.rows
+                .clone()
+                .iter()
+                .filter(|rowinfo| rowinfo.row[0] == Value::I32(49))
+                .cloned()
+                .collect::<Vec<RowInfo>>()
+        );
+
+        // Get the rows that have a key of 100
+        let index_key: IndexKey = vec![Value::I32(100)];
+        let rows: Vec<RowInfo> = btree.get_rows(&index_key).unwrap();
+        // There should be no rows with a key of 100
+        assert_eq!(rows.len(), 0);
     }
 }

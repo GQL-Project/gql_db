@@ -5,7 +5,7 @@ use crate::{
     user::userdata::User,
     util::{dbtype::Value, row::*},
     version_control::diff::*,
-    btree::{internal_index_page::*, indexes::*, btree::*},
+    btree::indexes::*,
 };
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";

@@ -2,7 +2,7 @@ use std::mem::size_of;
 use itertools::Itertools;
 
 use super::indexes::*;
-use crate::{fileio::{header::*, pageio::*, tableio::Table}, util::{row::*, dbtype::Value}};
+use crate::{fileio::pageio::*, util::row::*};
 
 const LEAF_PAGE_HEADER_SIZE: usize = size_of::<u16>();
 
@@ -153,7 +153,7 @@ impl LeafIndexPage {
 
     /// Gets the rows that match the given index key.
     /// Returns a vector of RowLocations.
-    pub fn get_rows_locations_from_key(
+    pub fn get_row_locations_from_key(
         &self,
         index_key: &IndexKey
     ) -> Result<Vec<RowLocation>, String> {
@@ -295,7 +295,7 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
-    use crate::{util::dbtype::{Column, Value}, fileio::tableio::create_table_in_dir};
+    use crate::{util::dbtype::*, fileio::{tableio::*, header::*}};
 
     #[test]
     fn test_read_write_index_key() {
@@ -597,25 +597,25 @@ mod tests {
 
         // Check that the correct row locations are returned
         assert_eq!(
-            leaf_page.get_rows_locations_from_key(&index_keys[0]).unwrap(),
+            leaf_page.get_row_locations_from_key(&index_keys[0]).unwrap(),
             vec![index_values[0].to_row_location()]
         );
         assert_eq!(
-            leaf_page.get_rows_locations_from_key(&index_keys[1]).unwrap(),
+            leaf_page.get_row_locations_from_key(&index_keys[1]).unwrap(),
             vec![index_values[1].to_row_location()]
         );
         assert_eq!(
-            leaf_page.get_rows_locations_from_key(&index_keys[2]).unwrap(),
+            leaf_page.get_row_locations_from_key(&index_keys[2]).unwrap(),
             vec![index_values[2].to_row_location()]
         );
         assert_eq!(
-            leaf_page.get_rows_locations_from_key(&index_keys[3]).unwrap(),
+            leaf_page.get_row_locations_from_key(&index_keys[3]).unwrap(),
             vec![index_values[3].to_row_location()]
         );
 
         // Test a key that doesn't exist in the leaf
         assert_eq!(
-            leaf_page.get_rows_locations_from_key(&vec![Value::I32(1), Value::String("new_key".to_string())]).unwrap().len(),
+            leaf_page.get_row_locations_from_key(&vec![Value::I32(1), Value::String("new_key".to_string())]).unwrap().len(),
             0  
         );
 
