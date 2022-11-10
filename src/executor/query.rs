@@ -1820,4 +1820,115 @@ pub mod tests {
         }
         delete_db_instance().unwrap();
     }
+    #[test]
+    #[serial]
+    // Test delete a single row from the database
+    fn test_delete_single_row() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse(
+                "DELETE FROM personal_info WHERE id = 27",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        assert!(results.len() == 24);
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x != 27);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+    #[test]
+    #[serial]
+    // Test deleting multiple rows on the database
+    fn test_delete_multiple_rows() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse(
+                "DELETE FROM personal_info WHERE id < 25",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        assert!(results.len() == 16);
+        delete_db_instance().unwrap();
+    }
+    #[test]
+    #[serial]
+    // Test order by command ASC
+    fn test_order_by_asc() {
+        let mut user = create_demo_db("personal_info");
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info ORDER BY id ASC",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        let mut temp = 0;
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x >= temp);
+                temp = x;
+            } else {
+                panic!("Invalid value type");
+            }
+        } 
+    }
+    #[test]
+    #[serial]
+    // Test order by command DESC
+    fn test_order_by_desc() {
+        let mut user = create_demo_db("personal_info");
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info ORDER BY id DESC",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        let mut temp = 100;
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x <= temp);
+                temp = x;
+            } else {
+                panic!("Invalid value type");
+            }
+        } 
+    }
 }
