@@ -662,7 +662,7 @@ pub fn to_ident(s: String) -> Expr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::util::dbtype::{Column, Value};
+    use crate::{util::{dbtype::{Column, Value}, bench::create_demo_db}, parser::parser::parse};
     use serial_test::serial;
 
     pub fn to_selectitems(names: Vec<String>) -> Vec<SelectItem> {
@@ -1713,39 +1713,111 @@ pub mod tests {
 
     #[test]
     #[serial]
-    // Test update row
-    fn test_update_row() {
-        let new_db: Database = Database::new("update_test_db".to_string()).unwrap();
-        let schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(50)),
-            (
-                "age".to_string(),
-                Column::Nullable(Box::new(Column::Double)),
-            ),
-        ];
+    // Test update row with one specific row
+    fn test_update_single_row(){
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse(
+                "UPDATE personal_info SET age = 50 WHERE id = 1",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                if let Value::I32(y) = row[0]{
+                    if y == 1 {
+                        assert!(x == 50);
+                    }
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
 
-        // Create a new user on the main branch
-        let mut user: User = User::new("test_user".to_string());
+    #[test]
+    #[serial]
+    // Test update row with multiple rows
+    fn test_update_multiple_row() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse(
+                "UPDATE personal_info SET age = 55",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                assert!(x == 55);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-        let rows = vec![
-            vec![
-                Value::Null, // Nulled
-                Value::String("Iron Man".to_string()),
-                Value::String("Robert Downey".to_string()),
-            ],
-            vec![
-                Value::I64(2),
-                Value::String("Spiderman".to_string()),
-                Value::String("".to_string()),
-            ],
-            vec![Value::I64(3), Value::Null, Value::Float(322.456)],
-            vec![
-                Value::I64(4),
-                Value::String("Captain America".to_string()),
-                Value::Null,
-            ],
-        ];
+    #[test]
+    #[serial]
+    // Test update row with multiple rows using more complex logic
+    fn test_update_row_predicate() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse(
+                "UPDATE personal_info SET age = 55 WHERE id < 10",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse(
+                "SELECT * from personal_info",
+                false
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                if let Value::I32(y) = row[0]{
+                    if y < 10 {
+                        assert!(x == 55);
+                    }
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
     }
 }

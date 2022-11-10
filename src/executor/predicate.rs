@@ -616,8 +616,7 @@ mod tests {
             &parse("select * from personal_info where id < 20", false).unwrap(),
             &mut user,
             &"".to_string(),
-        )
-        .unwrap();
+        ).unwrap();
 
         for row in results {
             if let Value::I32(x) = row[0] {
