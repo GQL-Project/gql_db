@@ -1808,20 +1808,12 @@ pub mod tests {
     fn test_delete_single_row() {
         let mut user = create_demo_db("personal_info");
         let _res = execute_update(
-            &parse(
-                "DELETE FROM personal_info WHERE id = 27",
-                false,
-            )
-            .unwrap(),
+            &parse("DELETE FROM personal_info WHERE id = 27", false).unwrap(),
             &mut user,
             &"".to_string(),
         );
         let (_, results) = execute_query(
-            &parse(
-                "SELECT * from personal_info",
-                false
-            )
-            .unwrap(),
+            &parse("SELECT * from personal_info", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -1842,20 +1834,12 @@ pub mod tests {
     fn test_delete_multiple_rows() {
         let mut user = create_demo_db("personal_info");
         let _res = execute_update(
-            &parse(
-                "DELETE FROM personal_info WHERE id < 25",
-                false,
-            )
-            .unwrap(),
+            &parse("DELETE FROM personal_info WHERE id < 25", false).unwrap(),
             &mut user,
             &"".to_string(),
         );
         let (_, results) = execute_query(
-            &parse(
-                "SELECT * from personal_info",
-                false
-            )
-            .unwrap(),
+            &parse("SELECT * from personal_info", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -1869,11 +1853,7 @@ pub mod tests {
     fn test_order_by_asc() {
         let mut user = create_demo_db("personal_info");
         let (_, results) = execute_query(
-            &parse(
-                "SELECT * from personal_info ORDER BY id ASC",
-                false
-            )
-            .unwrap(),
+            &parse("SELECT * from personal_info ORDER BY id ASC", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -1886,7 +1866,7 @@ pub mod tests {
             } else {
                 panic!("Invalid value type");
             }
-        } 
+        }
     }
     #[test]
     #[serial]
@@ -1894,11 +1874,7 @@ pub mod tests {
     fn test_order_by_desc() {
         let mut user = create_demo_db("personal_info");
         let (_, results) = execute_query(
-            &parse(
-                "SELECT * from personal_info ORDER BY id DESC",
-                false
-            )
-            .unwrap(),
+            &parse("SELECT * from personal_info ORDER BY id DESC", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -1911,6 +1887,6 @@ pub mod tests {
             } else {
                 panic!("Invalid value type");
             }
-        } 
+        }
     }
 }
