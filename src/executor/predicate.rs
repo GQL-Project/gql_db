@@ -417,7 +417,7 @@ type ApplyFloat = fn(f64, f64) -> Result<f64, String>;
 type ApplyString = fn(&String, &String) -> Result<String, String>;
 
 impl JointValues {
-    fn add(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn add(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x + y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x + y);
         let apply_string = |x: &String, y: &String| Ok::<String, String>(x.to_string() + y);
@@ -425,7 +425,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot add {:?} and {:?}", self, other))
     }
 
-    fn subtract(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn subtract(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x - y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x - y);
         let apply_string = |x: &String, y: &String| Ok::<String, String>(x.replace(y, ""));
@@ -433,7 +433,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot subtract {:?} and {:?}", self, other))
     }
 
-    fn multiply(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn multiply(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x * y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x * y);
         let apply_string = |x: &String, y: &String| {
@@ -450,7 +450,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot multiply {:?} and {:?}", self, other))
     }
 
-    fn divide(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn divide(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x / y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x / y);
         let apply_string = |_: &String, _: &String| {
@@ -460,7 +460,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot divide {:?} and {:?}", self, other))
     }
 
-    fn modulo(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn modulo(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x % y);
         let apply_float =
             |_: f64, _: f64| Err::<f64, String>("Cannot modulus float by float".to_string());
