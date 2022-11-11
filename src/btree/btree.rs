@@ -1,3 +1,7 @@
+use sqlparser::ast::Expr;
+
+use crate::executor::predicate::*;
+use crate::executor::query::*;
 use crate::fileio::tableio::*;
 use crate::fileio::header::*;
 use crate::util::row::*;
@@ -8,7 +12,7 @@ use super::internal_index_page::*;
 pub struct BTree {
     index_key_type: IndexKeyType, // The type of the index keys
     root_page: InternalIndexPage, // The highest level internal index page (root of the tree)
-    table_schema: Schema,         // The schema of the table that this index is for
+    table: Table,                 // The table that this index is for
 }
 
 impl BTree {
@@ -193,7 +197,7 @@ impl BTree {
         Ok(BTree {
             index_key_type,
             root_page,
-            table_schema: table.schema.clone(),
+            table,
         })
     }
 
@@ -202,7 +206,21 @@ impl BTree {
         &self,
         index_key: &IndexKey
     ) -> Result<Vec<RowInfo>, String> {
-        self.root_page.get_rows_from_key(index_key, &self.table_schema)
+        self.root_page.get_rows_from_key(index_key, &self.table.schema)
+    }
+
+    pub fn get_rows_matching_expr(
+        &self,
+        pred: &Expr
+    ) -> Result<(), String> {//Result<Vec<RowInfo>, String> {
+        let tables: Vec<(Table, String)> = vec![(self.table.clone(), self.table.name.clone())];
+        let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+        let index_refs: IndexRefs = get_index_refs(&column_aliases);
+        let x: PredicateSolver = solve_predicate(pred, &column_aliases, &index_refs)?;
+
+        let y = 0;
+        //self.root_page.get_rows_matching_expr(expr, &self.table_schema)
+        Ok(())
     }
 }
 
@@ -210,6 +228,7 @@ impl BTree {
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
+    use sqlparser::ast::{Ident, BinaryOperator};
     use crate::{version_control::diff::*, util::dbtype::*};
     use super::*;
 
@@ -294,5 +313,59 @@ mod tests {
         let rows: Vec<RowInfo> = btree.get_rows(&index_key).unwrap();
         // There should be no rows with a key of 100
         assert_eq!(rows.len(), 0);
+    }
+
+    fn test_get_rows_matching_expr() {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("create_btree_test_table");
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let table_rows: Vec<Row> = vec![
+            vec![Value::I32(1),  Value::String("a".to_string())],
+            vec![Value::I32(4),  Value::String("b".to_string())],
+            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(10), Value::String("d".to_string())],
+            vec![Value::I32(13), Value::String("e".to_string())],
+            vec![Value::I32(16), Value::String("f".to_string())],
+            vec![Value::I32(19), Value::String("g".to_string())],
+            vec![Value::I32(49), Value::String("h".to_string())],
+            vec![Value::I32(25), Value::String("i".to_string())],
+            vec![Value::I32(28), Value::String("j".to_string())],
+            vec![Value::I32(31), Value::String("k".to_string())],
+            vec![Value::I32(34), Value::String("l".to_string())],
+            vec![Value::I32(37), Value::String("m".to_string())],
+            vec![Value::I32(40), Value::String("n".to_string())],
+            vec![Value::I32(43), Value::String("o".to_string())],
+            vec![Value::I32(68), Value::String("p".to_string())],
+            vec![Value::I32(46), Value::String("q".to_string())],
+            vec![Value::I32(49), Value::String("r".to_string())],
+            vec![Value::I32(52), Value::String("s".to_string())],
+            vec![Value::I32(55), Value::String("t".to_string())],
+        ];
+
+        // Create the table
+        let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+
+        // Insert the rows
+        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+
+        // Create the index
+        let btree: BTree = BTree::create_btree_index(
+            &table_dir, 
+            &table_name, 
+            None, 
+            index_column_names
+        ).unwrap();
+
+        
+        btree.get_rows_matching_expr(&Expr::BinaryOp {
+            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+            op: BinaryOperator::Eq,
+            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("5".to_string(), true)))
+        }).unwrap();
+        
     }
 }

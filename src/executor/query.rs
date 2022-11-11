@@ -544,7 +544,7 @@ fn load_aliased_tables(
 // alongside their column types and new column name when output.
 // It will be a vector of tuples where each tuple is of the form:
 // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
-fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
+pub fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
     tables
         .iter()
         .map(|(table, alias): &(Table, String)| {
@@ -565,7 +565,7 @@ fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
 }
 
 /// Hashmap from column names to index in the row
-fn get_index_refs(column_aliases: &ColumnAliases) -> IndexRefs {
+pub fn get_index_refs(column_aliases: &ColumnAliases) -> IndexRefs {
     column_aliases
         .iter()
         .enumerate()

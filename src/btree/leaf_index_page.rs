@@ -1,8 +1,9 @@
 use std::mem::size_of;
 use itertools::Itertools;
+use sqlparser::ast::Expr;
 
 use super::indexes::*;
-use crate::{fileio::pageio::*, util::row::*};
+use crate::{fileio::pageio::*, util::row::*, executor::query::*, executor::predicate::*};
 
 const LEAF_PAGE_HEADER_SIZE: usize = size_of::<u16>();
 
@@ -151,6 +152,28 @@ impl LeafIndexPage {
         Ok(true)
     }
 
+    /// Gets the row info for the rows that match the given expression.
+    pub fn get_row_locations_matching_expr(
+        &self,
+        pred: &Expr,
+        column_aliases: &ColumnAliases,
+        index_refs: &IndexRefs,
+    ) -> Result<Vec<RowLocation>, String> {
+        let mut row_locations: Vec<RowLocation> = Vec::new();
+
+        let x: PredicateSolver = solve_predicate(pred, column_aliases, index_refs)?;
+        for (index_key, index_value) in &self.indexes {
+            if x(index_key)? {
+                row_locations.push(RowLocation {
+                    pagenum: index_value.pagenum,
+                    rownum: index_value.rownum,
+                });
+            }
+        }
+        
+        Ok(row_locations)
+    }
+
     /// Gets the rows that match the given index key.
     /// Returns a vector of RowLocations.
     pub fn get_row_locations_from_key(
@@ -293,6 +316,7 @@ impl LeafIndexPage {
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
+    use sqlparser::ast::{Ident, BinaryOperator};
 
     use super::*;
     use crate::{util::dbtype::*, fileio::{tableio::*, header::*}};
@@ -623,11 +647,266 @@ mod tests {
         clean_up_tests();
     }
 
+    #[test]
+    #[serial]
+    fn test_get_row_locations_from_key_range() {
+        let (table, 
+            leaf_pagenum, 
+            index_key_type, 
+            index_id,
+            _,
+            index_values) = create_testing_table_and_leaf_page();
+
+        // Load the page from disk
+        let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+            table.path.clone(),
+            leaf_pagenum,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Check that the correct row locations are returned
+        let tables: Vec<(Table, String)> = vec![(table.clone(), table.name.clone())];
+        let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+        let index_refs: IndexRefs = get_index_refs(&column_aliases);
+        // Test WHERE id > 2
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number("2".to_string(), true)))
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            vec![index_values[2].to_row_location(), index_values[3].to_row_location()]
+        );
+        // Test WHERE id = 3 AND name = 'c'
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("3".to_string(), true)))
+                        }
+                    ),
+                    op: BinaryOperator::And,
+                    right: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("c".to_string(), true)))
+                        }
+                    ),
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            vec![index_values[2].to_row_location()]
+        );
+        // Test WHERE id = 3 AND name = 'd'
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("3".to_string(), true)))
+                        }
+                    ),
+                    op: BinaryOperator::And,
+                    right: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("d".to_string(), true)))
+                        }
+                    ),
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            Vec::new()
+        );
+        // Test WHERE id = 3 OR name = 'd'
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("3".to_string(), true)))
+                        }
+                    ),
+                    op: BinaryOperator::Or,
+                    right: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("d".to_string(), true)))
+                        }
+                    ),
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            vec![index_values[2].to_row_location(), index_values[3].to_row_location()]
+        );
+        // Test WHERE name > 'a'
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number("a".to_string(), true)))
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            vec![index_values[1].to_row_location(), index_values[2].to_row_location(), index_values[3].to_row_location()]
+        );
+        // Test WHERE id > 1 AND name < 'd'
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                            op: BinaryOperator::Gt,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("1".to_string(), true)))
+                        }
+                    ),
+                    op: BinaryOperator::And,
+                    right: Box::new(
+                        Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                            op: BinaryOperator::Lt,
+                            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("d".to_string(), true)))
+                        }
+                    ),
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            vec![index_values[1].to_row_location(), index_values[2].to_row_location()]
+        );
+
+        // Clean up the testing table
+        clean_up_tests();
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_row_locations_from_key_range2() {
+        let (table, 
+            leaf_pagenum, 
+            index_key_type, 
+            index_id,
+            _,
+            index_values) = create_testing_table_and_leaf_page2();
+
+        // Load the page from disk
+        let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+            table.path.clone(),
+            leaf_pagenum,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Check that the correct row locations are returned
+        let tables: Vec<(Table, String)> = vec![(table.clone(), table.name.clone())];
+        let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+        let index_refs: IndexRefs = get_index_refs(&column_aliases);
+        assert_eq!(
+            leaf_page.get_row_locations_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number("3".to_string(), true)))
+                },
+                &column_aliases,
+                &index_refs
+            ).unwrap(),
+            vec![index_values[2].to_row_location()]
+        );
+
+        // Clean up the testing table
+        clean_up_tests();
+    }
+
     /// Creates a testing table and leaf page with 4 index keys and values.
     fn create_testing_table_and_leaf_page() -> (Table, u32, IndexKeyType, IndexID, Vec<IndexKey>, Vec<LeafIndexValue>) {
         let table_dir: String = String::from("./testing");
         let table_name: String = String::from("testing_leaf_page_table");
         let index_key_type: IndexKeyType = vec![Column::I32, Column::String(10)];
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string(), "name".to_string()];
+        let index_id: IndexID = create_index_id(&index_column_names, &table_schema).unwrap();
+        let leaf_page_num: u32 = 2;
+
+        // Create the table
+        let table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        write_page(leaf_page_num, &table.path, &[0; PAGE_SIZE], PageType::LeafIndex).unwrap();
+        
+        // Create the leaf page
+        let mut leaf_page: LeafIndexPage = LeafIndexPage::new(
+            table.path.clone(),
+            leaf_page_num,
+            &index_id,
+            &index_key_type
+        ).unwrap();
+
+        // Create the index keys and values
+        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
+        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
+        let index_key3: IndexKey = vec![Value::I32(3), Value::String("c".to_string())];
+        let index_key4: IndexKey = vec![Value::I32(4), Value::String("d".to_string())];
+
+        let index_value1: LeafIndexValue = LeafIndexValue { pagenum: 3, rownum: 0 };
+        let index_value2: LeafIndexValue = LeafIndexValue { pagenum: 4, rownum: 123 };
+        let index_value3: LeafIndexValue = LeafIndexValue { pagenum: 219, rownum: 89 };
+        let index_value4: LeafIndexValue = LeafIndexValue { pagenum: 219, rownum: 90 };
+
+        // Write the index keys and values to the page structure
+        LeafIndexPage::write_index_key(&index_key1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        LeafIndexPage::write_index_key(&index_key2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        LeafIndexPage::write_index_key(&index_key3, &index_key_type, &mut leaf_page.page, 2).unwrap();
+        LeafIndexPage::write_index_key(&index_key4, &index_key_type, &mut leaf_page.page, 3).unwrap();
+        LeafIndexPage::write_index_value(&index_value1, &index_key_type, &mut leaf_page.page, 0).unwrap();
+        LeafIndexPage::write_index_value(&index_value2, &index_key_type, &mut leaf_page.page, 1).unwrap();
+        LeafIndexPage::write_index_value(&index_value3, &index_key_type, &mut leaf_page.page, 2).unwrap();
+        LeafIndexPage::write_index_value(&index_value4, &index_key_type, &mut leaf_page.page, 3).unwrap();
+
+        leaf_page.indexes.push((index_key1.clone(), index_value1.clone()));
+        leaf_page.indexes.push((index_key2.clone(), index_value2.clone()));
+        leaf_page.indexes.push((index_key3.clone(), index_value3.clone()));
+        leaf_page.indexes.push((index_key4.clone(), index_value4.clone()));
+
+        // Write the page to disk
+        leaf_page.write_page().unwrap();
+
+        (
+            table, leaf_page_num,
+            index_key_type,
+            index_id,
+            vec![index_key1, index_key2, index_key3, index_key4],
+            vec![index_value1, index_value2, index_value3, index_value4]
+        )
+    }
+
+    /// Creates a testing table and leaf page with 4 index keys and values.
+    fn create_testing_table_and_leaf_page2() -> (Table, u32, IndexKeyType, IndexID, Vec<IndexKey>, Vec<LeafIndexValue>) {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("testing_leaf_page_table");
+        let index_key_type: IndexKeyType = vec![Column::I32];
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(10))
@@ -649,10 +928,10 @@ mod tests {
         ).unwrap();
 
         // Create the index keys and values
-        let index_key1: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index_key2: IndexKey = vec![Value::I32(2), Value::String("b".to_string())];
-        let index_key3: IndexKey = vec![Value::I32(3), Value::String("c".to_string())];
-        let index_key4: IndexKey = vec![Value::I32(4), Value::String("d".to_string())];
+        let index_key1: IndexKey = vec![Value::I32(1)];
+        let index_key2: IndexKey = vec![Value::I32(2)];
+        let index_key3: IndexKey = vec![Value::I32(3)];
+        let index_key4: IndexKey = vec![Value::I32(4)];
 
         let index_value1: LeafIndexValue = LeafIndexValue { pagenum: 3, rownum: 0 };
         let index_value2: LeafIndexValue = LeafIndexValue { pagenum: 4, rownum: 123 };

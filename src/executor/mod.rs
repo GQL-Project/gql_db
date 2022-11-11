@@ -1,2 +1,2 @@
-mod predicate;
+pub mod predicate;
 pub mod query;
