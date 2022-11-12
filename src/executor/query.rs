@@ -15,6 +15,7 @@ use crate::{
         tableio::{self, *},
     },
     util::row::RowLocation,
+    btree::btree::*,
 };
 
 use crate::util::dbtype::Value;
@@ -122,6 +123,24 @@ pub fn execute_update(
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
+            Statement::CreateIndex { 
+                name,
+                table_name,
+                columns,
+                unique,
+                if_not_exists
+            } => {
+                let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
+                let table_name: String = table_name.to_string();
+
+                let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
+
+                println!("Creating index {} on table {} with columns {:?}", name, table_name, column_names);
+
+                BTree::create_btree_index(&table_dir, &table_name, None, column_names)?;
+
+                results.push("Successfully created index".to_string());
+            }
             Statement::Update {
                 table,
                 assignments,

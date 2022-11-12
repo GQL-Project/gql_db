@@ -397,6 +397,5 @@ mod tests {
         // Get the rows from the table that have match 'id = 49'
         // There should be two
         compare_rows_using_id_eq_num(49, &btree, &insert_diff);
-        
     }
 }
