@@ -331,6 +331,11 @@ pub fn solve_value(
             }
             _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
         },
+        Expr::Function(_) => {
+            // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
+            // (i.e. when we're evaluating the groups)
+            Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null))))
+        }
         _ => Err(format!("Unexpected Value Clause: {}", expr)),
     }
 }

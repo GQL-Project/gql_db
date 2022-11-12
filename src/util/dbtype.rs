@@ -4,6 +4,7 @@ use prost_types::Timestamp;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 use std::cmp::Ordering;
+use std::hash::Hasher;
 
 use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
@@ -356,6 +357,49 @@ impl PartialOrd for Value {
             _ => None,
         }
     }
+}
+
+impl std::hash::Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::I32(x) => {
+                state.write_u8(0);
+                x.hash(state);
+            }
+            Value::I64(x) => {
+                state.write_u8(1);
+                x.hash(state);
+            }
+            Value::Float(x) => {
+                state.write_u8(2);
+                x.to_bits().hash(state);
+            }
+            Value::Double(x) => {
+                state.write_u8(3);
+                x.to_bits().hash(state);
+            }
+            Value::Bool(x) => {
+                state.write_u8(4);
+                x.hash(state);
+            }
+            Value::Timestamp(x) => {
+                state.write_u8(5);
+                x.seconds.hash(state);
+                x.nanos.hash(state);
+            }
+            Value::String(x) => {
+                state.write_u8(6);
+                x.hash(state);
+            }
+            Value::Null => {
+                state.write_u8(7);
+            }
+        }
+    }
+}
+
+impl Eq for Value {
+    
 }
 
 pub fn parse_time(str: &String) -> Result<Timestamp, String> {
