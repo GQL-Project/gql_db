@@ -521,6 +521,42 @@ pub fn solve_aggregate(
                 ))
             }
         }
+        "min" => {
+            if args.len() == 1 {
+                match &args[0] {
+                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
+                        FunctionArgExpr::Expr(expr) => {
+                            aggregate_min(expr, column_aliases, index_refs, rows)
+                        }
+                        _ => Err(format!("Unsupported arguments {}", args[0])),
+                    },
+                    _ => Err(format!("Unsupported arguments {}", args[0])),
+                }
+            } else {
+                Err(format!(
+                    "Invalid number of arguments for MIN: {}",
+                    args.len()
+                ))
+            }
+        }
+        "max" => {
+            if args.len() == 1 {
+                match &args[0] {
+                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
+                        FunctionArgExpr::Expr(expr) => {
+                            aggregate_max(expr, column_aliases, index_refs, rows)
+                        }
+                        _ => Err(format!("Unsupported arguments {}", args[0])),
+                    },
+                    _ => Err(format!("Unsupported arguments {}", args[0])),
+                }
+            } else {
+                Err(format!(
+                    "Invalid number of arguments for MAX: {}",
+                    args.len()
+                ))
+            }
+        }
         _ => Err(format!("Unsupported aggregate function: {}", name)),
     }
 }
@@ -563,6 +599,60 @@ fn aggregate_sum(
         };
     }
     match sum {
+        Some(v) => v.unpack(),
+        None => Ok(Value::Null),
+    }
+}
+
+fn aggregate_min(
+    expr: &Expr,
+    column_aliases: &Vec<(String, crate::util::dbtype::Column, String)>,
+    index_refs: &HashMap<String, usize>,
+    rows: &Vec<Vec<Value>>,
+) -> Result<Value, String> {
+    let solver = solve_value(expr, column_aliases, index_refs)?;
+    let mut min: Option<JointValues> = None;
+    for row in rows {
+        let val = solver(row)?;
+        min = match min {
+            Some(min) => {
+                if min < val {
+                    Some(min)
+                } else {
+                    Some(val)
+                }
+            }
+            None => Some(val),
+        };
+    }
+    match min {
+        Some(v) => v.unpack(),
+        None => Ok(Value::Null),
+    }
+}
+
+fn aggregate_max(
+    expr: &Expr,
+    column_aliases: &Vec<(String, crate::util::dbtype::Column, String)>,
+    index_refs: &HashMap<String, usize>,
+    rows: &Vec<Vec<Value>>,
+) -> Result<Value, String> {
+    let solver = solve_value(expr, column_aliases, index_refs)?;
+    let mut max: Option<JointValues> = None;
+    for row in rows {
+        let val = solver(row)?;
+        max = match max {
+            Some(max) => {
+                if max > val {
+                    Some(max)
+                } else {
+                    Some(val)
+                }
+            }
+            None => Some(val),
+        };
+    }
+    match max {
         Some(v) => v.unpack(),
         None => Ok(Value::Null),
     }
