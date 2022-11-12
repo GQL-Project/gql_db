@@ -1,10 +1,13 @@
 use std::cmp::Ordering;
 use std::mem::size_of;
+use sqlparser::ast::{Expr, BinaryOperator, UnaryOperator, Value as SqlValue};
+
+use crate::executor::predicate::resolve_reference;
+use crate::executor::query::{ColumnAliases, IndexRefs};
 use crate::fileio::pageio::*;
 use crate::util::dbtype::*;
 use crate::fileio::header::*;
-use crate::util::row::Row;
-use crate::util::row::RowLocation;
+use crate::util::row::{Row, RowLocation};
 
 /// The vector of column indices that make up the index
 /// For example, if the index is on columns 1, 3, and 4, then this would be [1, 3, 4]
@@ -89,6 +92,101 @@ fn get_index_key_type(
     index_key: &IndexKey
 ) -> IndexKeyType {
     index_key.iter().map(|val| val.get_coltype()).collect()
+}
+
+/// Gets the index id that corresponds to the given expression.
+pub fn get_index_id_from_expr(
+    expr: &Expr,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<IndexID, String> {
+    match expr {
+        Expr::Identifier(x) => {
+            let x: String = resolve_reference(x.value.to_string(), column_aliases)?;
+            let index: usize = *index_refs
+                .get(&x)
+                .ok_or(format!("Column {} does not exist in the table", x))?;
+            Ok(vec![index as u8])
+        },
+        Expr::CompoundIdentifier(list) => {
+            // Join all the identifiers in the list with a dot, perform the same step as above
+            let x = resolve_reference(
+                list.iter()
+                    .map(|x| x.value.to_string())
+                    .collect::<Vec<String>>()
+                    .join("."),
+                column_aliases,
+            )?;
+            let index = *index_refs
+                .get(&x)
+                .ok_or(format!("Column {} does not exist in the table", x))?;
+            Ok(vec![index as u8])
+        }
+        Expr::Value(_) => {
+            // Discard values
+            Ok(Vec::new())
+        }
+        Expr::IsFalse(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        Expr::IsNotFalse(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        Expr::IsTrue(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        Expr::IsNotTrue(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        Expr::IsNull(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        Expr::IsNotNull(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        Expr::BinaryOp { left, op, right } => match op {
+            // Resolve values from the two sides of the expression, and then perform
+            // the comparison on the two values
+            BinaryOperator::Gt
+            | BinaryOperator::Lt
+            | BinaryOperator::GtEq
+            | BinaryOperator::LtEq
+            | BinaryOperator::Eq
+            | BinaryOperator::NotEq
+            | BinaryOperator::And
+            | BinaryOperator::Or
+            | BinaryOperator::Plus
+            | BinaryOperator::Minus
+            | BinaryOperator::Divide
+            | BinaryOperator::Multiply
+            | BinaryOperator::Modulo => {
+                let left_index_id: IndexID = get_index_id_from_expr(left.as_ref(), column_aliases, index_refs)?;
+                let right_index_id: IndexID = get_index_id_from_expr(right.as_ref(), column_aliases, index_refs)?;
+
+                let mut combined_index_id: IndexID = left_index_id;
+                for right_id in right_index_id {
+                    if !combined_index_id.contains(&right_id) {
+                        combined_index_id.push(right_id);
+                    }
+                }
+
+                Ok(combined_index_id)
+            }
+            _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
+        },
+        Expr::UnaryOp { op, expr } => match op {
+            UnaryOperator::Not
+            | UnaryOperator::Plus
+            | UnaryOperator::Minus => {
+                Ok(get_index_id_from_expr(expr.as_ref(), column_aliases, index_refs)?)
+            }
+            _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
+        },
+        Expr::Nested(pred) => {
+            Ok(get_index_id_from_expr(pred.as_ref(), column_aliases, index_refs)?)
+        },
+        _ => Err(format!("Invalid Predicate Clause: {}", expr)),
+    }
 }
 
 /*************************************************************************************************/
@@ -279,8 +377,10 @@ pub fn read_leaf_index_value_at_offset(
 
 #[cfg(test)]
 mod tests {
+    use sqlparser::ast::Ident;
+
     use super::*;
-    use crate::util::dbtype::Column;
+    use crate::{util::dbtype::Column, executor::query::*};
 
     #[test]
     fn test_col_names_to_cols_in_index() {
@@ -578,5 +678,50 @@ mod tests {
             read_leaf_index_value_at_offset(&page, 2 * LeafIndexValue::size()).unwrap(),
             leaf_index_value3
         );
+    }
+
+    #[test]
+    fn test_get_index_id_from_expr() {
+        let table_name: String = "test_table".to_string();
+        let schema: Schema = vec![
+            (String::from("id"), Column::I32),
+            (String::from("name"), Column::String(20)),
+        ];
+        let column_aliases: ColumnAliases = gen_column_aliases_from_schema(&vec![(schema, table_name)]);
+        let index_refs: IndexRefs = get_index_refs(&column_aliases);
+
+        let index_id: IndexID = get_index_id_from_expr(
+            &Expr::BinaryOp {
+                left: Box::new(
+                    Expr::BinaryOp {
+                        left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                        op: BinaryOperator::Gt,
+                        right: Box::new(Expr::Value(sqlparser::ast::Value::Number("1".to_string(), true)))
+                    }
+                ),
+                op: BinaryOperator::And,
+                right: Box::new(
+                    Expr::BinaryOp {
+                        left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                        op: BinaryOperator::Lt,
+                        right: Box::new(Expr::Value(sqlparser::ast::Value::Number("d".to_string(), true)))
+                    }
+                ),
+            }, 
+            &column_aliases, 
+            &index_refs
+        ).unwrap();
+        assert_eq!(index_id, vec![0, 1]);
+
+        let index_id: IndexID = get_index_id_from_expr(
+        &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                op: BinaryOperator::Lt,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("d".to_string(), true)))
+            },
+            &column_aliases, 
+            &index_refs
+        ).unwrap();
+        assert_eq!(index_id, vec![1]);
     }
 }

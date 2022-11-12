@@ -369,6 +369,8 @@ pub fn select(
 
     let tables = load_aliased_tables(database, user, &table_names)?;
 
+    // For now, lets only support using indexing on a single table.
+
     // This is where the fun begins... ;)
     let table_aliases = gen_column_aliases(&tables);
 
