@@ -11,13 +11,20 @@ const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
 /// We could also encounter an invalid operation, like 1 + 'a' or 'a' + 'b'
 /// They have to be done this way, as the actual function itself is not known until runtime
 /// The SolvePredicate Function Type takes a row and returns a bool, used to filter rows
-pub type IndexPredicateSolver = Box<dyn Fn(&Row, Option<&IndexKey>, Option<&IndexKey>) -> Result<bool, String>>;
+pub type IndexPredicateSolver = Box<dyn Fn(Option<&IndexKey>, Option<&IndexKey>) -> Result<bool, String>>;
 
 /// The SolveValue Function Type takes a row and returns a Value, which is used by SolvePredicate
 /// It's also used to resolve the value of a column in a row, such as in `select id + 5 from table`
 /// Think of both of these functions as a 'solver' given a row, it will reduce the row to a value,
 /// as defined by the expression in the query.
-pub type IndexValueSolver = Box<dyn Fn(&Row, Option<&IndexKey>, Option<&IndexKey>) -> Result<JointValues, String>>;
+pub type IndexValueSolver = Box<dyn Fn(Option<&IndexKey>, Option<&IndexKey>) -> Result<DualJointValues, String>>;
+
+// We could encounter cases with two different types of values, so we need to be able to handle both
+#[derive(Debug)]
+pub enum DualJointValues {
+    DBValues((Option<Value>, Option<Value>)),
+    SQLValues((Option<SqlValue>, Option<SqlValue>)),
+}
 
 /// This represents an index page for the btree.
 /// It is formatted on disk like so:
@@ -301,8 +308,275 @@ impl InternalIndexPage {
         Ok(leaf_pagenums)
     }
 
-    /*
 
+    /// We know a lot of information already about the expression, so we can 'reduce' it
+    /// into just a function that takes a row and outputs true or false. This way, we don't
+    /// have to re-parse the function every time, and we have a direct function to call
+    /// when we need to filter rows.
+    /// Currently, this is implemented recursively, see if we can do it iteratively
+    pub fn solve_index_predicate(
+        pred: &Expr,
+        column_aliases: &ColumnAliases,
+        index_refs: &IndexRefs,
+    ) -> Result<PredicateSolver, String> {
+        match pred {
+            Expr::Identifier(_) => {
+                let solve_value = Self::solve_index_value(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |row| {
+                    // Figure out the whether the value of the column cell is a boolean or not.
+                    let value = solve_value(row)?;
+                    match value {
+                        JointValues::DBValue(Value::Bool(x)) => Ok(x),
+                        JointValues::SQLValue(SqlValue::Boolean(x)) => Ok(x),
+                        _ => Err(format!("Cannot compare value {:?} to bool", value)),
+                    }
+                }))
+            }
+            Expr::IsFalse(pred) => {
+                let pred = Self::solve_index_predicate(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |row| Ok(!pred(row)?)))
+            }
+            Expr::IsNotFalse(pred) => Self::solve_index_predicate(pred, column_aliases, index_refs),
+            Expr::IsTrue(pred) => Self::solve_index_predicate(pred, column_aliases, index_refs),
+            Expr::IsNotTrue(pred) => {
+                let pred = Self::solve_index_predicate(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |row| Ok(!pred(row)?)))
+            }
+            Expr::IsNull(pred) => {
+                let pred = Self::solve_index_value(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |row| match pred(row)? {
+                    JointValues::DBValue(Value::Null) => Ok(true),
+                    JointValues::SQLValue(SqlValue::Null) => Ok(true),
+                    _ => Ok(false),
+                }))
+            }
+            Expr::IsNotNull(pred) => {
+                let pred = Self::solve_index_value(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |row| match pred(row)? {
+                    JointValues::DBValue(Value::Null) => Ok(false),
+                    JointValues::SQLValue(SqlValue::Null) => Ok(false),
+                    _ => Ok(true),
+                }))
+            }
+            Expr::BinaryOp { left, op, right } => match op {
+                // Resolve values from the two sides of the expression, and then perform
+                // the comparison on the two values
+                BinaryOperator::Gt => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        Ok(left.gt(&right))
+                    }))
+                }
+                BinaryOperator::Lt => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        Ok(left.lt(&right))
+                    }))
+                }
+                BinaryOperator::GtEq => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        Ok(left.ge(&right))
+                    }))
+                }
+                BinaryOperator::LtEq => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        Ok(left.le(&right))
+                    }))
+                }
+                BinaryOperator::Eq => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        Ok(left.ge(&right))
+                    }))
+                }
+                BinaryOperator::NotEq => {
+                    Ok(Box::new(move |_| {
+                        Ok(true)
+                    }))
+                }
+                // Create functions for the LHS and RHS of the 'and' operation, and then
+                // combine them into a single function that returns true if both functions return true
+                // Note how this would also indirectly handle short-circuiting
+                BinaryOperator::And => {
+                    let left = Self::solve_index_predicate(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_predicate(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| Ok(left(row)? && right(row)?)))
+                }
+                BinaryOperator::Or => {
+                    let left = Self::solve_index_predicate(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_predicate(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| Ok(left(row)? || right(row)?)))
+                }
+                _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
+            },
+            Expr::UnaryOp { op, expr } => match op {
+                UnaryOperator::Not => {
+                    let expr = Self::solve_index_predicate(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| Ok(!expr(row)?)))
+                }
+                _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
+            },
+            Expr::Nested(pred) => Self::solve_index_predicate(pred, column_aliases, index_refs),
+            _ => Err(format!("Invalid Predicate Clause: {}", pred)),
+        }
+    }
+
+    /// Similar to Self::solve_index_predicate, this is another function that takes a Row and reduces it to the
+    /// value described by the expression. In the most simple case, if we have an Expression just
+    /// referencing a column name, we just take a row and then apply the index on that row.
+    /// The main difference between this and Self::solve_index_predicate is that we can return a Value, instead of
+    /// a boolean.
+    pub fn solve_index_value(
+        expr: &Expr,
+        column_aliases: &ColumnAliases,
+        index_refs: &IndexRefs,
+    ) -> Result<ValueSolver, String> {
+        match expr {
+            // This would mean that we're referencing a column name, so we just need to figure out the
+            // index of that column name in the row, and then return a function that references this index
+            // in the provided row.
+            Expr::Identifier(x) => {
+                let x = resolve_reference(x.value.to_string(), column_aliases)?;
+                let index = *index_refs
+                    .get(&x)
+                    .ok_or(format!("Column {} does not exist in the table", x))?;
+                // Force the closure to take `index` ownership (the index value is copied into the function below)
+                // Then, create a closure that takes in a row and returns the value at the index
+                Ok(Box::new(move |row: &Row| {
+                    Ok(JointValues::DBValue(row[index].clone()))
+                }))
+            }
+            Expr::CompoundIdentifier(list) => {
+                // Join all the identifiers in the list with a dot, perform the same step as above
+                let x = resolve_reference(
+                    list.iter()
+                        .map(|x| x.value.to_string())
+                        .collect::<Vec<String>>()
+                        .join("."),
+                    column_aliases,
+                )?;
+                let index = *index_refs
+                    .get(&x)
+                    .ok_or(format!("Column {} does not exist in the table", x))?;
+                Ok(Box::new(move |row: &Row| {
+                    Ok(JointValues::DBValue(row[index].clone()))
+                }))
+            }
+            Expr::Nested(x) => Self::solve_index_value(x, column_aliases, index_refs),
+            Expr::Value(x) => {
+                // Create a copy of the value
+                let val = x.clone();
+                // Move a reference of this value into the closure, so that we can reference
+                // it when we wish to respond with a Value.
+                Ok(Box::new(move |_| Ok(JointValues::SQLValue(val.clone()))))
+            }
+            Expr::BinaryOp { left, op, right } => match op {
+                BinaryOperator::Plus => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        left.add(&right)
+                    }))
+                }
+                BinaryOperator::Minus => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        left.subtract(&right)
+                    }))
+                }
+                BinaryOperator::Multiply => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        left.multiply(&right)
+                    }))
+                }
+                BinaryOperator::Divide => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        left.divide(&right)
+                    }))
+                }
+                BinaryOperator::Modulo => {
+                    let left = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let left = left(row)?;
+                        let right = right(row)?;
+                        left.modulo(&right)
+                    }))
+                }
+                BinaryOperator::And
+                | BinaryOperator::Or
+                | BinaryOperator::Lt
+                | BinaryOperator::LtEq
+                | BinaryOperator::Gt
+                | BinaryOperator::GtEq
+                | BinaryOperator::Eq
+                | BinaryOperator::NotEq => {
+                    let binary = Self::solve_index_predicate(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let pred = binary(row)?;
+                        Ok(JointValues::DBValue(Value::Bool(pred)))
+                    }))
+                }
+                _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
+            },
+            Expr::UnaryOp { op, expr } => match op {
+                UnaryOperator::Plus => {
+                    let expr = Self::solve_index_value(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| expr(row)))
+                }
+                UnaryOperator::Minus => {
+                    let expr = Self::solve_index_value(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let val = expr(row)?;
+                        JointValues::DBValue(Value::I32(0)).subtract(&val)
+                    }))
+                }
+                UnaryOperator::Not => {
+                    // Solve the inner value, expecting it's return type to be a boolean, and negate it.
+                    let binary = Self::solve_index_predicate(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |row| {
+                        let pred = binary(row)?;
+                        Ok(JointValues::DBValue(Value::Bool(!pred)))
+                    }))
+                }
+                _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
+            },
+            _ => Err(format!("Unexpected Value Clause: {}", expr)),
+        }
+    }
+
+    /*
+    
     /// We know a lot of information already about the expression, so we can 'reduce' it
     /// into just a function that takes a row and outputs true or false. This way, we don't
     /// have to re-parse the function every time, and we have a direct function to call
@@ -315,10 +589,10 @@ impl InternalIndexPage {
     ) -> Result<IndexPredicateSolver, String> {
         match pred {
             Expr::Identifier(_) => {
-                let solve_value: ValueSolver = Self::solve_index_value(pred, column_aliases, index_refs)?;
-                Ok(Box::new(move |row, index_key1, index_key2| {
+                let solve_value: IndexValueSolver = Self::solve_index_value(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |index_key1, index_key2| {
                     // Figure out the whether the value of the column cell is a boolean or not.
-                    let value: JointValues = solve_value(row)?;
+                    let value: JointValues = solve_value(index_key1, index_key2)?;
                     match value {
                         JointValues::DBValue(Value::Bool(x)) => Ok(x),
                         JointValues::SQLValue(SqlValue::Boolean(x)) => Ok(x),
@@ -330,8 +604,8 @@ impl InternalIndexPage {
                 let pred: IndexPredicateSolver = Self::solve_index_predicate(pred, column_aliases, index_refs)?;
                 Ok(
                     Box::new(
-                        move |row, index_key1, index_key2| 
-                        Ok(!pred(row, index_key1, index_key2)?)
+                        move |index_key1, index_key2| 
+                        Ok(!pred(index_key1, index_key2)?)
                     )
                 )
             }
@@ -341,21 +615,21 @@ impl InternalIndexPage {
                 let pred: IndexPredicateSolver = Self::solve_index_predicate(pred, column_aliases, index_refs)?;
                 Ok(
                     Box::new(
-                        move |row, index_key1, index_key2| 
-                        Ok(!pred(row, index_key1, index_key2)?)
+                        move |index_key1, index_key2| 
+                        Ok(!pred(index_key1, index_key2)?)
                     )
                 )
             }
             Expr::IsNull(pred) => {
-                let pred: ValueSolver = solve_value(pred, column_aliases, index_refs)?;
-                Ok(Box::new(move |row, index_key1, index_key2|
+                let pred: IndexValueSolver = Self::solve_index_value(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |index_key1, index_key2|
                     {
                         let is_key1_null: bool = index_key1.is_none() || 
                             (index_key1.unwrap()[0] == Value::Null);
                         let is_key2_null: bool = index_key2.is_none() ||
                             (index_key2.unwrap()[0] == Value::Null);
 
-                        match pred(row)? {
+                        match pred(index_key1, index_key2)? {
                             JointValues::DBValue(Value::Null) => Ok(is_key1_null || is_key2_null),
                             JointValues::SQLValue(SqlValue::Null) => Ok(is_key1_null || is_key2_null),
                             _ => Ok(false),
@@ -364,15 +638,15 @@ impl InternalIndexPage {
                 ))
             }
             Expr::IsNotNull(pred) => {
-                let pred: ValueSolver = solve_value(pred, column_aliases, index_refs)?;
-                Ok(Box::new(move |row, index_key1, index_key2| 
+                let pred: IndexValueSolver = Self::solve_index_value(pred, column_aliases, index_refs)?;
+                Ok(Box::new(move |index_key1, index_key2| 
                     {
                         let is_key1_null: bool = index_key1.is_none() || 
                             (index_key1.unwrap()[0] == Value::Null);
                         let is_key2_null: bool = index_key2.is_none() ||
                             (index_key2.unwrap()[0] == Value::Null);
 
-                        match pred(row)? {
+                        match pred(index_key1, index_key2)? {
                             JointValues::DBValue(Value::Null) => Ok((!is_key1_null) || (!is_key2_null)),
                             JointValues::SQLValue(SqlValue::Null) => Ok((!is_key1_null) || (!is_key2_null)),
                             _ => Ok((!is_key1_null) || (!is_key2_null)),
@@ -384,56 +658,56 @@ impl InternalIndexPage {
                 // Resolve values from the two sides of the expression, and then perform
                 // the comparison on the two values
                 BinaryOperator::Gt => {
-                    let left: ValueSolver = solve_value(left, column_aliases, index_refs)?;
-                    let right: ValueSolver = solve_value(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row, index_key1, index_key2| {
-                        let left: JointValues = left(row)?;
-                        let right: JointValues = right(row)?;
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |index_key1, index_key2| {
+                        let left: JointValues = left(index_key1, index_key2)?;
+                        let right: JointValues = right(index_key1, index_key2)?;
                         Ok(left.gt(&right))
                     }))
                 }
                 BinaryOperator::Lt => {
-                    let left: ValueSolver = solve_value(left, column_aliases, index_refs)?;
-                    let right: ValueSolver = solve_value(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row, index_key1, index_key2| {
-                        let left: JointValues = left(row)?;
-                        let right: JointValues = right(row)?;
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |index_key1, index_key2| {
+                        let left: JointValues = left(index_key1, index_key2)?;
+                        let right: JointValues = right(index_key1, index_key2)?;
                         Ok(left.lt(&right))
                     }))
                 }
                 BinaryOperator::GtEq => {
-                    let left: ValueSolver = solve_value(left, column_aliases, index_refs)?;
-                    let right: ValueSolver = solve_value(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row, index_key1, index_key2| {
-                        let left: JointValues = left(row)?;
-                        let right: JointValues = right(row)?;
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |index_key1, index_key2| {
+                        let left: JointValues = left(index_key1, index_key2)?;
+                        let right: JointValues = right(index_key1, index_key2)?;
                         Ok(left.ge(&right))
                     }))
                 }
                 BinaryOperator::LtEq => {
-                    let left: ValueSolver = solve_value(left, column_aliases, index_refs)?;
-                    let right: ValueSolver = solve_value(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row, index_key1, index_key2| {
-                        let left = left(row)?;
-                        let right = right(row)?;
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |index_key1, index_key2| {
+                        let left: JointValues = left(index_key1, index_key2)?;
+                        let right: JointValues = right(index_key1, index_key2)?;
                         Ok(left.le(&right))
                     }))
                 }
                 BinaryOperator::Eq => {
-                    let left: ValueSolver = solve_value(left, column_aliases, index_refs)?;
-                    let right: ValueSolver = solve_value(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row, index_key1, index_key2| {
-                        let left: JointValues = left(row)?;
-                        let right: JointValues = right(row)?;
-                        Ok(left.ge(&right) && left.lt(&right))
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |index_key1, index_key2| {
+                        let left: JointValues = left(index_key1, index_key2)?;
+                        let right: JointValues = right(index_key1, index_key2)?;
+                        Ok(left.eq(&right))
                     }))
                 }
                 BinaryOperator::NotEq => {
-                    let left: ValueSolver = solve_value(left, column_aliases, index_refs)?;
-                    let right: ValueSolver = solve_value(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row, index_key1, index_key2| {
-                        let left: JointValues = left(row)?;
-                        let right: JointValues = right(row)?;
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |index_key1, index_key2| {
+                        let left: JointValues = left(index_key1, index_key2)?;
+                        let right: JointValues = right(index_key1, index_key2)?;
                         Ok(left.ne(&right))
                     }))
                 }
@@ -443,27 +717,201 @@ impl InternalIndexPage {
                 BinaryOperator::And => {
                     let left: IndexPredicateSolver = Self::solve_index_predicate(left, column_aliases, index_refs)?;
                     let right: IndexPredicateSolver = Self::solve_index_predicate(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row| Ok(left(row)? && right(row)?)))
+                    Ok(
+                        Box::new(
+                            move |index_key1, index_key2|
+                            Ok(left(index_key1, index_key2)? && right(index_key1, index_key2)?)
+                        )
+                    )
                 }
                 BinaryOperator::Or => {
-                    let left = solve_predicate(left, column_aliases, index_refs)?;
-                    let right = solve_predicate(right, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row| Ok(left(row)? || right(row)?)))
+                    let left: IndexPredicateSolver = Self::solve_index_predicate(left, column_aliases, index_refs)?;
+                    let right: IndexPredicateSolver = Self::solve_index_predicate(right, column_aliases, index_refs)?;
+                    Ok(
+                        Box::new(
+                            move |index_key1, index_key2|
+                            Ok(left(index_key1, index_key2)? || right(index_key1, index_key2)?)
+                        )
+                    )
                 }
                 _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
             },
             Expr::UnaryOp { op, expr } => match op {
                 UnaryOperator::Not => {
-                    let expr = solve_predicate(expr, column_aliases, index_refs)?;
-                    Ok(Box::new(move |row| Ok(!expr(row)?)))
+                    let expr: IndexPredicateSolver = Self::solve_index_predicate(expr, column_aliases, index_refs)?;
+                    Ok(
+                        Box::new(
+                            move |index_key1, index_key2|
+                            Ok(!expr(index_key1, index_key2)?)
+                        )
+                    )
                 }
                 _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
             },
-            Expr::Nested(pred) => solve_predicate(pred, column_aliases, index_refs),
+            Expr::Nested(pred) => Self::solve_index_predicate(pred, column_aliases, index_refs),
             _ => Err(format!("Invalid Predicate Clause: {}", pred)),
         }
     }
 
+    /// Similar to solve_predicate, this is another function that takes a Row and reduces it to the
+    /// value described by the expression. In the most simple case, if we have an Expression just
+    /// referencing a column name, we just take a row and then apply the index on that row.
+    /// The main difference between this and solve_predicate is that we can return a Value, instead of
+    /// a boolean.
+    pub fn solve_index_value(
+        expr: &Expr,
+        column_aliases: &ColumnAliases,
+        index_refs: &IndexRefs,
+    ) -> Result<IndexValueSolver, String> {
+        match expr {
+            // This would mean that we're referencing a column name, so we just need to figure out the
+            // index of that column name in the row, and then return a function that references this index
+            // in the provided row.
+            Expr::Identifier(x) => {
+                let x: String = resolve_reference(x.value.to_string(), column_aliases)?;
+                let index: usize = *index_refs
+                    .get(&x)
+                    .ok_or(format!("Column {} does not exist in the table", x))?;
+                // Force the closure to take `index` ownership (the index value is copied into the function below)
+                // Then, create a closure that takes in a row and returns the value at the index
+                Ok(Box::new(move |left_index_key, right_index_key| {
+                    let left_val = match left_index_key {
+                        Some(left_index_key) => Some(left_index_key[index].clone()),
+                        None => None,
+                    };
+                    let right_val = match right_index_key {
+                        Some(right_index_key) => Some(right_index_key[index].clone()),
+                        None => None,
+                    };
+                    Ok(DualJointValues::DBValues((left_val, right_val)))
+                }))
+            }
+            Expr::CompoundIdentifier(list) => {
+                // Join all the identifiers in the list with a dot, perform the same step as above
+                let x: String = resolve_reference(
+                    list.iter()
+                        .map(|x| x.value.to_string())
+                        .collect::<Vec<String>>()
+                        .join("."),
+                    column_aliases,
+                )?;
+                let index: usize = *index_refs
+                    .get(&x)
+                    .ok_or(format!("Column {} does not exist in the table", x))?;
+                Ok(Box::new(move |left_index_key, right_index_key| {
+                    let left_val = match left_index_key {
+                        Some(left_index_key) => Some(left_index_key[index].clone()),
+                        None => None,
+                    };
+                    let right_val = match right_index_key {
+                        Some(right_index_key) => Some(right_index_key[index].clone()),
+                        None => None,
+                    };
+                    Ok(DualJointValues::DBValues((left_val, right_val)))
+                }))
+            }
+            Expr::Nested(x) => Self::solve_index_value(x, column_aliases, index_refs),
+            Expr::Value(x) => {
+                // Create a copy of the value
+                let val: SqlValue = x.clone();
+                // Move a reference of this value into the closure, so that we can reference
+                // it when we wish to respond with a Value.
+                Ok(Box::new(move |left_index_key, right_index_key| Ok(JointValues::SQLValue(val.clone()))))
+            }
+            Expr::BinaryOp { left, op, right } => match op {
+                BinaryOperator::Plus => {
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let left: JointValues = left(left_index_key, right_index_key)?;
+                        let right: JointValues = right(left_index_key, right_index_key)?;
+                        left.add(&right)
+                    }))
+                }
+                BinaryOperator::Minus => {
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let left: JointValues = left(left_index_key, right_index_key)?;
+                        let right: JointValues = right(left_index_key, right_index_key)?;
+                        left.subtract(&right)
+                    }))
+                }
+                BinaryOperator::Multiply => {
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let left: JointValues = left(left_index_key, right_index_key)?;
+                        let right: JointValues = right(left_index_key, right_index_key)?;
+                        left.multiply(&right)
+                    }))
+                }
+                BinaryOperator::Divide => {
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let left: JointValues = left(left_index_key, right_index_key)?;
+                        let right: JointValues = right(left_index_key, right_index_key)?;
+                        left.divide(&right)
+                    }))
+                }
+                BinaryOperator::Modulo => {
+                    let left: IndexValueSolver = Self::solve_index_value(left, column_aliases, index_refs)?;
+                    let right: IndexValueSolver = Self::solve_index_value(right, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let left: JointValues = left(left_index_key, right_index_key)?;
+                        let right: JointValues = right(left_index_key, right_index_key)?;
+                        left.modulo(&right)
+                    }))
+                }
+                BinaryOperator::And
+                | BinaryOperator::Or
+                | BinaryOperator::Lt
+                | BinaryOperator::LtEq
+                | BinaryOperator::Gt
+                | BinaryOperator::GtEq
+                | BinaryOperator::Eq
+                | BinaryOperator::NotEq => {
+                    let binary: IndexPredicateSolver = Self::solve_index_predicate(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let pred: bool = binary(left_index_key, right_index_key)?;
+                        Ok(JointValues::DBValue(Value::Bool(pred)))
+                    }))
+                }
+                _ => Err(format!("Invalid Binary Operator for Value: {}", op)),
+            },
+            Expr::UnaryOp { op, expr } => match op {
+                UnaryOperator::Plus => {
+                    let expr: IndexValueSolver = Self::solve_index_value(expr, column_aliases, index_refs)?;
+                    Ok(
+                        Box::new(move |left_index_key, right_index_key|
+                         expr(left_index_key, right_index_key)
+                        )
+                    )
+                }
+                UnaryOperator::Minus => {
+                    let expr: IndexValueSolver = Self::solve_index_value(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let val: JointValues = expr(left_index_key, right_index_key)?;
+                        JointValues::DBValue(Value::I32(0)).subtract(&val)
+                    }))
+                }
+                UnaryOperator::Not => {
+                    // Solve the inner value, expecting it's return type to be a boolean, and negate it.
+                    let binary: IndexPredicateSolver = Self::solve_index_predicate(expr, column_aliases, index_refs)?;
+                    Ok(Box::new(move |left_index_key, right_index_key| {
+                        let pred: bool = binary(left_index_key, right_index_key)?;
+                        Ok(JointValues::DBValue(Value::Bool(!pred)))
+                    }))
+                }
+                _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
+            },
+            _ => Err(format!("Unexpected Value Clause: {}", expr)),
+        }
+    }
+    */
+
+    /*
     /// Similar to solve_predicate, this is another function that takes a Row and reduces it to the
     /// value described by the expression. In the most simple case, if we have an Expression just
     /// referencing a column name, we just take a row and then apply the index on that row.
@@ -481,8 +929,8 @@ impl InternalIndexPage {
             // index of that column name in the row, and then return a function that references this index
             // in the provided row.
             Expr::Identifier(x) => {
-                let x = resolve_reference(x.value.to_string(), column_aliases)?;
-                let index = *index_refs
+                let x: String = resolve_reference(x.value.to_string(), column_aliases)?;
+                let index: usize = *index_refs
                     .get(&x)
                     .ok_or(format!("Column {} does not exist in the table", x))?;
                 // Force the closure to take `index` ownership (the index value is copied into the function below)
@@ -603,6 +1051,7 @@ impl InternalIndexPage {
         }
     }
     */
+    
 
     /*
     fn convert_expr_to_index_key(
@@ -1310,8 +1759,8 @@ mod tests {
                 },
                 &column_aliases,
                 &index_refs
-            ).unwrap().iter().cloned().collect_vec().iter().sorted().cloned().collect::<Vec<u32>>(),
-            vec![index_values[2].pagenum]
+            ).unwrap().contains(&index_values[2].pagenum),
+            true
         );
         // Test WHERE id > 1 AND name < 'd'
         assert_eq!(
