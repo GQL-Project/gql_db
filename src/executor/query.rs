@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use super::predicate::{
-    resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
-    solve_comparison, solve_predicate, solve_value, ComparisonSolver, PredicateSolver, ValueSolver,
+    resolve_aggregates, resolve_comparison, resolve_predicate, resolve_pure_value,
+    resolve_reference, resolve_value, solve_comparison, solve_predicate, solve_value,
+    ComparisonSolver, PredicateSolver, ValueSolver,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
@@ -404,10 +405,14 @@ pub fn select(
         }
     }
 
-    // Solve aggregate functions
-
-    // Create the selected rows that are now ready to be returned
-    let selected_rows: Vec<Row> = vec![];
+    // Solve aggregate functions and create the selected rows that are now ready to be returned
+    let selected_rows: Vec<Row> = grouped_rows
+        .into_values()
+        .map(|rows| {
+            resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs)
+        })
+        .flatten_ok()
+        .collect::<Result<Vec<Row>, String>>()?;
 
     Ok((column_names, selected_rows))
 }
@@ -416,8 +421,7 @@ fn solve_row(
     group_by: &Vec<Expr>,
     table_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
-) -> Result<Vec<ValueSolver>, String>
-{
+) -> Result<Vec<ValueSolver>, String> {
     let group_solver = group_by
         .iter()
         .map(|item| solve_value(item, &table_aliases, &index_refs))

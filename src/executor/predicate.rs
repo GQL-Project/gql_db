@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
 use prost_types::Timestamp;
-use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator, SelectItem};
+use sqlparser::ast::{BinaryOperator, Expr, Function, SelectItem, UnaryOperator};
 use sqlparser::ast::{OrderByExpr, Value as SqlValue};
 
 use super::query::ColumnAliases;
@@ -416,15 +416,45 @@ pub fn resolve_reference(
 }
 
 /// This function takes a list of rows and the column selection, and performs aggregate function application on the rows.
-pub fn resolve_groups(
-    group_rows: Vec<Row>,
-    original_values: Vec<Row>,
+pub fn resolve_aggregates(
+    rows: Vec<(Row, Row)>,
     selections: &Vec<Expr>,
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
 ) -> Result<Vec<Row>, String> {
+    // Filter down to functions only and their indices
+    let functions = selections
+        .iter()
+        .enumerate()
+        .filter_map(|(i, expr)| match expr {
+            Expr::Function(func) => Some((i, func)),
+            _ => None,
+        })
+        .collect::<Vec<(usize, &Function)>>();
 
-    Ok(vec![])
+    let (value_rows, original_rows): (Vec<Row>, Vec<Row>) = rows.into_iter().unzip();
+    if functions.is_empty() {
+        return Ok(value_rows);
+    }
+    if value_rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Take the first row
+    let mut row = value_rows[0].clone();
+    for (i, func) in functions {
+        row[i] = solve_aggregate(&original_rows, func, column_aliases, index_refs)?;
+    }
+    Ok(vec![row])
+}
+
+pub fn solve_aggregate(
+    rows: &Vec<Row>,
+    func: &Function,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Value, String> {
+    Err("Not implemented".to_string())
 }
 
 /// When applying some function to two values, we need to know how to treat the
