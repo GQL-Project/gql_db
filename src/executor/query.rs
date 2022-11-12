@@ -564,6 +564,30 @@ pub fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
         .collect::<ColumnAliases>()
 }
 
+// Get the names of all the columns in the tables along with their aliases in
+// the format <alias>.<column_name> and store them in a vector of tuples
+// alongside their column types and new column name when output.
+// It will be a vector of tuples where each tuple is of the form:
+// (<table_alias>.<column_name>, <column_type>, <output_column_name>)
+pub fn gen_column_aliases_from_schema(tables: &Vec<(Schema, String)>) -> ColumnAliases {
+    tables
+        .iter()
+        .map(|(schema, alias): &(Schema, String)| {
+            schema
+                .iter()
+                .map(|(name, coltype)| {
+                    (
+                        format!("{}.{}", alias, name.clone()),
+                        coltype.clone(),
+                        name.clone(),
+                    )
+                })
+                .collect::<ColumnAliases>()
+        })
+        .flatten()
+        .collect::<ColumnAliases>()
+}
+
 /// Hashmap from column names to index in the row
 pub fn get_index_refs(column_aliases: &ColumnAliases) -> IndexRefs {
     column_aliases

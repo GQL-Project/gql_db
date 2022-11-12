@@ -3,7 +3,7 @@ use std::{mem::size_of, collections::HashSet};
 use sqlparser::ast::{Expr, BinaryOperator, UnaryOperator, Value as SqlValue};
 
 use super::{indexes::*, leaf_index_page::LeafIndexPage};
-use crate::{fileio::{header::*, pageio::*, rowio::*}, util::{row::*, dbtype::*}, executor::{query::*, predicate::*}};
+use crate::{fileio::{header::*, pageio::*, rowio::*, tableio::Table}, util::{row::*, dbtype::*}, executor::{query::*, predicate::*}};
 
 const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
 
@@ -19,6 +19,8 @@ const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
 #[derive(Debug, Clone)]
 pub struct InternalIndexPage {
     table_path: String,                    // The path to the table this page belongs to
+    table_name: String,                    // The name of the table this page belongs to
+    table_schema: Schema,                  // The schema of the table this page belongs to
     pagenum: u32,                          // The page number of this page
     index_keys: Vec<IndexKey>,             // The keys in this page
     index_key_type: IndexKeyType,          // The type of the index keys
@@ -32,7 +34,7 @@ pub struct InternalIndexPage {
 impl InternalIndexPage {
     /// Creates a new internal index page.
     pub fn new(
-        table_path: String,
+        table: &Table,
         pagenum: u32,
         index_id: &IndexID,
         index_key_type: &IndexKeyType,
@@ -51,7 +53,9 @@ impl InternalIndexPage {
         Self::write_index_value(initial_value, index_key_type, &mut page, 0)?;
 
         Ok(InternalIndexPage {
-            table_path,
+            table_path: table.path.clone(),
+            table_name: table.name.clone(),
+            table_schema: table.schema.clone(),
             pagenum,
             index_keys: Vec::new(),
             index_key_type: index_key_type.clone(),
@@ -66,6 +70,8 @@ impl InternalIndexPage {
     /// Loads a leaf index page from disk at the specified page number.
     pub fn load_from_table(
         table_path: String,
+        table_name: String,
+        table_schema: Schema,
         pagenum: u32,
         index_id: &IndexID,
         index_key_type: &IndexKeyType,
@@ -100,6 +106,8 @@ impl InternalIndexPage {
 
         Ok(InternalIndexPage {
             table_path,
+            table_name,
+            table_schema,
             pagenum,
             index_keys: keys,
             index_values: values,
@@ -182,11 +190,42 @@ impl InternalIndexPage {
         Ok(true)
     }
 
+    /// Gets the rows that match the specified expression.
+    pub fn get_rows_matching_expr(
+        &self,
+        expr: &Expr
+    ) -> Result<Vec<RowInfo>, String> {
+        // Get the leaf page numbers we need to search
+        let column_aliases: ColumnAliases = gen_column_aliases_from_schema(&vec![(self.table_schema.clone(), self.table_name.clone())]);
+        let index_refs: IndexRefs = get_index_refs(&column_aliases);
+        let leaf_pagenums: HashSet<u32> = self.get_leaf_pagenums_matching_expr(&expr, &column_aliases, &index_refs)?;
+        
+        let leaf_pred_solver: PredicateSolver = solve_predicate(&expr, &column_aliases, &index_refs)?;
+
+        // Get all the row locations we need to read the rows from
+        let mut row_locations: Vec<RowLocation> = Vec::new();
+        for leaf_pagenum in leaf_pagenums {
+            let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+                self.table_path.clone(),
+                leaf_pagenum,
+                &self.index_id,
+                &self.index_key_type
+            )?;
+            let leaf_row_locations: Vec<RowLocation> = leaf_page.get_row_locations_using_pred_solver(&leaf_pred_solver)?;
+            row_locations.extend(leaf_row_locations);
+        }
+
+        // Sort the row_locations by pagenum so we reduce the number of page reads we need
+        row_locations.sort_by(|a, b| a.pagenum.cmp(&b.pagenum));
+
+        // Read the rows from the row locations
+        Ok(self.read_rowinfos_from_locations(&row_locations)?)
+    }
+
     /// Gets the rows that are stored from the specific index key
     pub fn get_rows_from_key(
         &self,
-        index_key: &IndexKey,
-        table_schema: &Schema
+        index_key: &IndexKey
     ) -> Result<Vec<RowInfo>, String> {
         let leaf_pagenums: HashSet<u32> = self.get_leaf_pagenums_from_key(index_key)?;
 
@@ -207,32 +246,7 @@ impl InternalIndexPage {
         row_locations.sort_by(|a, b| a.pagenum.cmp(&b.pagenum));
 
         // Read the rows from the row locations
-        let mut rows: Vec<RowInfo> = Vec::new();
-        let mut current_pagenum: u32 = 0;
-        let mut current_page: Option<Page> = None;
-        for row_location in row_locations {
-            if current_pagenum != row_location.pagenum || current_page.is_none() {
-                current_pagenum = row_location.pagenum;
-                let (page, page_type) = read_page(current_pagenum, &self.table_path)?;
-                if page_type != PageType::Data {
-                    return Err(format!("Expected page type to be Data, but got {:?}", page_type));
-                }
-                current_page = Some(*page);
-            }
-            let row: Option<Row> = read_row(table_schema,&current_page.unwrap(), row_location.rownum);
-            if let Some(row_value) = row {
-                rows.push(RowInfo {
-                    row: row_value,
-                    pagenum: row_location.pagenum,
-                    rownum: row_location.rownum,
-                });
-            }
-            else {
-                return Err(format!("Could not read row from page {} row {}", row_location.pagenum, row_location.rownum));
-            }
-        }
-
-        Ok(rows)
+        Ok(self.read_rowinfos_from_locations(&row_locations)?)
     }
 
     /***********************************************************************************************/
@@ -276,17 +290,149 @@ impl InternalIndexPage {
         column_aliases: &ColumnAliases,
         index_refs: &IndexRefs,
     ) -> Result<HashSet<u32>, String> {
-        let mut leaf_pagenums: HashSet<u32> = HashSet::new();
+        let pred_solver: PredicateSolver = Self::solve_index_predicate(pred, column_aliases, index_refs)?;
 
-        let x: PredicateSolver = Self::solve_index_predicate(pred, column_aliases, index_refs)?;
-        for (i, index_key) in self.index_keys.iter().enumerate() {
-            if x(index_key)? {
-                leaf_pagenums.insert(self.index_values[i].pagenum as u32);
-                leaf_pagenums.insert(self.index_values[i + 1].pagenum as u32);
+        let mut lowest_internal_pages: HashSet<u32> = HashSet::new();
+        
+        // Iterate through each level of index pages to get the lowest level internal pages
+        lowest_internal_pages.insert(self.pagenum);
+        for _ in 1..self.page_depth {
+            let current_page_numbers: HashSet<u32> = lowest_internal_pages.clone();
+            lowest_internal_pages = HashSet::new();
+
+            for page_number in current_page_numbers {
+                let page: InternalIndexPage = InternalIndexPage::load_from_table(
+                    self.table_path.clone(),
+                    self.table_name.clone(),
+                    self.table_schema.clone(),
+                    page_number,
+                    &self.index_id,
+                    &self.index_key_type
+                ).unwrap();
+                let values_from_key: HashSet<InternalIndexValue> = page.get_values_using_pred_solver(&pred_solver)?;
+                let pages_below_this_page: Vec<u32> = values_from_key
+                    .iter()
+                    .map(|value| value.pagenum)
+                    .collect();
+
+                lowest_internal_pages.extend(pages_below_this_page);
             }
         }
+
         
-        Ok(leaf_pagenums)
+        // Get the leaf pages from the lowest level internal pages
+        let mut leaf_pages: HashSet<u32> = HashSet::new();
+        for page_number in lowest_internal_pages {
+            let page: InternalIndexPage = InternalIndexPage::load_from_table(
+                self.table_path.clone(),
+                self.table_name.clone(),
+                self.table_schema.clone(),
+                page_number,
+                &self.index_id,
+                &self.index_key_type
+            ).unwrap();
+            let values_from_key: HashSet<InternalIndexValue> = page.get_values_using_pred_solver(&pred_solver)?;
+            let leaf_pages_below_this_page: Vec<u32> = values_from_key
+                .iter()
+                .map(|value| value.pagenum)
+                .collect();
+
+            leaf_pages.extend(leaf_pages_below_this_page);
+        }
+
+        Ok(leaf_pages)
+    }
+
+    fn get_values_using_pred_solver(
+        &self,
+        pred_solver: &PredicateSolver
+    ) -> Result<HashSet<InternalIndexValue>, String> {
+
+        let mut values: HashSet<InternalIndexValue> = HashSet::new();
+
+        for (i, index_key) in self.index_keys.iter().enumerate() {
+            if pred_solver(index_key)? {
+                values.insert(self.index_values[i].clone());
+                values.insert(self.index_values[i + 1].clone());
+            }
+        }
+
+        // If we don't have any values, we need to check the last value
+        if values.len() == 0 {
+            // Get the last index key following all the rightmost pointers from index pages below this one
+            let mut lowest_internal_pagenum: u32 = self.pagenum;
+            for _ in 1..self.page_depth {
+                let lowest_page: InternalIndexPage = InternalIndexPage::load_from_table(
+                    self.table_path.clone(),
+                    self.table_name.clone(),
+                    self.table_schema.clone(),
+                    lowest_internal_pagenum,
+                    &self.index_id,
+                    &self.index_key_type
+                ).unwrap();
+                lowest_internal_pagenum = lowest_page.index_values.last().unwrap().pagenum;
+            }
+
+            // Read the lowest internal page
+            let lowest_internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
+                self.table_path.clone(),
+                self.table_name.clone(),
+                self.table_schema.clone(),
+                lowest_internal_pagenum,
+                &self.index_id,
+                &self.index_key_type
+            ).unwrap();
+
+            // Get the leaf page from the lowest internal page
+            let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+                self.table_path.clone(),
+                lowest_internal_page.index_values.last().unwrap().pagenum,
+                &self.index_id,
+                &self.index_key_type
+            ).unwrap();
+
+            let rightmost_index_key: Option<IndexKey> = leaf_page.get_largest_index_key();
+
+            if rightmost_index_key.is_some() && pred_solver(&rightmost_index_key.unwrap())? {
+                values.insert(self.index_values.last().unwrap().clone());
+            }
+        } 
+        
+        Ok(values)
+    }
+
+    /// Reads the rowinfos from teh table from the given row locations
+    fn read_rowinfos_from_locations(
+        &self,
+        row_locations: &Vec<RowLocation>
+    ) -> Result<Vec<RowInfo>, String> {
+        // Read the rows from the row locations
+        let mut rows: Vec<RowInfo> = Vec::new();
+        let mut current_pagenum: u32 = 0;
+        let mut current_page: Option<Page> = None;
+        for row_location in row_locations {
+            if current_pagenum != row_location.pagenum || current_page.is_none() {
+                current_pagenum = row_location.pagenum;
+                let (page, page_type) = read_page(current_pagenum, &self.table_path)?;
+                if page_type != PageType::Data {
+                    return Err(format!("Expected page type to be Data, but got {:?}", page_type));
+                }
+                current_page = Some(*page);
+            }
+            let row: Option<Row> = read_row(&self.table_schema,&current_page.unwrap(), row_location.rownum);
+            if let Some(row_value) = row {
+                rows.push(RowInfo {
+                    row: row_value,
+                    pagenum: row_location.pagenum,
+                    rownum: row_location.rownum,
+                });
+            }
+            else {
+                return Err(format!("Could not read row from page {} row {}", row_location.pagenum, row_location.rownum));
+            }
+        }
+
+        Ok(rows)
     }
 
 
@@ -295,7 +441,7 @@ impl InternalIndexPage {
     /// have to re-parse the function every time, and we have a direct function to call
     /// when we need to filter rows.
     /// Currently, this is implemented recursively, see if we can do it iteratively
-    pub fn solve_index_predicate(
+    fn solve_index_predicate(
         pred: &Expr,
         column_aliases: &ColumnAliases,
         index_refs: &IndexRefs,
@@ -424,7 +570,7 @@ impl InternalIndexPage {
     /// referencing a column name, we just take a row and then apply the index on that row.
     /// The main difference between this and solve_index_predicate is that we can return a Value, instead of
     /// a boolean.
-    pub fn solve_index_value(
+    fn solve_index_value(
         expr: &Expr,
         column_aliases: &ColumnAliases,
         index_refs: &IndexRefs,
@@ -573,6 +719,8 @@ impl InternalIndexPage {
             for page_number in current_page_numbers {
                 let page: InternalIndexPage = InternalIndexPage::load_from_table(
                     self.table_path.clone(),
+                    self.table_name.clone(),
+                    self.table_schema.clone(),
                     page_number,
                     &self.index_id,
                     &self.index_key_type
@@ -592,6 +740,8 @@ impl InternalIndexPage {
         for page_number in lowest_internal_pages {
             let page: InternalIndexPage = InternalIndexPage::load_from_table(
                 self.table_path.clone(),
+                self.table_name.clone(),
+                self.table_schema.clone(),
                 page_number,
                 &self.index_id,
                 &self.index_key_type
@@ -970,7 +1120,7 @@ mod tests {
         
         // Create the leaf page
         let mut leaf_page: InternalIndexPage = InternalIndexPage::new(
-            table.path.clone(),
+            &table,
             internal_page_num,
             &index_id,
             &index_key_type,
@@ -991,6 +1141,8 @@ mod tests {
         // Load the page from disk
         let loaded_internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
             table.path.clone(),
+            table.name.clone(),
+            table.schema.clone(),
             internal_page_num,
             &index_id,
             &index_key_type
@@ -1053,6 +1205,8 @@ mod tests {
         // Load the page from disk
         let internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
             table.path.clone(),
+            table.name.clone(),
+            table.schema.clone(),
             internal_pagenum,
             &index_id,
             &index_key_type
@@ -1115,6 +1269,8 @@ mod tests {
         // Load the page from disk
         let internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
             table.path.clone(),
+            table.name.clone(),
+            table.schema.clone(),
             internal_pagenum,
             &index_id,
             &index_key_type
@@ -1223,7 +1379,7 @@ mod tests {
         
         // Create the leaf page
         let mut internal_page: InternalIndexPage = InternalIndexPage::new(
-            table.path.clone(),
+            &table,
             internal_page_num,
             &index_id,
             &index_key_type,

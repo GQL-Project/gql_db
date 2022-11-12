@@ -103,6 +103,13 @@ impl LeafIndexPage {
         self.pagenum
     }
 
+    pub fn get_largest_index_key(&self) -> Option<IndexKey> {
+        if self.indexes.len() == 0 {
+            return None;
+        }
+        Some(self.indexes[self.indexes.len() - 1].0.clone())
+    }
+
     /// Inserts a row into the page.
     /// Returns whether row was inserted or whether the page is full.
     pub fn add_pointer_to_row(
@@ -153,17 +160,13 @@ impl LeafIndexPage {
     }
 
     /// Gets the row info for the rows that match the given expression.
-    pub fn get_row_locations_matching_expr(
+    pub fn get_row_locations_using_pred_solver(
         &self,
-        pred: &Expr,
-        column_aliases: &ColumnAliases,
-        index_refs: &IndexRefs,
+        pred_solver: &PredicateSolver
     ) -> Result<Vec<RowLocation>, String> {
         let mut row_locations: Vec<RowLocation> = Vec::new();
-
-        let x: PredicateSolver = solve_predicate(pred, column_aliases, index_refs)?;
         for (index_key, index_value) in &self.indexes {
-            if x(index_key)? {
+            if pred_solver(index_key)? {
                 row_locations.push(RowLocation {
                     pagenum: index_value.pagenum,
                     rownum: index_value.rownum,
@@ -247,6 +250,17 @@ impl LeafIndexPage {
             return true;
         }
         false
+    }
+
+    /// Gets the row info for the rows that match the given expression.
+    fn get_row_locations_matching_expr(
+        &self,
+        pred: &Expr,
+        column_aliases: &ColumnAliases,
+        index_refs: &IndexRefs,
+    ) -> Result<Vec<RowLocation>, String> {
+        let x: PredicateSolver = solve_predicate(pred, column_aliases, index_refs)?;
+        Ok(self.get_row_locations_using_pred_solver(&x)?)
     }
 
     /***********************************************************************************************/

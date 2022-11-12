@@ -15,7 +15,7 @@ pub type IndexKeyType = Vec<Column>;
 pub type IndexKey = Vec<Value>;
 
 /// The value of an index in an internal index page
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct InternalIndexValue {
     /// The page number that the key points to
     pub pagenum: u32,

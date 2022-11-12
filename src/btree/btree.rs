@@ -127,7 +127,7 @@ impl BTree {
                 // Create a new internal page if we need to
                 if num_pointers_in_page.is_none() {
                     let internal_page: InternalIndexPage = InternalIndexPage::new(
-                        table.path.clone(), 
+                        &table, 
                         table.max_pages, 
                         &index_id, 
                         &index_key_type,
@@ -206,21 +206,15 @@ impl BTree {
         &self,
         index_key: &IndexKey
     ) -> Result<Vec<RowInfo>, String> {
-        self.root_page.get_rows_from_key(index_key, &self.table.schema)
+        self.root_page.get_rows_from_key(index_key)
     }
 
+    /// Gets the rows corresponding to the given predicate
     pub fn get_rows_matching_expr(
         &self,
         pred: &Expr
-    ) -> Result<(), String> {//Result<Vec<RowInfo>, String> {
-        let tables: Vec<(Table, String)> = vec![(self.table.clone(), self.table.name.clone())];
-        let column_aliases: ColumnAliases = gen_column_aliases(&tables);
-        let index_refs: IndexRefs = get_index_refs(&column_aliases);
-        let x: PredicateSolver = solve_predicate(pred, &column_aliases, &index_refs)?;
-
-        let y = 0;
-        //self.root_page.get_rows_matching_expr(expr, &self.table_schema)
-        Ok(())
+    ) -> Result<Vec<RowInfo>, String> {
+        self.root_page.get_rows_matching_expr(pred)
     }
 }
 
@@ -315,6 +309,8 @@ mod tests {
         assert_eq!(rows.len(), 0);
     }
 
+    #[test]
+    #[serial]
     fn test_get_rows_matching_expr() {
         let table_dir: String = String::from("./testing");
         let table_name: String = String::from("create_btree_test_table");
@@ -360,12 +356,47 @@ mod tests {
             index_column_names
         ).unwrap();
 
-        
-        btree.get_rows_matching_expr(&Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::Value(sqlparser::ast::Value::Number("5".to_string(), true)))
-        }).unwrap();
+        fn compare_rows_using_id_eq_num(id_value: i32, btree: &BTree, insert_diff: &InsertDiff) {
+            // Get the rows from the table that have match 'id = id_value'
+            let mut rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(id_value.to_string(), true)))
+                }
+            ).unwrap();
+    
+            // Get the rows from the insert_diff that match 'id = id_value'
+            let mut expected_rows: Vec<RowInfo> = insert_diff.rows
+                .clone()
+                .iter()
+                .filter(|rowinfo| rowinfo.row[0] == Value::I32(id_value))
+                .cloned()
+                .collect::<Vec<RowInfo>>();
+
+            // sort each
+            rows.sort();
+            expected_rows.sort();
+
+            // Compare the two
+            assert_eq!(rows, expected_rows);
+        }
+
+        // Get the rows from the table that have match 'id = 5'
+        // There should be none
+        compare_rows_using_id_eq_num(5, &btree, &insert_diff);
+
+        // Get the rows from the table that have match 'id = 19'
+        // There should be one
+        compare_rows_using_id_eq_num(19, &btree, &insert_diff);
+
+        // Get the rows from the table that have match 'id = 55'
+        // There should be one
+        compare_rows_using_id_eq_num(55, &btree, &insert_diff);
+
+        // Get the rows from the table that have match 'id = 49'
+        // There should be two
+        compare_rows_using_id_eq_num(49, &btree, &insert_diff);
         
     }
 }
