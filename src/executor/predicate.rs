@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
 use prost_types::Timestamp;
-use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
+use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator, SelectItem};
 use sqlparser::ast::{OrderByExpr, Value as SqlValue};
 
 use super::query::ColumnAliases;
@@ -413,6 +413,18 @@ pub fn resolve_reference(
             Err(format!("Column name {} does not exist.", column_name))
         }
     }
+}
+
+/// This function takes a list of rows and the column selection, and performs aggregate function application on the rows.
+pub fn resolve_groups(
+    group_rows: Vec<Row>,
+    original_values: Vec<Row>,
+    selections: &Vec<Expr>,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Vec<Row>, String> {
+
+    Ok(vec![])
 }
 
 /// When applying some function to two values, we need to know how to treat the

@@ -371,7 +371,7 @@ pub fn select(
     let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
-    let column_funcs = resolve_columns(
+    let column_exprs = resolve_columns(
         columns,
         &mut column_names,
         &tables,
@@ -380,12 +380,10 @@ pub fn select(
     )?;
 
     // Instead of directly adding rows to a Vector, we add them to a HashMap from the group_by columns to the rows in that group
-    let mut grouped_rows: HashMap<Row, Vec<Row>> = HashMap::new();
+    let mut grouped_rows: HashMap<Row, Vec<(Row, Row)>> = HashMap::new();
 
-    let group_solver = group_by
-        .into_iter()
-        .map(|item| solve_value(&item, &table_aliases, &index_refs))
-        .collect::<Result<Vec<ValueSolver>, String>>()?;
+    let column_solver = solve_row(&column_exprs, &table_aliases, &index_refs)?;
+    let group_solver = solve_row(&group_by, &table_aliases, &index_refs)?;
 
     // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
     for table_rows in table_iterator {
@@ -396,25 +394,38 @@ pub fn select(
         }
         if resolve_predicate(&where_pred, &output_row)? {
             // Iterate through the output row and apply the column functions to each row
-            let selected_cells = resolve_row(&column_funcs, output_row)?;
-            let group_row = resolve_row(&group_solver, selected_cells.clone())?;
+            let selected_cells = resolve_row(&column_solver, &output_row)?;
+            let group_row = resolve_row(&group_solver, &output_row)?;
             // Append the selected_cells row to our result
             grouped_rows
                 .entry(group_row)
                 .or_insert_with(Vec::new)
-                .push(selected_cells);
+                .push((selected_cells, output_row));
         }
     }
 
     // Solve aggregate functions
 
     // Create the selected rows that are now ready to be returned
-    let selected_rows: Vec<Row> = grouped_rows.into_values().into_iter().flatten().collect();
+    let selected_rows: Vec<Row> = vec![];
 
     Ok((column_names, selected_rows))
 }
 
-fn resolve_row(column_funcs: &Vec<ValueSolver>, output_row: Row) -> Result<Row, String> {
+fn solve_row(
+    group_by: &Vec<Expr>,
+    table_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Vec<ValueSolver>, String>
+{
+    let group_solver = group_by
+        .iter()
+        .map(|item| solve_value(item, &table_aliases, &index_refs))
+        .collect::<Result<Vec<ValueSolver>, String>>()?;
+    Ok(group_solver)
+}
+
+fn resolve_row(column_funcs: &Vec<ValueSolver>, output_row: &Row) -> Result<Row, String> {
     let selected_cells: Row = column_funcs
         .iter()
         .map(|f| resolve_value(f, &output_row))
@@ -609,12 +620,12 @@ fn resolve_columns(
     tables: &Tables,
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
-) -> Result<Vec<ValueSolver>, String> {
+) -> Result<Vec<Expr>, String> {
     columns
         .into_iter()
         .map(|item| resolve_selects(item, column_names, &tables, column_aliases, index_refs))
         .flatten_ok()
-        .collect::<Result<Vec<ValueSolver>, String>>()
+        .collect::<Result<Vec<Expr>, String>>()
 }
 
 /// Given a specific SelectItem, this will resolve the column name and create a function to resolve the value
@@ -624,8 +635,8 @@ fn resolve_selects(
     tables: &Tables,
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
-) -> Result<Vec<ValueSolver>, String> {
-    let items = Ok::<Vec<Expr>, String>(match item {
+) -> Result<Vec<Expr>, String> {
+    Ok(match item {
         SelectItem::ExprWithAlias { expr, alias: _ } => {
             column_names.push(expr.to_string());
             vec![expr]
@@ -674,11 +685,7 @@ fn resolve_selects(
                 return Err(format!("Table {} not found.", name));
             }
         }
-    })?;
-    items
-        .into_iter()
-        .map(|item| solve_value(&item, &column_aliases, &index_refs))
-        .collect::<Result<Vec<ValueSolver>, String>>()
+    })
 }
 
 pub fn to_ident(s: String) -> Expr {
