@@ -43,10 +43,7 @@ pub fn resolve_predicate(pred: &Option<PredicateSolver>, row: &Row) -> Result<bo
 
 /// Converts the type into a 'Proper' Value, which is used by the database
 pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
-    match solver(row)? {
-        JointValues::DBValue(v) => Ok(v),
-        JointValues::SQLValue(v) => Value::from_sql_value(&v),
-    }
+    solver(row)?.unpack()
 }
 
 /// Given a ComparisonSolver and two rows, return an Ordering or an error
@@ -463,21 +460,9 @@ pub fn solve_aggregate(
                     sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
                         // Count number of non-null values in the column
                         FunctionArgExpr::Expr(expr) => {
-                            let solver = solve_value(expr, column_aliases, index_refs)?;
-                            let mut count = 0;
-                            for row in rows {
-                                let val = solver(row)?;
-                                if val != JointValues::DBValue(Value::Null) {
-                                    count += 1;
-                                }
-                            }
-                            Ok(Value::I32(count as i32))
+                            aggregate_count(rows, &Some(expr), column_aliases, index_refs)
                         }
-                        // We need to count the number of columns in the row
-                        FunctionArgExpr::QualifiedWildcard(_) => {
-                            Ok(Value::I32(rows.len() as i32))
-                        }
-                        FunctionArgExpr::Wildcard => Ok(Value::I32(rows.len() as i32)),
+                        _ => aggregate_count(rows, &None, column_aliases, index_refs),
                     },
                     _ => Err(format!("Unsupported arguments {}", args[0])),
                 }
@@ -488,7 +473,98 @@ pub fn solve_aggregate(
                 ))
             }
         }
+        "sum" => {
+            if args.len() == 1 {
+                match &args[0] {
+                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
+                        FunctionArgExpr::Expr(expr) => {
+                            aggregate_sum(rows, expr, column_aliases, index_refs)
+                        }
+                        _ => Err(format!("Unsupported arguments {}", args[0])),
+                    },
+                    _ => Err(format!("Unsupported arguments {}", args[0])),
+                }
+            } else {
+                Err(format!(
+                    "Invalid number of arguments for SUM: {}",
+                    args.len()
+                ))
+            }
+        }
+        "avg" => {
+            if args.len() == 1 {
+                match &args[0] {
+                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
+                        FunctionArgExpr::Expr(expr) => {
+                            let sum = JointValues::DBValue(aggregate_sum(
+                                rows,
+                                expr,
+                                column_aliases,
+                                index_refs,
+                            )?);
+                            let count = JointValues::DBValue(aggregate_count(
+                                rows,
+                                &Some(expr),
+                                column_aliases,
+                                index_refs,
+                            )?);
+                            sum.divide(&count)?.unpack()
+                        }
+                        _ => Err(format!("Unsupported arguments {}", args[0])),
+                    },
+                    _ => Err(format!("Unsupported arguments {}", args[0])),
+                }
+            } else {
+                Err(format!(
+                    "Invalid number of arguments for AVG: {}",
+                    args.len()
+                ))
+            }
+        }
         _ => Err(format!("Unsupported aggregate function: {}", name)),
+    }
+}
+
+fn aggregate_count(
+    rows: &Vec<Row>,
+    expr: &Option<&Expr>,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Value, String> {
+    match expr {
+        Some(expr) => {
+            let solver = solve_value(expr, column_aliases, index_refs)?;
+            let mut count = 0;
+            for row in rows {
+                let val = solver(row)?;
+                if val != JointValues::DBValue(Value::Null) {
+                    count += 1;
+                }
+            }
+            Ok(Value::I32(count as i32))
+        }
+        None => Ok(Value::I32(rows.len() as i32)),
+    }
+}
+
+fn aggregate_sum(
+    rows: &Vec<Row>,
+    expr: &Expr,
+    column_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Value, String> {
+    let solver = solve_value(expr, column_aliases, index_refs)?;
+    let mut sum: Option<JointValues> = None;
+    for row in rows {
+        let val = solver(row)?;
+        sum = match sum {
+            Some(sum) => Some(sum.add(&val)?),
+            None => Some(val),
+        };
+    }
+    match sum {
+        Some(v) => v.unpack(),
+        None => Ok(Value::Null),
     }
 }
 
@@ -499,6 +575,13 @@ type ApplyFloat = fn(f64, f64) -> Result<f64, String>;
 type ApplyString = fn(&String, &String) -> Result<String, String>;
 
 impl JointValues {
+    fn unpack(&self) -> Result<Value, String> {
+        match self {
+            JointValues::DBValue(v) => Ok(v.clone()),
+            JointValues::SQLValue(v) => Value::from_sql_value(&v),
+        }
+    }
+
     fn add(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x + y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x + y);

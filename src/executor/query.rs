@@ -373,13 +373,7 @@ pub fn select(
     let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
-    let column_exprs = resolve_columns(
-        columns,
-        &mut column_names,
-        &tables,
-        &table_aliases,
-        &index_refs,
-    )?;
+    let column_exprs = resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
 
     // Instead of directly adding rows to a Vector, we add them to a HashMap from the group_by columns to the rows in that group
     let mut grouped_rows: HashMap<Row, Vec<(Row, Row)>> = HashMap::new();
@@ -409,9 +403,7 @@ pub fn select(
     // Solve aggregate functions and create the selected rows that are now ready to be returned
     let selected_rows: Vec<Row> = grouped_rows
         .into_values()
-        .map(|rows| {
-            resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs)
-        })
+        .map(|rows| resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs))
         .flatten_ok()
         .collect::<Result<Vec<Row>, String>>()?;
 
@@ -624,11 +616,10 @@ fn resolve_columns(
     column_names: &mut Vec<String>,
     tables: &Tables,
     column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
 ) -> Result<Vec<Expr>, String> {
     columns
         .into_iter()
-        .map(|item| resolve_selects(item, column_names, &tables, column_aliases, index_refs))
+        .map(|item| resolve_selects(item, column_names, &tables, column_aliases))
         .flatten_ok()
         .collect::<Result<Vec<Expr>, String>>()
 }
@@ -639,7 +630,6 @@ fn resolve_selects(
     column_names: &mut Vec<String>,
     tables: &Tables,
     column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
 ) -> Result<Vec<Expr>, String> {
     Ok(match item {
         SelectItem::ExprWithAlias { expr, alias: _ } => {
