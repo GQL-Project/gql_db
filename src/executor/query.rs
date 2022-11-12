@@ -108,6 +108,7 @@ fn parse_select(
             rows = rows[offset..(offset + l).min(rows.len())].to_vec();
         }
         if !query.order_by.is_empty() {
+            // TODO: This needs to be fixed
             let tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
             let column_aliases = gen_column_aliases(&tables);
             let index_refs = get_index_refs(&column_aliases);

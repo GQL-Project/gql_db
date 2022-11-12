@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
 use prost_types::Timestamp;
-use sqlparser::ast::{BinaryOperator, Expr, Function, SelectItem, UnaryOperator};
+use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArgExpr, SelectItem, UnaryOperator};
 use sqlparser::ast::{OrderByExpr, Value as SqlValue};
 
 use super::query::ColumnAliases;
@@ -440,7 +440,7 @@ pub fn resolve_aggregates(
         return Ok(vec![]);
     }
 
-    // Take the first row
+    // Take the first row, and solve the functions for it for the entire group
     let mut row = value_rows[0].clone();
     for (i, func) in functions {
         row[i] = solve_aggregate(&original_rows, func, column_aliases, index_refs)?;
@@ -454,7 +454,42 @@ pub fn solve_aggregate(
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
 ) -> Result<Value, String> {
-    Err("Not implemented".to_string())
+    let name = func.name.to_string().to_lowercase();
+    let args = &func.args;
+    match name.as_str() {
+        "count" => {
+            if args.len() == 1 {
+                match &args[0] {
+                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
+                        // Count number of non-null values in the column
+                        FunctionArgExpr::Expr(expr) => {
+                            let solver = solve_value(expr, column_aliases, index_refs)?;
+                            let mut count = 0;
+                            for row in rows {
+                                let val = solver(row)?;
+                                if val != JointValues::DBValue(Value::Null) {
+                                    count += 1;
+                                }
+                            }
+                            Ok(Value::I32(count as i32))
+                        }
+                        // We need to count the number of columns in the row
+                        FunctionArgExpr::QualifiedWildcard(_) => {
+                            Ok(Value::I32(rows.len() as i32))
+                        }
+                        FunctionArgExpr::Wildcard => Ok(Value::I32(rows.len() as i32)),
+                    },
+                    _ => Err(format!("Unsupported arguments {}", args[0])),
+                }
+            } else {
+                Err(format!(
+                    "Invalid number of arguments for COUNT: {}",
+                    args.len()
+                ))
+            }
+        }
+        _ => Err(format!("Unsupported aggregate function: {}", name)),
+    }
 }
 
 /// When applying some function to two values, we need to know how to treat the
