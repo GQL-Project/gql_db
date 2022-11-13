@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use crate::util::dbtype::Value;
 use crate::util::row::Row;
 use prost_types::Timestamp;
-use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArgExpr, SelectItem, UnaryOperator};
+use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
 use sqlparser::ast::{OrderByExpr, Value as SqlValue};
 
+use super::aggregate::contains_aggregate;
 use super::query::ColumnAliases;
 use super::query::IndexRefs;
 
@@ -205,6 +206,11 @@ pub fn solve_value(
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
 ) -> Result<ValueSolver, String> {
+    if contains_aggregate(expr)? {
+        // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
+        // (i.e. when we're evaluating the groups)
+        return Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null))));
+    }
     match expr {
         // This would mean that we're referencing a column name, so we just need to figure out the
         // index of that column name in the row, and then return a function that references this index
@@ -328,11 +334,6 @@ pub fn solve_value(
             }
             _ => Err(format!("Invalid Unary Operator for Value: {}", op)),
         },
-        Expr::Function(_) => {
-            // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
-            // (i.e. when we're evaluating the groups)
-            Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null))))
-        }
         _ => Err(format!("Unexpected Value Clause: {}", expr)),
     }
 }
@@ -412,252 +413,6 @@ pub fn resolve_reference(
     }
 }
 
-/// This function takes a list of rows and the column selection, and performs aggregate function application on the rows.
-pub fn resolve_aggregates(
-    rows: Vec<(Row, Row)>,
-    selections: &Vec<Expr>,
-    column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<Vec<Row>, String> {
-    // Filter down to functions only and their indices
-    let functions = selections
-        .iter()
-        .enumerate()
-        .filter_map(|(i, expr)| match expr {
-            Expr::Function(func) => Some((i, func)),
-            _ => None,
-        })
-        .collect::<Vec<(usize, &Function)>>();
-
-    let (value_rows, original_rows): (Vec<Row>, Vec<Row>) = rows.into_iter().unzip();
-    if functions.is_empty() {
-        return Ok(value_rows);
-    }
-    if value_rows.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Take the first row, and solve the functions for it for the entire group
-    let mut row = value_rows[0].clone();
-    for (i, func) in functions {
-        row[i] = solve_aggregate(&original_rows, func, column_aliases, index_refs)?;
-    }
-    Ok(vec![row])
-}
-
-pub fn solve_aggregate(
-    rows: &Vec<Row>,
-    func: &Function,
-    column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<Value, String> {
-    let name = func.name.to_string().to_lowercase();
-    let args = &func.args;
-    match name.as_str() {
-        "count" => {
-            if args.len() == 1 {
-                match &args[0] {
-                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
-                        // Count number of non-null values in the column
-                        FunctionArgExpr::Expr(expr) => {
-                            aggregate_count(rows, &Some(expr), column_aliases, index_refs)
-                        }
-                        _ => aggregate_count(rows, &None, column_aliases, index_refs),
-                    },
-                    _ => Err(format!("Unsupported arguments {}", args[0])),
-                }
-            } else {
-                Err(format!(
-                    "Invalid number of arguments for COUNT: {}",
-                    args.len()
-                ))
-            }
-        }
-        "sum" => {
-            if args.len() == 1 {
-                match &args[0] {
-                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
-                        FunctionArgExpr::Expr(expr) => {
-                            aggregate_sum(rows, expr, column_aliases, index_refs)
-                        }
-                        _ => Err(format!("Unsupported arguments {}", args[0])),
-                    },
-                    _ => Err(format!("Unsupported arguments {}", args[0])),
-                }
-            } else {
-                Err(format!(
-                    "Invalid number of arguments for SUM: {}",
-                    args.len()
-                ))
-            }
-        }
-        "avg" => {
-            if args.len() == 1 {
-                match &args[0] {
-                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
-                        FunctionArgExpr::Expr(expr) => {
-                            let sum = JointValues::DBValue(aggregate_sum(
-                                rows,
-                                expr,
-                                column_aliases,
-                                index_refs,
-                            )?);
-                            let count = JointValues::DBValue(aggregate_count(
-                                rows,
-                                &Some(expr),
-                                column_aliases,
-                                index_refs,
-                            )?);
-                            sum.divide(&count)?.unpack()
-                        }
-                        _ => Err(format!("Unsupported arguments {}", args[0])),
-                    },
-                    _ => Err(format!("Unsupported arguments {}", args[0])),
-                }
-            } else {
-                Err(format!(
-                    "Invalid number of arguments for AVG: {}",
-                    args.len()
-                ))
-            }
-        }
-        "min" => {
-            if args.len() == 1 {
-                match &args[0] {
-                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
-                        FunctionArgExpr::Expr(expr) => {
-                            aggregate_min(expr, column_aliases, index_refs, rows)
-                        }
-                        _ => Err(format!("Unsupported arguments {}", args[0])),
-                    },
-                    _ => Err(format!("Unsupported arguments {}", args[0])),
-                }
-            } else {
-                Err(format!(
-                    "Invalid number of arguments for MIN: {}",
-                    args.len()
-                ))
-            }
-        }
-        "max" => {
-            if args.len() == 1 {
-                match &args[0] {
-                    sqlparser::ast::FunctionArg::Unnamed(expr) => match expr {
-                        FunctionArgExpr::Expr(expr) => {
-                            aggregate_max(expr, column_aliases, index_refs, rows)
-                        }
-                        _ => Err(format!("Unsupported arguments {}", args[0])),
-                    },
-                    _ => Err(format!("Unsupported arguments {}", args[0])),
-                }
-            } else {
-                Err(format!(
-                    "Invalid number of arguments for MAX: {}",
-                    args.len()
-                ))
-            }
-        }
-        _ => Err(format!("Unsupported aggregate function: {}", name)),
-    }
-}
-
-fn aggregate_count(
-    rows: &Vec<Row>,
-    expr: &Option<&Expr>,
-    column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<Value, String> {
-    match expr {
-        Some(expr) => {
-            let solver = solve_value(expr, column_aliases, index_refs)?;
-            let mut count = 0;
-            for row in rows {
-                let val = solver(row)?;
-                if val != JointValues::DBValue(Value::Null) {
-                    count += 1;
-                }
-            }
-            Ok(Value::I32(count as i32))
-        }
-        None => Ok(Value::I32(rows.len() as i32)),
-    }
-}
-
-fn aggregate_sum(
-    rows: &Vec<Row>,
-    expr: &Expr,
-    column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<Value, String> {
-    let solver = solve_value(expr, column_aliases, index_refs)?;
-    let mut sum: Option<JointValues> = None;
-    for row in rows {
-        let val = solver(row)?;
-        sum = match sum {
-            Some(sum) => Some(sum.add(&val)?),
-            None => Some(val),
-        };
-    }
-    match sum {
-        Some(v) => v.unpack(),
-        None => Ok(Value::Null),
-    }
-}
-
-fn aggregate_min(
-    expr: &Expr,
-    column_aliases: &Vec<(String, crate::util::dbtype::Column, String)>,
-    index_refs: &HashMap<String, usize>,
-    rows: &Vec<Vec<Value>>,
-) -> Result<Value, String> {
-    let solver = solve_value(expr, column_aliases, index_refs)?;
-    let mut min: Option<JointValues> = None;
-    for row in rows {
-        let val = solver(row)?;
-        min = match min {
-            Some(min) => {
-                if min < val {
-                    Some(min)
-                } else {
-                    Some(val)
-                }
-            }
-            None => Some(val),
-        };
-    }
-    match min {
-        Some(v) => v.unpack(),
-        None => Ok(Value::Null),
-    }
-}
-
-fn aggregate_max(
-    expr: &Expr,
-    column_aliases: &Vec<(String, crate::util::dbtype::Column, String)>,
-    index_refs: &HashMap<String, usize>,
-    rows: &Vec<Vec<Value>>,
-) -> Result<Value, String> {
-    let solver = solve_value(expr, column_aliases, index_refs)?;
-    let mut max: Option<JointValues> = None;
-    for row in rows {
-        let val = solver(row)?;
-        max = match max {
-            Some(max) => {
-                if max > val {
-                    Some(max)
-                } else {
-                    Some(val)
-                }
-            }
-            None => Some(val),
-        };
-    }
-    match max {
-        Some(v) => v.unpack(),
-        None => Ok(Value::Null),
-    }
-}
-
 /// When applying some function to two values, we need to know how to treat the
 /// two values.
 type ApplyInt = fn(i64, i64) -> Result<i64, String>;
@@ -665,14 +420,14 @@ type ApplyFloat = fn(f64, f64) -> Result<f64, String>;
 type ApplyString = fn(&String, &String) -> Result<String, String>;
 
 impl JointValues {
-    fn unpack(&self) -> Result<Value, String> {
+    pub fn unpack(&self) -> Result<Value, String> {
         match self {
             JointValues::DBValue(v) => Ok(v.clone()),
             JointValues::SQLValue(v) => Value::from_sql_value(&v),
         }
     }
 
-    fn add(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn add(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x + y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x + y);
         let apply_string = |x: &String, y: &String| Ok::<String, String>(x.to_string() + y);
@@ -680,7 +435,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot add {:?} and {:?}", self, other))
     }
 
-    fn subtract(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn subtract(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x - y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x - y);
         let apply_string = |x: &String, y: &String| Ok::<String, String>(x.replace(y, ""));
@@ -688,7 +443,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot subtract {:?} and {:?}", self, other))
     }
 
-    fn multiply(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn multiply(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x * y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x * y);
         let apply_string = |x: &String, y: &String| {
@@ -705,7 +460,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot multiply {:?} and {:?}", self, other))
     }
 
-    fn divide(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn divide(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x / y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x / y);
         let apply_string = |_: &String, _: &String| {
@@ -715,7 +470,7 @@ impl JointValues {
             .map_err(|_| format!("Cannot divide {:?} and {:?}", self, other))
     }
 
-    fn modulo(&self, other: &Self) -> Result<JointValues, String> {
+    pub fn modulo(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x % y);
         let apply_float =
             |_: f64, _: f64| Err::<f64, String>("Cannot modulus float by float".to_string());

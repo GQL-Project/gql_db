@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use super::aggregate::resolve_aggregates;
 use super::predicate::{
-    resolve_aggregates, resolve_comparison, resolve_predicate, resolve_pure_value,
-    resolve_reference, resolve_value, solve_comparison, solve_predicate, solve_value,
-    ComparisonSolver, PredicateSolver, ValueSolver,
+    resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
+    solve_comparison, solve_predicate, solve_value, ComparisonSolver, PredicateSolver, ValueSolver,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
