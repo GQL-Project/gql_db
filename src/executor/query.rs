@@ -15,7 +15,10 @@ use crate::{
         tableio::{self, *},
     },
     util::row::RowLocation,
-    btree::btree::*,
+    btree::{
+        btree::*,
+        indexes::*,
+    },
 };
 
 use crate::util::dbtype::Value;
@@ -69,12 +72,66 @@ fn parse_select(
             table_names.push((table_name[0].to_string(), "".to_string()));
         }
     }
+    let mut index_id: Option<IndexID> = None;
+    let mut expr: Option<Expr> = None;
     let pred: Option<PredicateSolver> = match &s.selection {
-        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
+        Some(pred) => {
+            let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
+            let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+            let index_refs: IndexRefs = get_index_refs(&column_aliases);
+            index_id = Some(get_index_id_from_expr(pred, &column_aliases, &index_refs)?);
+            expr = Some(pred.clone());
+            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
+        },
         None => None,
     };
+    
+    // Results
+    let mut res_columns: Vec<String> = Vec::new();
+    let mut res_rows: Vec<Row> = Vec::new();
 
-    let (columns, mut rows) = select(columns, pred, &table_names, get_db_instance()?, user)?;
+    // Check if we are using an index
+    let mut using_index: bool = false;
+    if index_id.is_some() && expr.is_some() {
+        let index_id: IndexID = index_id.unwrap();
+        let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
+        // For now, lets only support using indexing on a single table.
+        if tables.len() == 1 {
+            if let Some(btree_pagenum) = tables[0].0.indexes.get(&index_id) {
+                let table: Table = tables[0].0.clone();
+                let index_key_type: IndexKeyType = index_id
+                    .iter()
+                    .map(|x| table.schema[*x as usize].1.clone())
+                    .collect();
+        
+                let btree: BTree = BTree::load_btree_from_root_page(
+                    &tables[0].0,
+                    *btree_pagenum,
+                    index_id,
+                    index_key_type)?;
+        
+                println!("Using btree indexing");
+
+                res_rows = btree.get_rows_matching_expr(&expr.unwrap())?.iter().map(|x| x.row.clone()).collect();
+
+                // Get the column names
+                let table_aliases = gen_column_aliases(&tables);
+                let index_refs = get_index_refs(&table_aliases);
+                resolve_columns(
+                    columns.clone(),
+                    &mut res_columns,
+                    &tables,
+                    &table_aliases,
+                    &index_refs,
+                )?;
+                using_index = true;
+            }
+        }
+    }
+
+    if !using_index {
+        (res_columns, res_rows) = select(columns.clone(), pred, &table_names, get_db_instance()?, user)?;
+    }
 
     if let Some(query) = query {
         let limit: Option<usize> = match &query.limit {
@@ -93,11 +150,11 @@ fn parse_select(
             },
             None => 0,
         };
-        if offset >= rows.len() {
-            return Ok((columns, Vec::new()));
+        if offset >= res_rows.len() {
+            return Ok((res_columns, Vec::new()));
         }
         if let Some(l) = limit {
-            rows = rows[offset..(offset + l).min(rows.len())].to_vec();
+            res_rows = res_rows[offset..(offset + l).min(res_rows.len())].to_vec();
         }
         if !query.order_by.is_empty() {
             let tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
@@ -105,10 +162,10 @@ fn parse_select(
             let index_refs = get_index_refs(&column_aliases);
             let cmp: ComparisonSolver =
                 solve_comparison(&query.order_by, &column_aliases, &index_refs)?;
-            rows.sort_unstable_by(|a, b| resolve_comparison(&cmp, a, b));
+            res_rows.sort_unstable_by(|a, b| resolve_comparison(&cmp, a, b));
         }
     }
-    Ok((columns, rows))
+    Ok((res_columns, res_rows))
 }
 
 pub fn execute_update(
@@ -367,10 +424,8 @@ pub fn select(
     let mut selected_rows: Vec<Row> = Vec::new();
     let mut column_names: Vec<String> = Vec::new();
 
-    let tables = load_aliased_tables(database, user, &table_names)?;
-
-    // For now, lets only support using indexing on a single table.
-
+    let tables: Tables = load_aliased_tables(database, user, &table_names)?;
+    
     // This is where the fun begins... ;)
     let table_aliases = gen_column_aliases(&tables);
 

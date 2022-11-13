@@ -5,7 +5,7 @@ use crate::{
     user::userdata::User,
     util::{dbtype::Value, row::*},
     version_control::diff::*,
-    btree::indexes::*,
+    btree::{indexes::*, btree::BTree},
 };
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
@@ -50,8 +50,8 @@ impl Table {
             return Err(format!("Table file {} does not exist.", table_name));
         }
 
-        let header = read_header(&path)?;
-        let page = Box::new([0u8; PAGE_SIZE]);
+        let header: Header = read_header(&path)?;
+        let page: Box<Page> = Box::new([0u8; PAGE_SIZE]);
         Ok(Table {
             name: table_name.to_string(),
             schema_size: schema_size(&header.schema),

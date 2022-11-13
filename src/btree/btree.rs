@@ -5,10 +5,12 @@ use crate::executor::query::*;
 use crate::fileio::tableio::*;
 use crate::fileio::header::*;
 use crate::util::row::*;
+use super::indexes;
 use super::indexes::*;
 use super::leaf_index_page::*;
 use super::internal_index_page::*;
 
+#[derive(Clone)]
 pub struct BTree {
     index_key_type: IndexKeyType, // The type of the index keys
     root_page: InternalIndexPage, // The highest level internal index page (root of the tree)
@@ -198,6 +200,28 @@ impl BTree {
             index_key_type,
             root_page,
             table,
+        })
+    }
+
+    /// Loads a btree from a given root page
+    pub fn load_btree_from_root_page(
+        table: &Table, 
+        pagenum: u32,
+        index_id: IndexID,
+        index_key_type: IndexKeyType
+    ) -> Result<Self, String> {
+        let internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
+            table.path.clone(),
+            table.name.clone(),
+            table.schema.clone(),
+            pagenum,
+            &index_id,
+            &index_key_type)?;
+        
+        Ok(BTree {
+            index_key_type,
+            root_page: internal_page,
+            table: table.clone(),
         })
     }
 
