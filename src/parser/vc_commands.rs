@@ -96,10 +96,14 @@ pub enum VersionControlSubCommand {
         force: bool,
     },
     /// Returns all of tables in the current branch
-    #[clap(aliases = &["table", "schema", "scehma_table"])]
+    #[clap(aliases = &["table", "schema"])]
     SchemaTable {
         /// Displays the log in json format (default is false)
         #[arg(long, short, default_value = "false")]
         json: bool,
     },
+    /// Updates the user's copy of the database
+    /// (i.e. fetches the latest changes from the remote)
+    #[clap(aliases = &["pull", "fetch"])]
+    PullChanges,
 }

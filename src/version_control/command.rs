@@ -12,13 +12,12 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use tabled::{builder::Builder, Style};
 
-use std::fs;
-
-use super::diff::{reverse_diffs, revert_tables_from_diffs};
+use super::diff::*;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
 };
+use std::fs;
 
 #[derive(Serialize, Deserialize)]
 pub struct Log {
@@ -441,6 +440,49 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 
     let json = serde_json::to_string(&schema_objects).unwrap();
     Ok((log_string, json))
+}
+
+/// This function is used to update the user's copy of the db
+/// to the latest commit if the user is behind
+/// Takes in user object and Returns Success or Error
+pub fn pull(user: &mut User) -> Result<String, String> {
+    
+    // Checking the branch's status to ensure if the user is up-to-date
+    let behind_check = user.get_status();
+    if !behind_check.1 {
+        return Ok(
+            "Your branch is already up-to-date.".to_string(),
+        );
+    }
+    
+    //Getting user branch info
+    let user_branch_name = user.get_current_branch_name();
+    let user_branch_path = get_db_instance()?.get_current_branch_path(user);
+
+    // Get the branch node of the head commit of the user's branch
+    let branches_from_head: &Branches = get_db_instance().unwrap().get_branch_file();
+    let branch_heads_instance = get_db_instance().unwrap().get_branch_heads_file_mut();
+    let branch_node =
+        branch_heads_instance.get_branch_node_from_head(&user_branch_name, &branches_from_head)?;
+
+    //If the head node exists, get changes and apply them
+
+    //current_node = the actual head of the branch
+    //user_curr_node = the node that was the head when the user last updated
+    let current_node = branch_node;
+    let user_curr_node = user
+        .get_user_branch_head()
+        .ok_or("User branch head not found".to_string())?;
+
+    //Getting diffs between the two nodes
+    let diffs_to_pull =
+        get_db_instance()?.get_diffs_between_nodes(Some(&user_curr_node), &current_node)?;
+
+    // Applying diffs to user's branch
+    construct_tables_from_diffs(&user_branch_path, &diffs_to_pull)?;
+    // Updating user's branch head
+    user.set_user_branch_head(&current_node);
+    Ok("Your branch is now up-to-date!".to_string())
 }
 
 #[cfg(test)]

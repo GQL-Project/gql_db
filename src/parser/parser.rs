@@ -165,6 +165,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     command::discard(user)?;
                     Ok("Discarded changes".to_string())
                 }
+                VersionControlSubCommand::PullChanges => {
+                    command::pull(user)?;
+                    Ok("Pull changes".to_string())
+                }
             }
         }
         Err(e) => Err(e.to_string()),

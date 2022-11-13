@@ -15,6 +15,7 @@ pub struct User {
     diffs: Vec<Diff>, // The changes that the user has made that are in an uncommitted state
     commands: Vec<String>, // The commands that the user has executed that are in an uncommitted state
     branch_head: Option<BranchNode>, // The commit id of the head of the branch that the user is currently on
+    // branch_head will not be up-to-date if user is not up-to-date
 }
 
 impl User {
@@ -78,6 +79,16 @@ impl User {
     /// Whether the user is currently on a temporary commit
     pub fn is_on_temp_commit(&self) -> bool {
         self.is_on_temp_commit
+    }
+
+    /// Returns the id of the commit that was head when the user was last updated
+    pub fn get_user_branch_head(&self) -> Option<BranchNode> {
+        self.branch_head.clone()
+    }
+
+    /// Sets the user's branch head to the latest branch_head
+    pub fn set_user_branch_head(&mut self, branch_head: &BranchNode) {
+        self.branch_head = Some(branch_head.clone());
     }
 
     /// Set whether the user is currently on a temporary commit
