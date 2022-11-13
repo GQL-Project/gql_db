@@ -158,40 +158,24 @@ pub fn solve_aggregate(
         Expr::Nested(x) => solve_aggregate(rows, x, column_aliases, index_refs),
         Expr::Value(x) => JointValues::SQLValue(x.clone()).unpack(),
         Expr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::Plus => {
+            BinaryOperator::Plus
+            | BinaryOperator::Minus
+            | BinaryOperator::Multiply
+            | BinaryOperator::Divide
+            | BinaryOperator::Modulo => {
                 let left =
                     JointValues::DBValue(solve_aggregate(rows, left, column_aliases, index_refs)?);
                 let right =
                     JointValues::DBValue(solve_aggregate(rows, right, column_aliases, index_refs)?);
-                left.add(&right)?.unpack()
-            }
-            BinaryOperator::Minus => {
-                let left =
-                    JointValues::DBValue(solve_aggregate(rows, left, column_aliases, index_refs)?);
-                let right =
-                    JointValues::DBValue(solve_aggregate(rows, right, column_aliases, index_refs)?);
-                left.subtract(&right)?.unpack()
-            }
-            BinaryOperator::Multiply => {
-                let left =
-                    JointValues::DBValue(solve_aggregate(rows, left, column_aliases, index_refs)?);
-                let right =
-                    JointValues::DBValue(solve_aggregate(rows, right, column_aliases, index_refs)?);
-                left.multiply(&right)?.unpack()
-            }
-            BinaryOperator::Divide => {
-                let left =
-                    JointValues::DBValue(solve_aggregate(rows, left, column_aliases, index_refs)?);
-                let right =
-                    JointValues::DBValue(solve_aggregate(rows, right, column_aliases, index_refs)?);
-                left.divide(&right)?.unpack()
-            }
-            BinaryOperator::Modulo => {
-                let left =
-                    JointValues::DBValue(solve_aggregate(rows, left, column_aliases, index_refs)?);
-                let right =
-                    JointValues::DBValue(solve_aggregate(rows, right, column_aliases, index_refs)?);
-                left.modulo(&right)?.unpack()
+                match op {
+                    BinaryOperator::Plus => left.add(&right),
+                    BinaryOperator::Minus => left.subtract(&right),
+                    BinaryOperator::Multiply => left.multiply(&right),
+                    BinaryOperator::Divide => left.divide(&right),
+                    BinaryOperator::Modulo => left.modulo(&right),
+                    _ => Err(format!("Invalid binary operator {:?}", op)),
+                }?
+                .unpack()
             }
             BinaryOperator::And
             | BinaryOperator::Or
