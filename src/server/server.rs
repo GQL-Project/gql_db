@@ -274,9 +274,9 @@ mod tests {
         let id = result.unwrap().into_inner().id;
         let result2 = conn
             .connect_db(Request::new(LoginRequest {
-                username: "admin".to_string(),
-                password: "admin".to_string(),
-                create: false,
+                username: "admin1".to_string(),
+                password: "admin1".to_string(),
+                create: true,
             }))
             .await;
         assert!(result2.is_ok());
