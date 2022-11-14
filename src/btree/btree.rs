@@ -19,6 +19,7 @@ pub struct BTree {
 
 impl BTree {
     /// Create an index on one or more columns
+    /// It automatically updates the table to include the index
     pub fn create_btree_index(
         table_dir: &String,
         table_name: &String,
@@ -88,11 +89,13 @@ impl BTree {
         // Fill the leaf pages with the rows
         let mut leaf_page_idx: usize = 0;
         let mut rows_in_leaf_page: usize = 0;
-        for row in table_rows {
+        let table_rows_len: usize = table_rows.len();
+        for (i, row) in table_rows.iter().enumerate() {
             leaf_pages[leaf_page_idx].add_pointer_to_row(&row)?;
             rows_in_leaf_page += 1;
             // Evenly distribute the rows across the leaf pages
-            if rows_in_leaf_page > (num_rows / leaf_pages.len()) {
+            let num_leaf_pages_unfilled: usize = (leaf_pages.len() - leaf_page_idx) - 1;
+            if rows_in_leaf_page > (num_rows / leaf_pages.len()) || i == (table_rows_len - 1) - num_leaf_pages_unfilled {
                 // Advance the leaf page idx up until the last leaf page
                 if leaf_page_idx < (leaf_pages.len() - 1) {
                     leaf_page_idx += 1;
@@ -245,9 +248,11 @@ impl BTree {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use serial_test::serial;
     use sqlparser::ast::{Ident, BinaryOperator};
-    use crate::{version_control::diff::*, util::dbtype::*};
+    use crate::{version_control::diff::*, util::{dbtype::*, bench::create_huge_bench_db}, user::userdata::User, parser::parser::parse, fileio::databaseio::{get_db_instance, delete_db_instance}};
     use super::*;
 
     #[test]
@@ -331,6 +336,9 @@ mod tests {
         let rows: Vec<RowInfo> = btree.get_rows(&index_key).unwrap();
         // There should be no rows with a key of 100
         assert_eq!(rows.len(), 0);
+
+        // Clean up
+        std::fs::remove_dir_all("./testing").unwrap();
     }
 
     #[test]
@@ -421,5 +429,122 @@ mod tests {
         // Get the rows from the table that have match 'id = 49'
         // There should be two
         compare_rows_using_id_eq_num(49, &btree, &insert_diff);
+
+        // Clean up
+        std::fs::remove_dir_all("./testing").unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_btree_speed() {
+        let mut user: User = create_huge_bench_db(100, false);
+
+        // Time the query
+        let start_time_no_index: Instant = Instant::now();
+
+        let (_, results) = execute_query(
+            &parse("select * from huge_table WHERE id1 = 1", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let duration_no_index: Duration = Instant::now() - start_time_no_index;
+
+        // Assert that the results are correct
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], Value::I32(1));
+
+        let table_dir: String = get_db_instance().unwrap().get_current_working_branch_path(&user);
+
+        // Create the index
+        BTree::create_btree_index(
+            &table_dir,
+            &"huge_table".to_string(),
+            None,
+            vec!["id1".to_string()],
+        ).unwrap();
+
+        // Time the query
+        let start_time_with_index: Instant = Instant::now();
+
+        let (_, results) = execute_query(
+            &parse("select * from huge_table WHERE id1 = 1", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let duration_with_index: Duration = Instant::now() - start_time_with_index;
+
+        // Assert that the results are correct
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], Value::I32(1));
+
+        println!("Duration without index: {:?}", duration_no_index);
+        println!("Duration with index: {:?}", duration_with_index);
+
+        // Assert that the query with the index is faster
+        assert!(duration_with_index < duration_no_index);
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_btree_speed_huge() {
+        let mut user: User = create_huge_bench_db(1000, false);
+
+        // Time the query
+        let start_time_no_index: Instant = Instant::now();
+
+        let (_, results) = execute_query(
+            &parse("select * from huge_table WHERE id1 = 1", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let duration_no_index: Duration = Instant::now() - start_time_no_index;
+
+        // Assert that the results are correct
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], Value::I32(1));
+
+        let table_dir: String = get_db_instance().unwrap().get_current_working_branch_path(&user);
+
+        // Create the index
+        BTree::create_btree_index(
+            &table_dir,
+            &"huge_table".to_string(),
+            None,
+            vec!["id1".to_string()],
+        ).unwrap();
+
+        // Time the query
+        let start_time_with_index: Instant = Instant::now();
+
+        let (_, results) = execute_query(
+            &parse("select * from huge_table WHERE id1 = 1", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let duration_with_index: Duration = Instant::now() - start_time_with_index;
+
+        // Assert that the results are correct
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], Value::I32(1));
+
+        println!("Duration without index: {:?}", duration_no_index);
+        println!("Duration with index: {:?}", duration_with_index);
+
+        // Assert that the query with the index is faster
+        assert!(duration_with_index < duration_no_index);
+
+        // Delete the db instance
+        delete_db_instance().unwrap();
     }
 }

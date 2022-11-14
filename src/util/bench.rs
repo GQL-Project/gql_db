@@ -1,10 +1,13 @@
+use rand::Rng;
+use rand::rngs::ThreadRng;
+
 use crate::fileio::header::Schema;
 use crate::fileio::tableio::{delete_table_in_dir, Table};
 use crate::util::{
     dbtype::{Column, Value},
     row::{Row, RowInfo},
 };
-use crate::version_control::diff::Diff;
+use crate::version_control::diff::{Diff, InsertDiff};
 use crate::{
     executor::query::create_table,
     fileio::databaseio::{create_db_instance, get_db_instance, Database},
@@ -465,18 +468,101 @@ fn create_row2(id: i32, location: &str, is_open: bool) -> Row {
     row
 }
 
+/// Creates a huge bench database with <num_rows> rows in a table
+pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
+    let name: String = format!("benchmark_db_huge");
+    fcreate_db_instance(&name);
+    let db: &mut Database = get_db_instance().unwrap();
+    let mut user: User = User::new("test_user".to_string());
+    let schema: Schema = vec![
+        ("id1".to_string(), Column::I32),
+        ("id2".to_string(), Column::I32),
+        ("age".to_string(), Column::I32),
+        ("random".to_string(), Column::String(512)),
+    ];
+
+    let (mut table, diff) =
+        create_table(&"huge_table".to_string(), &schema, db, &mut user).unwrap();
+    user.append_diff(&Diff::TableCreate(diff));
+
+    fn gen_age() -> i32 {
+        let mut rng: ThreadRng = rand::thread_rng();
+        rng.gen_range(1..100)
+    }
+
+    fn gen_random() -> String {
+        let mut rng: ThreadRng = rand::thread_rng();
+        let mut s: String = String::new();
+        for _ in 0..20 {
+            s.push(rng.gen_range('a'..='z'));
+        }
+        s
+    }
+
+    // Create <num_rows> rows
+    let mut rows: Vec<Row> = Vec::with_capacity(num_rows);
+    if random_values {
+        for i in 0..num_rows {
+            rows.push(
+                vec![
+                    Value::I32(i as i32),
+                    Value::I32(i as i32),
+                    Value::I32(gen_age()),
+                    Value::String(gen_random()),
+                ]
+            );
+        }
+    }
+    else {
+        for i in 0..num_rows {
+            rows.push(
+                vec![
+                    Value::I32(i as i32),
+                    Value::I32(i as i32),
+                    Value::I32(gen_age()),
+                    Value::String(gen_random()),
+                ]
+            );
+        }
+    }
+
+    let diff: InsertDiff = table
+        .insert_rows(rows)
+        .unwrap();
+    user.append_diff(&Diff::Insert(diff));
+
+    let _ = get_db_instance()
+        .unwrap()
+        .create_commit_and_node(
+            &"Created huge test datbase".to_string(),
+            &"Create huge_table and Inserted Rows".to_string(),
+            &mut user,
+            None,
+        )
+        .unwrap();
+
+    user
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
 
     use crate::fileio::databaseio::delete_db_instance;
 
-    use super::create_demo_db;
+    use super::*;
 
     #[test]
     #[serial]
     fn test_bench() {
         create_demo_db("test_bench");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_bench_huge() {
+        create_huge_bench_db(10, false);
         delete_db_instance().unwrap();
     }
 }
