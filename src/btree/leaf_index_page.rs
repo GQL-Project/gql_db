@@ -127,6 +127,16 @@ impl LeafIndexPage {
             rownum: rowinfo.rownum,
         };
 
+        self.add_pointer_to_leaf_value(&index_key, index_value)
+    }
+    
+    /// Inserts a new leaf index value into the page with the specified index key.
+    /// Returns whether row was inserted or whether the page is full.
+    pub fn add_pointer_to_leaf_value(
+        &mut self,
+        index_key: &IndexKey,
+        leaf_value: LeafIndexValue
+    ) -> Result<bool, String> {
         // Find the index where we need to insert the key. Locate the first index where the key is greater than the index_key we're inserting.
         let mut idx_to_insert: Option<usize> = None;
         for (i, (key, _)) in self.indexes.clone().iter().enumerate().sorted() {
@@ -135,7 +145,7 @@ impl LeafIndexPage {
 
                 // Insert the key at the index in the page
                 Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, i)?;
-                Self::write_index_value(&index_value, &self.index_key_type, &mut self.page, i)?;
+                Self::write_index_value(&leaf_value, &self.index_key_type, &mut self.page, i)?;
 
                 // Write the rest of the keys and values that come after index i
                 for (j, (key, value)) in self.indexes.clone().iter().enumerate().sorted().skip(i) {
@@ -150,11 +160,11 @@ impl LeafIndexPage {
         if idx_to_insert.is_none() {
             idx_to_insert = Some(self.indexes.len());
             Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, self.indexes.len())?;
-            Self::write_index_value(&index_value, &self.index_key_type, &mut self.page, self.indexes.len())?;
+            Self::write_index_value(&leaf_value, &self.index_key_type, &mut self.page, self.indexes.len())?;
         }
 
         // Insert the key into the vector
-        self.indexes.insert(idx_to_insert.unwrap(), (index_key.clone(), index_value.clone()));
+        self.indexes.insert(idx_to_insert.unwrap(), (index_key.clone(), leaf_value));
 
         Ok(true)
     }
@@ -221,6 +231,13 @@ impl LeafIndexPage {
         None
     }
 
+    /// Gets all the index key values that are in the page
+    pub fn get_all_key_values(
+        &self
+    ) -> Vec<(IndexKey, LeafIndexValue)> {
+        self.indexes.clone()
+    }
+
     /// Returns true if there is room for another index and value in this page.
     pub fn has_room(
         &self
@@ -248,6 +265,24 @@ impl LeafIndexPage {
         let idx_and_value_size: usize = get_index_key_type_size(index_key_type) +
                                         LeafIndexValue::size();
         (PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / idx_and_value_size                       
+    }
+
+    /// Converts rowinfos into leaf index key and value pairs.
+    /// It does NOT sort them.
+    pub fn convert_to_key_vals(
+        rowinfos: Vec<RowInfo>,
+        index_id: &IndexID,
+    ) -> Result<Vec<(IndexKey, LeafIndexValue)>, String> {
+        let mut key_vals: Vec<(IndexKey, LeafIndexValue)> = Vec::new();
+        for rowinfo in rowinfos {
+            let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &index_id);
+            let index_value: LeafIndexValue = LeafIndexValue {
+                pagenum: rowinfo.pagenum,
+                rownum: rowinfo.rownum,
+            };
+            key_vals.push((index_key, index_value));
+        }
+        Ok(key_vals)
     }
 
     /***********************************************************************************************/

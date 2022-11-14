@@ -42,9 +42,41 @@ impl BTree {
         for rowinfo in table.clone() {
             table_rows.push(rowinfo);
         }
-        let num_rows: usize = table_rows.len();
         // Sort all the rows using the index key
         table_rows.sort_by(|a, b| compare_rows_using_index_id(&a.row, &b.row, &index_id));
+
+        // Get the root internal index page
+        let root_page: InternalIndexPage = Self::create_pages_for_btree(
+            &mut table, 
+            LeafIndexPage::convert_to_key_vals(table_rows, &index_id)?,
+            &index_id, 
+            &index_key_type
+        )?;
+
+        // Update the header
+        table.indexes.insert(index_id, root_page.get_pagenum());
+        let new_header: Header = Header {
+            num_pages: table.max_pages,
+            schema: table.schema.clone(),
+            index_top_level_pages: table.indexes.clone(),
+        };
+        write_header(&table.path, &new_header)?;
+
+        Ok(BTree {
+            index_key_type,
+            root_page,
+            table,
+        })
+    }
+
+    /// Creates the pages for a btree index on a table using the given key-value pairs.
+    pub fn create_pages_for_btree(
+        table: &mut Table,
+        key_values: Vec<(IndexKey, LeafIndexValue)>,
+        index_id: &IndexID,
+        index_key_type: &IndexKeyType,
+    ) -> Result<InternalIndexPage, String> {
+        let num_rows: usize = key_values.len();
 
         // The number of pages per level is built from the bottom up.
         // The number of pages at the bottom level (idx 0) is the number of leaf pages.
@@ -79,7 +111,7 @@ impl BTree {
             let leaf_page: LeafIndexPage = LeafIndexPage::new(
                 table.path.clone(), 
                 table.max_pages, 
-                &index_id, 
+                index_id, 
                 &index_key_type
             )?;
             table.max_pages += 1;
@@ -89,13 +121,12 @@ impl BTree {
         // Fill the leaf pages with the rows
         let mut leaf_page_idx: usize = 0;
         let mut rows_in_leaf_page: usize = 0;
-        let table_rows_len: usize = table_rows.len();
-        for (i, row) in table_rows.iter().enumerate() {
-            leaf_pages[leaf_page_idx].add_pointer_to_row(&row)?;
+        for (i, (key, val)) in key_values.iter().enumerate() {
+            leaf_pages[leaf_page_idx].add_pointer_to_leaf_value(key, val.clone())?;
             rows_in_leaf_page += 1;
             // Evenly distribute the rows across the leaf pages
             let num_leaf_pages_unfilled: usize = (leaf_pages.len() - leaf_page_idx) - 1;
-            if rows_in_leaf_page > (num_rows / leaf_pages.len()) || i == (table_rows_len - 1) - num_leaf_pages_unfilled {
+            if rows_in_leaf_page > (num_rows / leaf_pages.len()) || i == (num_rows - 1) - num_leaf_pages_unfilled {
                 // Advance the leaf page idx up until the last leaf page
                 if leaf_page_idx < (leaf_pages.len() - 1) {
                     leaf_page_idx += 1;
@@ -188,22 +219,7 @@ impl BTree {
         }
 
         // Get the root internal index page
-        let root_page: InternalIndexPage = internal_pages[internal_pages.len() - 1][0].clone();
-
-        // Update the header
-        table.indexes.insert(index_id, root_page.get_pagenum());
-        let new_header: Header = Header {
-            num_pages: table.max_pages,
-            schema: table.schema.clone(),
-            index_top_level_pages: table.indexes.clone(),
-        };
-        write_header(&table.path, &new_header)?;
-
-        Ok(BTree {
-            index_key_type,
-            root_page,
-            table,
-        })
+       Ok(internal_pages[internal_pages.len() - 1][0].clone())
     }
 
     /// Loads a btree from a given root page
@@ -242,6 +258,17 @@ impl BTree {
         pred: &Expr
     ) -> Result<Vec<RowInfo>, String> {
         self.root_page.get_rows_matching_expr(pred)
+    }
+
+    /// Inserts rows into the btree
+    pub fn insert_rows(
+        &mut self,
+        rows: &Vec<RowInfo>
+    ) -> Result<(), String> {
+        for row in rows {
+            self.root_page.insert_row(row)?;
+        }
+        Ok(())
     }
 }
 
@@ -432,6 +459,68 @@ mod tests {
 
         // Clean up
         std::fs::remove_dir_all("./testing").unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_insert_rows() {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("create_btree_test_table");
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let table_rows: Vec<Row> = vec![
+            vec![Value::I32(1),  Value::String("a".to_string())],
+            vec![Value::I32(4),  Value::String("b".to_string())],
+            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(10), Value::String("d".to_string())],
+            vec![Value::I32(13), Value::String("e".to_string())],
+            vec![Value::I32(16), Value::String("f".to_string())],
+            vec![Value::I32(19), Value::String("g".to_string())],
+            vec![Value::I32(49), Value::String("h".to_string())],
+            vec![Value::I32(25), Value::String("i".to_string())],
+            vec![Value::I32(28), Value::String("j".to_string())],
+            vec![Value::I32(31), Value::String("k".to_string())],
+            vec![Value::I32(34), Value::String("l".to_string())],
+            vec![Value::I32(37), Value::String("m".to_string())],
+            vec![Value::I32(40), Value::String("n".to_string())],
+            vec![Value::I32(43), Value::String("o".to_string())],
+            vec![Value::I32(68), Value::String("p".to_string())],
+            vec![Value::I32(46), Value::String("q".to_string())],
+            vec![Value::I32(49), Value::String("r".to_string())],
+            vec![Value::I32(52), Value::String("s".to_string())],
+            vec![Value::I32(55), Value::String("t".to_string())],
+        ];
+
+        /*
+        // Create the table
+        let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+
+        // Insert the rows
+        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+
+        // Create the index
+        let btree: BTree = BTree::create_btree_index(
+            &table_dir, 
+            &table_name, 
+            None, 
+            index_column_names
+        ).unwrap();
+
+        // Get the rows from the table that have match 'id = 5'
+        // There should be none
+        let mut rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("5".to_string(), true)))
+            }
+        ).unwrap();
+        */
+
+
     }
 
     #[test]

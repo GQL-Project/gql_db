@@ -45,19 +45,27 @@ impl Table {
             table_extension.unwrap_or(&TABLE_FILE_EXTENSION.to_string())
         );
 
+        Self::new_from_path(path, table_name.clone())
+    }
+
+    /// Construct a new table from an already existing file.
+    pub fn new_from_path(
+        path: String,
+        table_name: String,
+    ) -> Result<Table, String> {
         // If the file doesn't exist, return an error.
         if !std::path::Path::new(&path).exists() {
-            return Err(format!("Table file {} does not exist.", table_name));
+            return Err(format!("Table file {} does not exist.", path));
         }
 
         let header: Header = read_header(&path)?;
         let page: Box<Page> = Box::new([0u8; PAGE_SIZE]);
         Ok(Table {
-            name: table_name.to_string(),
+            name: table_name,
             schema_size: schema_size(&header.schema),
             schema: header.schema,
             page,
-            path,
+            path: path,
             page_num: 0,
             row_num: 0,
             max_pages: header.num_pages,

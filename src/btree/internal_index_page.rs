@@ -2,7 +2,7 @@ use std::{mem::size_of, collections::HashSet};
 
 use sqlparser::ast::{Expr, BinaryOperator, UnaryOperator, Value as SqlValue};
 
-use super::{indexes::*, leaf_index_page::LeafIndexPage};
+use super::{indexes::*, leaf_index_page::LeafIndexPage, btree::BTree};
 use crate::{fileio::{header::*, pageio::*, rowio::*, tableio::Table}, util::{row::*, dbtype::*}, executor::{query::*, predicate::*}};
 
 const INTERNAL_PAGE_HEADER_SIZE: usize = size_of::<u16>() + size_of::<u8>();
@@ -144,13 +144,14 @@ impl InternalIndexPage {
         None
     }
 
+    /// Inserts a row into the leaf page following all the pointers from this page down to the leaves.
     pub fn insert_row(
         &mut self,
         rowinfo: &RowInfo
     ) -> Result<(), String> {
         let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
 
-        let mut last_internal_page: &InternalIndexPage = self;
+        let mut last_internal_page: InternalIndexPage = self.clone();
 
         for _ in 1..self.page_depth {
             // Find the index where the key should be inserted
@@ -161,7 +162,6 @@ impl InternalIndexPage {
                 }
                 index += 1;
             }
-            // TODO: check case where internal page is full
             let next_internal_pagenum: u32 = last_internal_page.index_values[index].pagenum;
             
             let next_internal_index_page: InternalIndexPage = InternalIndexPage::load_from_table(
@@ -172,6 +172,8 @@ impl InternalIndexPage {
                 &self.index_id,
                 &self.index_key_type
             )?;
+
+            last_internal_page = next_internal_index_page;
         }
 
         // Find the index where the key should be inserted
@@ -198,7 +200,7 @@ impl InternalIndexPage {
         // Write the leaf page back to disk
         leaf_page.write_page()?;
 
-        // Check if the leaf page is full
+        // Check if the leaf page is full or empty
         if !leaf_page.has_room() {
             // Rebalance the B-Tree
             self.rebalance();
@@ -397,6 +399,36 @@ impl InternalIndexPage {
                 leaf_pagenums.insert(i_value.pagenum);
             }
         }
+
+        // Get all the leaf index key-value pairs from the leaf pages
+        let mut leaf_index_values: Vec<(IndexKey, LeafIndexValue)> = Vec::new();
+        for leaf_pagenum in leaf_pagenums {
+            let leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+                self.table_path.clone(),
+                leaf_pagenum,
+                &self.index_id,
+                &self.index_key_type
+            )?;
+            leaf_index_values.extend(leaf_page.get_all_key_values());
+        }
+
+        // Sort the leaf index key-value pairs
+        leaf_index_values.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Recreate the new pages
+        let new_root: Self = BTree::create_pages_for_btree(
+            &mut Table::new_from_path(self.table_path.clone(), self.table_name.clone())?,
+            leaf_index_values,
+            &self.index_id,
+            &self.index_key_type
+        )?;
+
+        // Make self the new root
+        self.index_keys = new_root.index_keys;
+        self.page_depth = new_root.page_depth;
+        self.index_values = new_root.index_values;
+        self.pagenum = new_root.pagenum;
+        self.page = new_root.page;
 
         Ok(())
     }
