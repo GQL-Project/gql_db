@@ -153,10 +153,10 @@ mod tests {
         fcreate_db_instance(&"test_new_clients");
 
         let id1 = connection
-            .new_client("admin".to_string(), "admin".to_string(), false)
+            .new_client("admin1".to_string(), "admin1".to_string(), true)
             .unwrap();
         let id2 = connection
-            .new_client("admin".to_string(), "admin".to_string(), false)
+            .new_client("admin2".to_string(), "admin2".to_string(), true)
             .unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 2);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id1);
