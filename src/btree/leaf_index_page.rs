@@ -221,6 +221,21 @@ impl LeafIndexPage {
         None
     }
 
+    /// Returns true if there is room for another index and value in this page.
+    pub fn has_room(
+        &self
+    ) -> bool {
+        let all_keys_size: usize = self.indexes.len() * self.key_size as usize;
+        let all_values_size: usize = self.indexes.len() * LeafIndexValue::size();
+        let combined_size: usize = all_keys_size + all_values_size;
+
+        // If we have room for another key and value, return true
+        if combined_size + self.key_size as usize + LeafIndexValue::size() <= (PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) {
+            return true;
+        }
+        false
+    }
+
     /***********************************************************************************************/
     /*                                       Public Static Methods                                 */
     /***********************************************************************************************/
@@ -238,19 +253,6 @@ impl LeafIndexPage {
     /***********************************************************************************************/
     /*                                       Private Member Methods                                */
     /***********************************************************************************************/
-
-    /// Returns true if there is room for another index and value in this page.
-    fn has_room(&self) -> bool {
-        let all_keys_size: usize = self.indexes.len() * self.key_size as usize;
-        let all_values_size: usize = self.indexes.len() * LeafIndexValue::size();
-        let combined_size: usize = all_keys_size + all_values_size;
-
-        // If we have room for another key and value, return true
-        if combined_size + self.key_size as usize + LeafIndexValue::size() <= (PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) {
-            return true;
-        }
-        false
-    }
 
     /// Gets the row info for the rows that match the given expression.
     fn get_row_locations_matching_expr(

@@ -143,6 +143,69 @@ impl InternalIndexPage {
         }
         None
     }
+
+    pub fn insert_row(
+        &mut self,
+        rowinfo: &RowInfo
+    ) -> Result<(), String> {
+        let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
+
+        let mut last_internal_page: &InternalIndexPage = self;
+
+        for _ in 1..self.page_depth {
+            // Find the index where the key should be inserted
+            let mut index: usize = 0;
+            for key in &last_internal_page.index_keys {
+                if index_key < *key {
+                    break;
+                }
+                index += 1;
+            }
+            // TODO: check case where internal page is full
+            let next_internal_pagenum: u32 = last_internal_page.index_values[index].pagenum;
+            
+            let next_internal_index_page: InternalIndexPage = InternalIndexPage::load_from_table(
+                self.table_path.clone(),
+                self.table_name.clone(),
+                self.table_schema.clone(),
+                next_internal_pagenum,
+                &self.index_id,
+                &self.index_key_type
+            )?;
+        }
+
+        // Find the index where the key should be inserted
+        let mut index: usize = 0;
+        for key in &last_internal_page.index_keys {
+            if index_key < *key {
+                break;
+            }
+            index += 1;
+        }
+        let leaf_pagenum: u32 = last_internal_page.index_values[index].pagenum;
+
+        // Get the leaf page
+        let mut leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+            self.table_path.clone(),
+            leaf_pagenum,
+            &self.index_id,
+            &self.index_key_type
+        )?;
+
+        // Insert the row into the leaf page
+        leaf_page.add_pointer_to_row(rowinfo)?;
+
+        // Write the leaf page back to disk
+        leaf_page.write_page()?;
+
+        // Check if the leaf page is full
+        if !leaf_page.has_room() {
+            // Rebalance the B-Tree
+            self.rebalance();
+        }
+
+        Ok(())
+    }
     
     /// Inserts a page pointer into the page.
     /// Returns whether the value was inserted or whether the page is full.
@@ -281,6 +344,61 @@ impl InternalIndexPage {
             return true;
         }
         false
+    }
+
+    /// Rebalances the tree below this page.
+    /// It balances the tree by keeping all the pages non-empty and non-full.
+    fn rebalance(
+        &mut self
+    ) -> Result<(), String> {
+        // We need to go through each of the leaf pages.
+        // If the leaf page is empty, we need to combine its values with another page.
+        // If the leaf page is full, we need to split the page into two pages.
+        // If the leaf page is neither empty nor full, we do nothing.
+
+        let mut last_internal_pagenums: HashSet<u32> = HashSet::new();
+        last_internal_pagenums.insert(self.pagenum);
+        for _ in 1..self.page_depth {
+            let curr_internal_pagenums: HashSet<u32> = last_internal_pagenums.clone();
+            last_internal_pagenums.clear();
+
+            // Load the internal pages
+            for i_pagenum in curr_internal_pagenums {
+                let i_page: InternalIndexPage = InternalIndexPage::load_from_table(
+                    self.table_path.clone(),
+                    self.table_name.clone(),
+                    self.table_schema.clone(),
+                    i_pagenum,
+                    &self.index_id,
+                    &self.index_key_type
+                )?;
+
+                // Go through each of the internal index values
+                for i_value in i_page.index_values {
+                    last_internal_pagenums.insert(i_value.pagenum);
+                }
+            }
+        }
+        
+        // Get the leaf pages
+        let mut leaf_pagenums: HashSet<u32> = HashSet::new();
+        for i_pagenum in last_internal_pagenums {
+            let i_page: InternalIndexPage = InternalIndexPage::load_from_table(
+                self.table_path.clone(),
+                self.table_name.clone(),
+                self.table_schema.clone(),
+                i_pagenum,
+                &self.index_id,
+                &self.index_key_type
+            )?;
+
+            // Go through each of the internal index values
+            for i_value in i_page.index_values {
+                leaf_pagenums.insert(i_value.pagenum);
+            }
+        }
+
+        Ok(())
     }
 
     /// Gets the row info for the rows that match the given expression.
