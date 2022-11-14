@@ -16,8 +16,18 @@ pub mod db_connection {
 // Shared fields across all instances go here.
 #[tonic::async_trait]
 impl DatabaseConnection for Connection {
-    async fn connect_db(&self, _: Request<()>) -> Result<Response<ConnectResult>, Status> {
-        let id = self.new_client().map_err(|e| Status::internal(e))?;
+    async fn connect_db(
+        &self,
+        request: Request<LoginRequest>,
+    ) -> Result<Response<ConnectResult>, Status> {
+        let request = request.into_inner();
+        let username = request.username;
+        let password = request.password;
+        let create = request.create;
+
+        let id = self
+            .new_client(username, password, create)
+            .map_err(|e| Status::internal(e))?;
         Ok(Response::new(to_connect_result(id)))
     }
 
@@ -146,7 +156,13 @@ mod tests {
     #[serial]
     async fn connect_db() {
         let conn = Connection::default();
-        let result = conn.connect_db(Request::new(())).await;
+        let result = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                create: false,
+            }))
+            .await;
         assert!(result.is_ok());
     }
 
@@ -154,7 +170,13 @@ mod tests {
     #[serial]
     async fn disconnect_db() {
         let conn = Connection::default();
-        let result = conn.connect_db(Request::new(())).await;
+        let result = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                create: false,
+            }))
+            .await;
         result.as_ref().unwrap();
         let result = conn
             .disconnect_db(Request::new(result.unwrap().into_inner()))
@@ -166,7 +188,13 @@ mod tests {
     #[serial]
     async fn run_query() {
         let conn = Connection::default();
-        let result = conn.connect_db(Request::new(())).await;
+        let result = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                create: false,
+            }))
+            .await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
         let result = conn
@@ -185,7 +213,13 @@ mod tests {
     #[serial]
     async fn run_update() {
         let conn = Connection::default();
-        let result = conn.connect_db(Request::new(())).await;
+        let result = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                create: false,
+            }))
+            .await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
         let result = conn
@@ -204,7 +238,13 @@ mod tests {
     #[serial]
     async fn run_update_success() {
         let conn = Connection::default();
-        let result = conn.connect_db(Request::new(())).await;
+        let result = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                create: false,
+            }))
+            .await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
         let result = conn
@@ -223,10 +263,22 @@ mod tests {
     #[serial]
     async fn run_query_success() {
         let conn = Connection::default();
-        let result = conn.connect_db(Request::new(())).await;
+        let result = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                create: false,
+            }))
+            .await;
         assert!(result.is_ok());
         let id = result.unwrap().into_inner().id;
-        let result2 = conn.connect_db(Request::new(())).await;
+        let result2 = conn
+            .connect_db(Request::new(LoginRequest {
+                username: "admin1".to_string(),
+                password: "admin1".to_string(),
+                create: true,
+            }))
+            .await;
         assert!(result2.is_ok());
         let id2 = result2.unwrap().into_inner().id;
         let result = conn
