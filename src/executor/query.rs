@@ -40,7 +40,6 @@ pub fn execute_query(
         match a {
             Statement::Query(q) => match &*q.body {
                 SetExpr::Select(s) => {
-                    println!("Query: {:?}, {:?}", q, s);
                     return parse_select(s, user, Some(q));
                 }
                 _ => print!("Not a select\n"),
@@ -85,6 +84,7 @@ fn parse_select(
         user,
     )?;
 
+    // Limit and Offset
     if let Some(query) = query {
         let limit: Option<usize> = match &query.limit {
             Some(l) => match resolve_pure_value(l)? {
@@ -495,7 +495,6 @@ pub fn delete(
     user.append_diff(&Diff::Remove(diff.clone()));
 
     Ok((format!("{} rows were deleted.", len), diff))
-    //return Err("Error".to_string());
 }
 
 /// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
