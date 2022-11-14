@@ -7,6 +7,7 @@ use prost_types::Timestamp;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
 use sqlparser::ast::{OrderByExpr, Value as SqlValue};
 
+use super::aggregate::contains_aggregate;
 use super::query::ColumnAliases;
 use super::query::IndexRefs;
 
@@ -43,10 +44,7 @@ pub fn resolve_predicate(pred: &Option<PredicateSolver>, row: &Row) -> Result<bo
 
 /// Converts the type into a 'Proper' Value, which is used by the database
 pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
-    match solver(row)? {
-        JointValues::DBValue(v) => Ok(v),
-        JointValues::SQLValue(v) => Value::from_sql_value(&v),
-    }
+    solver(row)?.unpack()
 }
 
 /// Given a ComparisonSolver and two rows, return an Ordering or an error
@@ -208,6 +206,11 @@ pub fn solve_value(
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
 ) -> Result<ValueSolver, String> {
+    if contains_aggregate(expr)? {
+        // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
+        // (i.e. when we're evaluating the groups)
+        return Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null))));
+    }
     match expr {
         // This would mean that we're referencing a column name, so we just need to figure out the
         // index of that column name in the row, and then return a function that references this index
@@ -417,6 +420,13 @@ type ApplyFloat = fn(f64, f64) -> Result<f64, String>;
 type ApplyString = fn(&String, &String) -> Result<String, String>;
 
 impl JointValues {
+    pub fn unpack(&self) -> Result<Value, String> {
+        match self {
+            JointValues::DBValue(v) => Ok(v.clone()),
+            JointValues::SQLValue(v) => Value::from_sql_value(&v),
+        }
+    }
+
     pub fn add(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x + y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x + y);

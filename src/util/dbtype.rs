@@ -359,6 +359,45 @@ impl PartialOrd for Value {
     }
 }
 
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::I32(x) => {
+                state.write_u8(0);
+                x.hash(state);
+            }
+            Value::I64(x) => {
+                state.write_u8(1);
+                x.hash(state);
+            }
+            Value::Float(x) => {
+                state.write_u8(2);
+                x.to_bits().hash(state);
+            }
+            Value::Double(x) => {
+                state.write_u8(3);
+                x.to_bits().hash(state);
+            }
+            Value::Bool(x) => {
+                state.write_u8(4);
+                x.hash(state);
+            }
+            Value::Timestamp(x) => {
+                state.write_u8(5);
+                x.seconds.hash(state);
+                x.nanos.hash(state);
+            }
+            Value::String(x) => {
+                state.write_u8(6);
+                x.hash(state);
+            }
+            Value::Null => {
+                state.write_u8(7);
+            }
+        }
+    }
+}
+
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
@@ -393,7 +432,7 @@ impl Ord for Value {
         }
     }
 }
-
+   
 impl Eq for Value {}
 
 impl PartialEq for Value {
@@ -427,21 +466,6 @@ impl PartialEq for Value {
             (Value::Null, _) => false,
             (_, Value::Null) => false,
             _ => false,
-        }
-    }
-}
-
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Value::I32(x) => x.hash(state),
-            Value::I64(x) => x.hash(state),
-            Value::Float(x) => x.to_bits().hash(state),
-            Value::Double(x) => x.to_bits().hash(state),
-            Value::Bool(x) => x.hash(state),
-            Value::Timestamp(x) => x.seconds.hash(state),
-            Value::String(x) => x.hash(state),
-            Value::Null => "$__NULL__$".hash(state),
         }
     }
 }

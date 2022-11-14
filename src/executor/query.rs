@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::aggregate::resolve_aggregates;
 use super::predicate::{
     resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
     solve_comparison, solve_predicate, solve_value, ComparisonSolver, PredicateSolver, ValueSolver,
@@ -23,7 +24,7 @@ use crate::{
 
 use crate::util::dbtype::Value;
 use itertools::Itertools;
-use sqlparser::ast::{Expr, Ident, Query, Select, SelectItem, SetExpr, Statement};
+use sqlparser::ast::{Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, Statement};
 
 pub type Tables = Vec<(Table, String)>;
 pub type ColumnAliases = Vec<(String, Column, String)>;
@@ -96,7 +97,7 @@ fn parse_select(
         let index_id: IndexID = index_id.unwrap();
         let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
         // For now, lets only support using indexing on a single table.
-        if tables.len() == 1 {
+         {
             if let Some(btree_pagenum) = tables[0].0.indexes.get(&index_id) {
                 let table: Table = tables[0].0.clone();
                 let index_key_type: IndexKeyType = index_id
@@ -116,13 +117,11 @@ fn parse_select(
 
                 // Get the column names
                 let table_aliases = gen_column_aliases(&tables);
-                let index_refs = get_index_refs(&table_aliases);
                 resolve_columns(
                     columns.clone(),
                     &mut res_columns,
                     &tables,
                     &table_aliases,
-                    &index_refs,
                 )?;
                 using_index = true;
             }
@@ -130,9 +129,11 @@ fn parse_select(
     }
 
     if !using_index {
-        (res_columns, res_rows) = select(columns.clone(), pred, &table_names, get_db_instance()?, user)?;
+        (res_columns, res_rows) = select(columns.clone(), pred, s.group_by.clone(),
+        query.map_or(vec![], |q| q.order_by.clone()),&table_names, get_db_instance()?, user)?;
     }
 
+    // Limit and Offset
     if let Some(query) = query {
         let limit: Option<usize> = match &query.limit {
             Some(l) => match resolve_pure_value(l)? {
@@ -155,14 +156,6 @@ fn parse_select(
         }
         if let Some(l) = limit {
             res_rows = res_rows[offset..(offset + l).min(res_rows.len())].to_vec();
-        }
-        if !query.order_by.is_empty() {
-            let tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
-            let column_aliases = gen_column_aliases(&tables);
-            let index_refs = get_index_refs(&column_aliases);
-            let cmp: ComparisonSolver =
-                solve_comparison(&query.order_by, &column_aliases, &index_refs)?;
-            res_rows.sort_unstable_by(|a, b| resolve_comparison(&cmp, a, b));
         }
     }
     Ok((res_columns, res_rows))
@@ -411,7 +404,9 @@ pub fn drop_table(
 /// It returns a tuple containing the schema and the rows of the resulting table.
 pub fn select(
     columns: Vec<SelectItem>,
-    pred: Option<PredicateSolver>,
+    where_pred: Option<PredicateSolver>,
+    group_by: Vec<Expr>,        // Empty if no group by
+    order_by: Vec<OrderByExpr>, // Empty if no order by
     table_names: &Vec<(String, String)>,
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
@@ -420,8 +415,7 @@ pub fn select(
         return Err("Malformed SELECT Command".to_string());
     }
 
-    // The rows and schema that are to be returned from the select statement
-    let mut selected_rows: Vec<Row> = Vec::new();
+    // The schema that would be returned from the select statement
     let mut column_names: Vec<String> = Vec::new();
 
     let tables: Tables = load_aliased_tables(database, user, &table_names)?;
@@ -439,13 +433,14 @@ pub fn select(
     let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
-    let column_funcs = resolve_columns(
-        columns,
-        &mut column_names,
-        &tables,
-        &table_aliases,
-        &index_refs,
-    )?;
+    let column_exprs = resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
+
+    // Instead of directly adding rows to a Vector, we add them to a HashMap from the group_by columns to the rows in that group
+    let mut grouped_rows: HashMap<Row, Vec<(Row, Row)>> = HashMap::new();
+
+    let column_solver = solve_row(&column_exprs, &table_aliases, &index_refs)?;
+    let group_solver = solve_row(&group_by, &table_aliases, &index_refs)?;
+    let order_solver: ComparisonSolver = solve_comparison(&order_by, &table_aliases, &index_refs)?;
 
     // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
     for table_rows in table_iterator {
@@ -454,19 +449,52 @@ pub fn select(
         for row_info in table_rows {
             output_row.extend(row_info.row);
         }
-        if resolve_predicate(&pred, &output_row)? {
+        if resolve_predicate(&where_pred, &output_row)? {
             // Iterate through the output row and apply the column functions to each row
-            let selected_cells: Row = column_funcs
-                .iter()
-                .map(|f| resolve_value(f, &output_row))
-                .collect::<Result<Vec<_>, _>>()?;
-
+            let selected_cells = resolve_row(&column_solver, &output_row)?;
+            let group_row = resolve_row(&group_solver, &output_row)?;
             // Append the selected_cells row to our result
-            selected_rows.push(selected_cells);
+            grouped_rows
+                .entry(group_row)
+                .or_insert_with(Vec::new)
+                .push((selected_cells, output_row));
         }
     }
 
+    // Also, individually sort the rows in each group by the order_by columns
+    // Solve aggregate functions and create the selected rows that are now ready to be returned
+    let selected_rows: Vec<Row> = grouped_rows
+        .into_values()
+        .map(|mut rows| {
+            rows.sort_unstable_by(|(_, row1), (_, row2)| {
+                resolve_comparison(&order_solver, row1, row2)
+            });
+            resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs)
+        })
+        .flatten_ok()
+        .collect::<Result<Vec<Row>, String>>()?;
+
     Ok((column_names, selected_rows))
+}
+
+fn solve_row(
+    group_by: &Vec<Expr>,
+    table_aliases: &ColumnAliases,
+    index_refs: &IndexRefs,
+) -> Result<Vec<ValueSolver>, String> {
+    let group_solver = group_by
+        .iter()
+        .map(|item| solve_value(item, &table_aliases, &index_refs))
+        .collect::<Result<Vec<ValueSolver>, String>>()?;
+    Ok(group_solver)
+}
+
+fn resolve_row(column_funcs: &Vec<ValueSolver>, output_row: &Row) -> Result<Row, String> {
+    let selected_cells: Row = column_funcs
+        .iter()
+        .map(|f| resolve_value(f, &output_row))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(selected_cells)
 }
 
 /// This method implements the SQL update statement
@@ -534,7 +562,6 @@ pub fn delete(
     user.append_diff(&Diff::Remove(diff.clone()));
 
     Ok((format!("{} rows were deleted.", len), diff))
-    //return Err("Error".to_string());
 }
 
 /// This method implements the SQL Insert statement. It takes in the table name and the values to be inserted
@@ -679,13 +706,12 @@ fn resolve_columns(
     column_names: &mut Vec<String>,
     tables: &Tables,
     column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<Vec<ValueSolver>, String> {
+) -> Result<Vec<Expr>, String> {
     columns
         .into_iter()
-        .map(|item| resolve_selects(item, column_names, &tables, column_aliases, index_refs))
+        .map(|item| resolve_selects(item, column_names, &tables, column_aliases))
         .flatten_ok()
-        .collect::<Result<Vec<ValueSolver>, String>>()
+        .collect::<Result<Vec<Expr>, String>>()
 }
 
 /// Given a specific SelectItem, this will resolve the column name and create a function to resolve the value
@@ -694,9 +720,8 @@ fn resolve_selects(
     column_names: &mut Vec<String>,
     tables: &Tables,
     column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<Vec<ValueSolver>, String> {
-    let items = Ok::<Vec<Expr>, String>(match item {
+) -> Result<Vec<Expr>, String> {
+    Ok(match item {
         SelectItem::ExprWithAlias { expr, alias: _ } => {
             column_names.push(expr.to_string());
             vec![expr]
@@ -745,11 +770,7 @@ fn resolve_selects(
                 return Err(format!("Table {} not found.", name));
             }
         }
-    })?;
-    items
-        .into_iter()
-        .map(|item| solve_value(&item, &column_aliases, &index_refs))
-        .collect::<Result<Vec<ValueSolver>, String>>()
+    })
 }
 
 pub fn to_ident(s: String) -> Expr {
@@ -762,7 +783,13 @@ pub fn to_ident(s: String) -> Expr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::util::dbtype::{Column, Value};
+    use crate::{
+        parser::parser::parse,
+        util::{
+            bench::create_demo_db,
+            dbtype::{Column, Value},
+        },
+    };
     use serial_test::serial;
 
     pub fn to_selectitems(names: Vec<String>) -> Vec<SelectItem> {
@@ -814,7 +841,16 @@ pub mod tests {
         .unwrap();
 
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -902,7 +938,16 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         // Check that the schema is correct
         assert_eq!(result.0[0], "id".to_string());
@@ -998,7 +1043,16 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "T.id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -1073,7 +1127,16 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -1167,7 +1230,16 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "T1.id".to_string());
         assert_eq!(result.0[1], "country".to_string());
@@ -1265,7 +1337,16 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let _ = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap_err();
+        let _ = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap_err();
         // Delete the test database
         new_db.delete_database().unwrap();
     }
@@ -1319,7 +1400,15 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user);
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        );
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -1379,7 +1468,15 @@ pub mod tests {
 
         // Run the SELECT query
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user);
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        );
 
         // Verify that SELECT failed
         assert!(result.is_err());
@@ -1448,7 +1545,16 @@ pub mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "T.id".to_string());
         assert_eq!(result.0[1], "T.name".to_string());
@@ -1580,7 +1686,16 @@ pub mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "T.id".to_string());
         assert_eq!(result.0[1], "T.name".to_string());
@@ -1736,7 +1851,16 @@ pub mod tests {
 
         // Run the SELECT query and ensure that the result is correct
         let user: User = User::new("test_user".to_string());
-        let result = select(columns.to_owned(), None, &tables, &new_db, &user).unwrap();
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        )
+        .unwrap();
 
         assert_eq!(result.0[0], "id".to_string());
         assert_eq!(result.0[1], "name".to_string());
@@ -1813,39 +1937,174 @@ pub mod tests {
 
     #[test]
     #[serial]
-    // Test update row
-    fn test_update_row() {
-        let new_db: Database = Database::new("update_test_db".to_string()).unwrap();
-        let schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(50)),
-            (
-                "age".to_string(),
-                Column::Nullable(Box::new(Column::Double)),
-            ),
-        ];
+    // Test update row with one specific row
+    fn test_update_single_row() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse("UPDATE personal_info SET age = 50 WHERE id = 1", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                if let Value::I32(y) = row[0] {
+                    if y == 1 {
+                        assert!(x == 50);
+                    }
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
 
-        // Create a new user on the main branch
-        let mut user: User = User::new("test_user".to_string());
+    #[test]
+    #[serial]
+    // Test update row with multiple rows
+    fn test_update_multiple_row() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse("UPDATE personal_info SET age = 55", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                assert!(x == 55);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
 
-        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
-        let rows = vec![
-            vec![
-                Value::Null, // Nulled
-                Value::String("Iron Man".to_string()),
-                Value::String("Robert Downey".to_string()),
-            ],
-            vec![
-                Value::I64(2),
-                Value::String("Spiderman".to_string()),
-                Value::String("".to_string()),
-            ],
-            vec![Value::I64(3), Value::Null, Value::Float(322.456)],
-            vec![
-                Value::I64(4),
-                Value::String("Captain America".to_string()),
-                Value::Null,
-            ],
-        ];
+    #[test]
+    #[serial]
+    // Test update row with multiple rows using more complex logic
+    fn test_update_row_predicate() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse("UPDATE personal_info SET age = 55 WHERE id < 10", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        for row in results {
+            if let Value::I64(x) = row[3] {
+                if let Value::I32(y) = row[0] {
+                    if y < 10 {
+                        assert!(x == 55);
+                    }
+                }
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+    #[test]
+    #[serial]
+    // Test delete a single row from the database
+    fn test_delete_single_row() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse("DELETE FROM personal_info WHERE id = 27", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        assert!(results.len() == 24);
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x != 27);
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+        delete_db_instance().unwrap();
+    }
+    #[test]
+    #[serial]
+    // Test deleting multiple rows on the database
+    fn test_delete_multiple_rows() {
+        let mut user = create_demo_db("personal_info");
+        let _res = execute_update(
+            &parse("DELETE FROM personal_info WHERE id < 25", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        );
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        assert!(results.len() == 16);
+        delete_db_instance().unwrap();
+    }
+    #[test]
+    #[serial]
+    // Test order by command ASC
+    fn test_order_by_asc() {
+        let mut user = create_demo_db("personal_info");
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info ORDER BY id ASC", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        let mut temp = 0;
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x >= temp);
+                temp = x;
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+    }
+    #[test]
+    #[serial]
+    // Test order by command DESC
+    fn test_order_by_desc() {
+        let mut user = create_demo_db("personal_info");
+        let (_, results) = execute_query(
+            &parse("SELECT * from personal_info ORDER BY id DESC", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        let mut temp = 100;
+        for row in results {
+            if let Value::I32(x) = row[0] {
+                assert!(x <= temp);
+                temp = x;
+            } else {
+                panic!("Invalid value type");
+            }
+        }
     }
 }

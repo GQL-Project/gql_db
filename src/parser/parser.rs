@@ -165,6 +165,14 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     command::discard(user)?;
                     Ok("Discarded changes".to_string())
                 }
+                VersionControlSubCommand::User => {
+                    let user_creds_instance = get_db_instance()?.get_user_creds_file_mut();
+                    Ok(format!(
+                        "\nCurrent user: {} \nAll users: {:?}",
+                        user.get_user_id(),
+                        user_creds_instance.get_all_usernames()
+                    ))
+                }
             }
         }
         Err(e) => Err(e.to_string()),
