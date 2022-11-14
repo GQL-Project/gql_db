@@ -67,6 +67,11 @@ impl Connection {
             }
         }
 
+        for client in self.clients.lock().unwrap().iter() {
+            if client.get_user_id() == username {
+                return Err(format!("User {} already logged in", username));
+            }
+        }
         let user: User = User::new(username.clone());
         self.clients.lock().unwrap().push(user.clone());
         Ok(username)

@@ -7,7 +7,7 @@ use crate::{
     },
     util::{
         dbtype::{Column, Value},
-        row::{Row, RowLocation},
+        row::Row,
     },
 };
 
@@ -20,28 +20,6 @@ pub struct UserCred {
 pub struct UserCREDs {
     filepath: String,
     user_creds_table: Table,
-}
-
-impl UserCred {
-    pub fn new(username: String, password: String) -> UserCred {
-        UserCred { username, password }
-    }
-
-    pub fn get_username(&self) -> String {
-        self.username.clone()
-    }
-
-    pub fn get_password(&self) -> String {
-        self.password.clone()
-    }
-
-    pub fn set_password(&mut self, password: String) {
-        self.password = password;
-    }
-
-    pub fn set_username(&mut self, username: String) {
-        self.username = username;
-    }
 }
 
 impl UserCREDs {
@@ -92,11 +70,6 @@ impl UserCREDs {
                 Some(&databaseio::USER_CREDS_FILE_EXTENSION.to_string()),
             )?,
         })
-    }
-
-    // Immutable getter access to filepath.
-    pub fn filepath(&self) -> &str {
-        &self.filepath
     }
 
     /// Takes in a user id and returns the corresponding user cred.
@@ -193,35 +166,5 @@ impl UserCREDs {
         ];
         self.user_creds_table.insert_rows(rows)?;
         Ok(())
-    }
-
-    /// Deletes a user from the user creds file
-    /// Returns an error if the username is not present in the user creds file
-    pub fn delete_user(&mut self, username: &String) -> Result<(), String> {
-        // Iterate through all the rows in the user_creds file and check to see if there is a row that has
-        // the same username as the user we are trying to delete
-        for row_info in self.user_creds_table.by_ref().into_iter().clone() {
-            let row: Row = row_info.clone().row;
-
-            let row_username: String;
-
-            // Get the username name
-            match row.get(0) {
-                Some(Value::String(username_f)) => row_username = username_f.to_string(),
-                _ => return Err("Error: Branch name not found".to_string()),
-            }
-
-            // If the username matches, delete the row
-            if row_username == *username {
-                self.user_creds_table.remove_rows(vec![RowLocation {
-                    pagenum: row_info.pagenum,
-                    rownum: row_info.rownum,
-                }])?;
-                return Ok(());
-            }
-        }
-
-        // The user was not present in the user file
-        Err("Error: Username was not present".to_string())
     }
 }
