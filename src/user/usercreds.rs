@@ -1,21 +1,20 @@
 use crate::{
     fileio::{
         databaseio,
-        header::{schema_size, write_header, Header, Schema},
+        header::{write_header, Header},
         pageio::*,
         tableio::Table,
     },
     util::{
         dbtype::{Column, Value},
-        row::{Row, RowInfo},
+        row::{Row, RowLocation},
     },
 };
 
 #[derive(Debug, Clone)]
 pub struct UserCred {
-    pub user_id: String,
+    pub username: String,
     pub password: String,
-    pub is_admin: bool,
 }
 
 pub struct UserCREDs {
@@ -24,43 +23,34 @@ pub struct UserCREDs {
 }
 
 impl UserCred {
-    pub fn new(user_id: String, password: String, is_admin: bool) -> UserCred {
-        UserCred {
-            user_id,
-            password,
-            is_admin,
-        }
+    pub fn new(username: String, password: String) -> UserCred {
+        UserCred { username, password }
     }
 
-    pub fn get_user_id(&self) -> String {
-        self.user_id.clone()
+    pub fn get_username(&self) -> String {
+        self.username.clone()
     }
 
     pub fn get_password(&self) -> String {
         self.password.clone()
     }
 
-    pub fn is_admin(&self) -> bool {
-        self.is_admin
-    }
-
-    pub fn set_is_admin(&mut self, is_admin: bool) {
-        self.is_admin = is_admin;
-    }
-
     pub fn set_password(&mut self, password: String) {
         self.password = password;
     }
 
-    pub fn set_user_id(&mut self, user_id: String) {
-        self.user_id = user_id;
+    pub fn set_username(&mut self, username: String) {
+        self.username = username;
     }
 }
 
 impl UserCREDs {
+    /// Creates a new UserCREDs object to store the user creds for the database.
+    /// If create_file is true, the file and table will be created with a header.
+    /// If create_file is false, the file and table will be opened.
     pub fn new(dir_path: &String, create_file: bool) -> Result<UserCREDs, String> {
         // Get filepath info
-        let branch_filename: String = format!(
+        let usercreds_filename: String = format!(
             "{}{}",
             databaseio::USER_CREDS_FILE_NAME.to_string(),
             databaseio::USER_CREDS_FILE_EXTENSION.to_string()
@@ -69,20 +59,19 @@ impl UserCREDs {
             "{}{}{}",
             dir_path,
             std::path::MAIN_SEPARATOR,
-            branch_filename
+            usercreds_filename
         );
         // If the directory path is not given, use the current directory
         if dir_path.len() == 0 {
-            filepath = branch_filename;
+            filepath = usercreds_filename;
         }
 
         if create_file {
             std::fs::File::create(filepath.clone()).map_err(|e| e.to_string())?;
 
             let schema = vec![
-                ("user_id".to_string(), Column::String(32)),
+                ("username".to_string(), Column::String(32)),
                 ("password".to_string(), Column::String(32)),
-                ("is_admin".to_string(), Column::Bool),
             ];
             let header = Header {
                 num_pages: 2,
@@ -103,5 +92,136 @@ impl UserCREDs {
                 Some(&databaseio::USER_CREDS_FILE_EXTENSION.to_string()),
             )?,
         })
+    }
+
+    // Immutable getter access to filepath.
+    pub fn filepath(&self) -> &str {
+        &self.filepath
+    }
+
+    /// Takes in a user id and returns the corresponding user cred.
+    /// If the user id does not exist, returns an error.
+    pub fn get_user(&mut self, username: &String) -> Result<UserCred, String> {
+        let user_creds: Vec<UserCred> = self.get_all_user_creds()?;
+
+        for user_cred in user_creds {
+            if user_cred.username == *username {
+                return Ok(user_cred);
+            }
+        }
+
+        return Err(format!("User '{}' not present in user CREDs file", username).to_string());
+    }
+
+    /// Returns a list of all users on the database
+    pub fn get_all_usernames(&mut self) -> Result<Vec<String>, String> {
+        let mut usernames: Vec<String> = Vec::new();
+
+        for row_info in self.user_creds_table.by_ref().into_iter().clone() {
+            let row: Row = row_info.row;
+
+            // Get the username
+            match row.get(0) {
+                Some(Value::String(username)) => usernames.push(username.to_string()),
+                _ => return Err("Error: User ID not found".to_string()),
+            }
+        }
+        Ok(usernames)
+    }
+
+    /// Returns if the user exists in the database
+    pub fn does_user_exist(&mut self, username: String) -> Result<bool, String> {
+        let usernames = self.get_all_usernames()?;
+        for id in usernames {
+            if id == username {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Read the user creds file and return a vector of UserCred objects
+    pub fn get_all_user_creds(&mut self) -> Result<Vec<UserCred>, String> {
+        let mut user_creds: Vec<UserCred> = Vec::new();
+
+        for row_info in self.user_creds_table.by_ref().into_iter().clone() {
+            let row: Row = row_info.row;
+
+            let username: String;
+            let password: String;
+
+            // Get the username
+            match row.get(0) {
+                Some(Value::String(username_f)) => username = username_f.to_string(),
+                _ => return Err("Error: User id not found".to_string()),
+            }
+
+            // Get the password
+            match row.get(1) {
+                Some(Value::String(password_f)) => password = password_f.to_string(),
+                _ => return Err("Error: Password not found".to_string()),
+            }
+
+            let usercred: UserCred = UserCred {
+                username: username,
+                password: password,
+            };
+
+            user_creds.push(usercred);
+        }
+
+        Ok(user_creds)
+    }
+
+    /// Writes a new user to the user creds file.
+    /// Returns an error if a user with the given username already exists.
+    pub fn create_user(&mut self, user_cred: &UserCred) -> Result<(), String> {
+        // Make sure that a user doesn't already have the same username
+        let user_creds: Vec<UserCred> = self.get_all_user_creds()?;
+        for user in user_creds {
+            if user.username == user_cred.username {
+                return Err("Error: Username already exists".to_string());
+            }
+        }
+
+        let rows: Vec<Vec<Value>> = vec![
+            // Just make one new row
+            vec![
+                Value::String(user_cred.username.clone()),
+                Value::String(user_cred.password.clone()),
+            ],
+        ];
+        self.user_creds_table.insert_rows(rows)?;
+        Ok(())
+    }
+
+    /// Deletes a user from the user creds file
+    /// Returns an error if the username is not present in the user creds file
+    pub fn delete_user(&mut self, username: &String) -> Result<(), String> {
+        // Iterate through all the rows in the user_creds file and check to see if there is a row that has
+        // the same username as the user we are trying to delete
+        for row_info in self.user_creds_table.by_ref().into_iter().clone() {
+            let row: Row = row_info.clone().row;
+
+            let row_username: String;
+
+            // Get the username name
+            match row.get(0) {
+                Some(Value::String(username_f)) => row_username = username_f.to_string(),
+                _ => return Err("Error: Branch name not found".to_string()),
+            }
+
+            // If the username matches, delete the row
+            if row_username == *username {
+                self.user_creds_table.remove_rows(vec![RowLocation {
+                    pagenum: row_info.pagenum,
+                    rownum: row_info.rownum,
+                }])?;
+                return Ok(());
+            }
+        }
+
+        // The user was not present in the user file
+        Err("Error: Username was not present".to_string())
     }
 }

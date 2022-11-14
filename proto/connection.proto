@@ -17,6 +17,7 @@ package db_connection;
  message LoginRequest {
      string username = 13;
      string password = 14;
+     bool create = 15;
  }
  
 // Arguments used for queries and any updates.

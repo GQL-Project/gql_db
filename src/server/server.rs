@@ -23,10 +23,11 @@ impl DatabaseConnection for Connection {
         let request = request.into_inner();
         let username = request.username;
         let password = request.password;
-        if username != "admin" && password != "admin" {
-            return Err(Status::internal("Invalid username or password"));
-        }
-        let id = self.new_client().map_err(|e| Status::internal(e))?;
+        let create = request.create;
+
+        let id = self
+            .new_client(username, password, create)
+            .map_err(|e| Status::internal(e))?;
         Ok(Response::new(to_connect_result(id)))
     }
 
@@ -159,6 +160,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         assert!(result.is_ok());
@@ -172,6 +174,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         result.as_ref().unwrap();
@@ -189,6 +192,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         assert!(result.is_ok());
@@ -213,6 +217,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         assert!(result.is_ok());
@@ -237,6 +242,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         assert!(result.is_ok());
@@ -261,6 +267,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         assert!(result.is_ok());
@@ -269,6 +276,7 @@ mod tests {
             .connect_db(Request::new(LoginRequest {
                 username: "admin".to_string(),
                 password: "admin".to_string(),
+                create: false,
             }))
             .await;
         assert!(result2.is_ok());

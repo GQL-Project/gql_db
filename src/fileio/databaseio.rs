@@ -413,6 +413,21 @@ impl Database {
         &mut self.branches
     }
 
+    /// Returns the database's users
+    pub fn get_user_creds_file(&self) -> &UserCREDs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &self.user_creds
+    }
+
+    pub fn get_user_creds_file_mut(&mut self) -> &mut UserCREDs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &mut self.user_creds
+    }
+
     /// returns the database's commit file
     pub fn get_commit_file_mut(&mut self) -> &mut CommitFile {
         // Make sure to lock the database before doing anything
@@ -493,6 +508,14 @@ impl Database {
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         Ok(self.branch_heads.get_all_branch_names()?)
+    }
+
+    // Returns a list of all users on the database
+    pub fn get_all_usernames(&mut self) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        Ok(self.user_creds.get_all_usernames()?)
     }
 
     /// Deletes the database at the given path.
@@ -1347,6 +1370,16 @@ impl Database {
         let db_dir_path = self.get_database_path();
         // Return the branches file path appended to the database path
         Database::append_branch_heads_file_path(db_dir_path.clone())
+    }
+
+    /// Return the path to the database's user CREDs file: <path>/<db_name>/user_creds.gql
+    pub fn get_user_creds_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the user creds file path appended to the database path
+        Database::append_user_creds_file_path(db_dir_path.clone())
     }
 
     /// Private static method that appends the deltas file path to the database_path

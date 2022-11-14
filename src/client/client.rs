@@ -13,6 +13,7 @@ const DEFAULT_IP: &str = "[::1]";
 const DEFAULT_PORT: &str = "50051";
 const DEFAULT_USERNAME: &str = "admin";
 const DEFAULT_PASSWORD: &str = "admin";
+const DEFAULT_REGISTER: bool = false;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query for IP address and port of server
@@ -137,6 +138,29 @@ async fn query_for_ip_port(
             port = DEFAULT_PORT.to_string();
         }
 
+        /* Query for register */
+        print!("{}", "Register? (y/n)> ");
+        let create;
+        loop {
+            io::stdout().flush()?;
+            let mut register: String = String::new();
+            // store user input
+            io::stdin().read_line(&mut register)?;
+            register = register.replace("\n", "").trim().to_string();
+            if register.is_empty() {
+                create = DEFAULT_REGISTER;
+                break;
+            } else if register.to_lowercase() == "y" {
+                create = true;
+                break;
+            } else if register.to_lowercase() == "n" {
+                create = false;
+                break;
+            } else {
+                println!("Invalid input. Please enter 'y' or 'n'.");
+            }
+        }
+
         /* Query for username */
         print!("{}", "Enter Username> ");
         io::stdout().flush()?;
@@ -162,6 +186,7 @@ async fn query_for_ip_port(
         request = LoginRequest {
             username: username,
             password: password,
+            create: create,
         };
 
         // Attempt to connect to server
