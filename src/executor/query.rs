@@ -16,6 +16,10 @@ use crate::{
         tableio::{self, *},
     },
     util::row::RowLocation,
+    btree::{
+        btree::*,
+        indexes::*,
+    },
 };
 
 use crate::util::dbtype::Value;
@@ -69,20 +73,65 @@ fn parse_select(
             table_names.push((table_name[0].to_string(), "".to_string()));
         }
     }
+    let mut index_id: Option<IndexID> = None;
+    let mut expr: Option<Expr> = None;
     let pred: Option<PredicateSolver> = match &s.selection {
-        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
+        Some(pred) => {
+            let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
+            let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+            let index_refs: IndexRefs = get_index_refs(&column_aliases);
+            index_id = Some(get_index_id_from_expr(pred, &column_aliases, &index_refs)?);
+            expr = Some(pred.clone());
+            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
+        },
         None => None,
     };
+    
+    // Results
+    let mut res_columns: Vec<String> = Vec::new();
+    let mut res_rows: Vec<Row> = Vec::new();
 
-    let (columns, mut rows) = select(
-        columns,
-        pred,
-        s.group_by.clone(),
-        query.map_or(vec![], |q| q.order_by.clone()),
-        &table_names,
-        get_db_instance()?,
-        user,
-    )?;
+    // Check if we are using an index
+    let mut using_index: bool = false;
+    if index_id.is_some() && expr.is_some() {
+        let index_id: IndexID = index_id.unwrap();
+        let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
+        // For now, lets only support using indexing on a single table.
+         {
+            if let Some(btree_pagenum) = tables[0].0.indexes.get(&index_id) {
+                let table: Table = tables[0].0.clone();
+                let index_key_type: IndexKeyType = index_id
+                    .iter()
+                    .map(|x| table.schema[*x as usize].1.clone())
+                    .collect();
+        
+                let btree: BTree = BTree::load_btree_from_root_page(
+                    &tables[0].0,
+                    *btree_pagenum,
+                    index_id,
+                    index_key_type)?;
+        
+                println!("Using btree indexing");
+
+                res_rows = btree.get_rows_matching_expr(&expr.unwrap())?.iter().map(|x| x.row.clone()).collect();
+
+                // Get the column names
+                let table_aliases = gen_column_aliases(&tables);
+                resolve_columns(
+                    columns.clone(),
+                    &mut res_columns,
+                    &tables,
+                    &table_aliases,
+                )?;
+                using_index = true;
+            }
+        }
+    }
+
+    if !using_index {
+        (res_columns, res_rows) = select(columns.clone(), pred, s.group_by.clone(),
+        query.map_or(vec![], |q| q.order_by.clone()),&table_names, get_db_instance()?, user)?;
+    }
 
     // Limit and Offset
     if let Some(query) = query {
@@ -102,14 +151,14 @@ fn parse_select(
             },
             None => 0,
         };
-        if offset >= rows.len() {
-            return Ok((columns, Vec::new()));
+        if offset >= res_rows.len() {
+            return Ok((res_columns, Vec::new()));
         }
         if let Some(l) = limit {
-            rows = rows[offset..(offset + l).min(rows.len())].to_vec();
+            res_rows = res_rows[offset..(offset + l).min(res_rows.len())].to_vec();
         }
     }
-    Ok((columns, rows))
+    Ok((res_columns, res_rows))
 }
 
 pub fn execute_update(
@@ -124,6 +173,24 @@ pub fn execute_update(
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
+            Statement::CreateIndex { 
+                name,
+                table_name,
+                columns,
+                unique,
+                if_not_exists
+            } => {
+                let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
+                let table_name: String = table_name.to_string();
+
+                let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
+
+                println!("Creating index {} on table {} with columns {:?}", name, table_name, column_names);
+
+                BTree::create_btree_index(&table_dir, &table_name, None, column_names)?;
+
+                results.push("Successfully created index".to_string());
+            }
             Statement::Update {
                 table,
                 assignments,
@@ -351,8 +418,8 @@ pub fn select(
     // The schema that would be returned from the select statement
     let mut column_names: Vec<String> = Vec::new();
 
-    let tables = load_aliased_tables(database, user, &table_names)?;
-
+    let tables: Tables = load_aliased_tables(database, user, &table_names)?;
+    
     // This is where the fun begins... ;)
     let table_aliases = gen_column_aliases(&tables);
 
@@ -580,7 +647,7 @@ fn load_aliased_tables(
 // alongside their column types and new column name when output.
 // It will be a vector of tuples where each tuple is of the form:
 // (<table_alias>.<column_name>, <column_type>, <output_column_name>)
-fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
+pub fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
     tables
         .iter()
         .map(|(table, alias): &(Table, String)| {
@@ -600,8 +667,32 @@ fn gen_column_aliases(tables: &Tables) -> ColumnAliases {
         .collect::<ColumnAliases>()
 }
 
+// Get the names of all the columns in the tables along with their aliases in
+// the format <alias>.<column_name> and store them in a vector of tuples
+// alongside their column types and new column name when output.
+// It will be a vector of tuples where each tuple is of the form:
+// (<table_alias>.<column_name>, <column_type>, <output_column_name>)
+pub fn gen_column_aliases_from_schema(tables: &Vec<(Schema, String)>) -> ColumnAliases {
+    tables
+        .iter()
+        .map(|(schema, alias): &(Schema, String)| {
+            schema
+                .iter()
+                .map(|(name, coltype)| {
+                    (
+                        format!("{}.{}", alias, name.clone()),
+                        coltype.clone(),
+                        name.clone(),
+                    )
+                })
+                .collect::<ColumnAliases>()
+        })
+        .flatten()
+        .collect::<ColumnAliases>()
+}
+
 /// Hashmap from column names to index in the row
-fn get_index_refs(column_aliases: &ColumnAliases) -> IndexRefs {
+pub fn get_index_refs(column_aliases: &ColumnAliases) -> IndexRefs {
     column_aliases
         .iter()
         .enumerate()

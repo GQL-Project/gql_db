@@ -125,12 +125,13 @@ impl CommitFile {
             let header = Header {
                 num_pages: 2,
                 schema,
+                index_top_level_pages: HashMap::new(),
             };
             write_header(&header_path, &header)?;
 
             // Write a blank page to the table
             let page = [0u8; PAGE_SIZE];
-            write_page(1, &header_path, &page)?;
+            write_page(1, &header_path, &page, PageType::Data)?;
 
             // Delta File
             std::fs::File::create(delta_path.clone()).map_err(|e| e.to_string())?;
@@ -221,7 +222,7 @@ impl CommitFile {
 
     pub fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
         // Read the commit information first
-        let page = &mut read_page(pagenum, &self.delta_path)?;
+        let page = &mut read_page(pagenum, &self.delta_path)?.0;
         let pagenum = &mut pagenum;
         let offset = &mut 0;
         let byte: u8 = self.sread_type(page, pagenum, offset)?;
@@ -379,7 +380,7 @@ impl CommitFile {
                 }
             }
         }
-        write_page(*pagenum, &self.delta_path, page)?;
+        write_page(*pagenum, &self.delta_path, page, PageType::Data)?;
         Ok(())
     }
 

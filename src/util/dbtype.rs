@@ -4,11 +4,11 @@ use prost_types::Timestamp;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 use std::cmp::Ordering;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 
 use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     String(String),
     I32(i32),
@@ -20,7 +20,7 @@ pub enum Value {
     Null,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Column {
     // Strings have a given length value (in bytes).
     String(u16),
@@ -359,7 +359,7 @@ impl PartialOrd for Value {
     }
 }
 
-impl std::hash::Hash for Value {
+impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
             Value::I32(x) => {
@@ -398,8 +398,76 @@ impl std::hash::Hash for Value {
     }
 }
 
-impl Eq for Value {
-    
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Value::I32(x), Value::I32(y)) => x.cmp(y),
+            (Value::I64(x), Value::I64(y)) => x.cmp(y),
+            (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(Ordering::Less),
+            (Value::Double(x), Value::Double(y)) => x.partial_cmp(y).unwrap_or(Ordering::Less),
+            (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+            (Value::Timestamp(x), Value::Timestamp(y)) => x.seconds.cmp(&y.seconds).then(x.nanos.cmp(&y.nanos)),
+            (Value::String(x), Value::String(y)) => x.cmp(y),
+            // Type coercions
+            (Value::I64(x), Value::I32(y)) => x.cmp(&(*y as i64)),
+            (Value::I64(x), Value::Double(y)) => (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less),
+            (Value::I64(x), Value::Float(y)) => (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less),
+
+            (Value::I32(x), Value::I64(y)) => (*x as i64).cmp(y),
+            (Value::I32(x), Value::Float(y)) => (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less),
+            (Value::I32(x), Value::Double(y)) => (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less),
+
+            (Value::Float(x), Value::I32(y)) => x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less),
+            (Value::Float(x), Value::I64(y)) => x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less),
+            (Value::Float(x), Value::Double(y)) => x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less),
+
+            (Value::Double(x), Value::I32(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less),
+            (Value::Double(x), Value::I64(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less),
+            (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less),
+            // Null cases
+            (Value::Null, Value::Null) => Ordering::Equal,
+            (Value::Null, _) => Ordering::Less,
+            (_, Value::Null) => Ordering::Greater,
+            _ => Ordering::Less,
+        }
+    }
+}
+   
+impl Eq for Value {}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::I32(x), Value::I32(y)) => x.eq(y),
+            (Value::I64(x), Value::I64(y)) => x.eq(y),
+            (Value::Float(x), Value::Float(y)) => x.eq(y),
+            (Value::Double(x), Value::Double(y)) => x.eq(y),
+            (Value::Bool(x), Value::Bool(y)) => x.eq(y),
+            (Value::Timestamp(x), Value::Timestamp(y)) => x.eq(y),
+            (Value::String(x), Value::String(y)) => x.eq(y),
+            // Type coercions
+            (Value::I64(x), Value::I32(y)) => x.eq(&(*y as i64)),
+            (Value::I64(x), Value::Double(y)) => (*x as f64).eq(y),
+            (Value::I64(x), Value::Float(y)) => (*x as f32).eq(y),
+
+            (Value::I32(x), Value::I64(y)) => (*x as i64).eq(y),
+            (Value::I32(x), Value::Float(y)) => (*x as f32).eq(y),
+            (Value::I32(x), Value::Double(y)) => (*x as f64).eq(y),
+
+            (Value::Float(x), Value::I32(y)) => x.eq(&(*y as f32)),
+            (Value::Float(x), Value::I64(y)) => x.eq(&(*y as f32)),
+            (Value::Float(x), Value::Double(y)) => x.eq(&(*y as f32)),
+
+            (Value::Double(x), Value::I32(y)) => x.eq(&(*y as f64)),
+            (Value::Double(x), Value::I64(y)) => x.eq(&(*y as f64)),
+            (Value::Double(x), Value::Float(y)) => x.eq(&(*y as f64)),
+            // Null cases
+            (Value::Null, Value::Null) => true,
+            (Value::Null, _) => false,
+            (_, Value::Null) => false,
+            _ => false,
+        }
+    }
 }
 
 pub fn parse_time(str: &String) -> Result<Timestamp, String> {

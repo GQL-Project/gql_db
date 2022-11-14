@@ -13,6 +13,7 @@ mod server;
 mod user;
 mod util;
 mod version_control;
+mod btree;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = "None")]
@@ -43,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let addr = format!("{}:{}", args.ip, args.port).parse().unwrap();
         let db_service = Connection::default();
         println!("GQL Server Started on address: {}", addr);
-        if args.demo {
+        if true {
             bench::create_demo_db("demo");
         }
         Server::builder()
