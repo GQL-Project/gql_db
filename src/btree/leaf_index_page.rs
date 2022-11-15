@@ -311,10 +311,18 @@ impl LeafIndexPage {
     fn get_row_locations_matching_expr(
         &self,
         pred: &Expr,
-        column_aliases: &ColumnAliases,
-        index_refs: &IndexRefs,
+        column_aliases: &ColumnAliases
     ) -> Result<Vec<RowLocation>, String> {
-        let x: PredicateSolver = solve_predicate(pred, column_aliases, index_refs)?;
+
+        let mut leaf_col_aliases: ColumnAliases = Vec::new();
+        for (i, col_alias) in column_aliases.iter().enumerate() {
+            if self.index_id.contains(&(i as u8)) {
+                leaf_col_aliases.push(col_alias.clone());
+            }
+        }
+        let leaf_idx_refs: IndexRefs = get_index_refs(&leaf_col_aliases);
+
+        let x: PredicateSolver = solve_predicate(pred, &leaf_col_aliases, &leaf_idx_refs)?;
         Ok(self.get_row_locations_using_pred_solver(&x)?)
     }
 
@@ -737,7 +745,6 @@ mod tests {
         // Check that the correct row locations are returned
         let tables: Vec<(Table, String)> = vec![(table.clone(), table.name.clone())];
         let column_aliases: ColumnAliases = gen_column_aliases(&tables);
-        let index_refs: IndexRefs = get_index_refs(&column_aliases);
         // Test WHERE id > 2
         assert_eq!(
             leaf_page.get_row_locations_matching_expr(
@@ -746,8 +753,7 @@ mod tests {
                     op: BinaryOperator::Gt,
                     right: Box::new(Expr::Value(sqlparser::ast::Value::Number("2".to_string(), true)))
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             vec![index_values[2].to_row_location(), index_values[3].to_row_location()]
         );
@@ -771,8 +777,7 @@ mod tests {
                         }
                     ),
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             vec![index_values[2].to_row_location()]
         );
@@ -796,8 +801,7 @@ mod tests {
                         }
                     ),
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             Vec::new()
         );
@@ -821,8 +825,7 @@ mod tests {
                         }
                     ),
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             vec![index_values[2].to_row_location(), index_values[3].to_row_location()]
         );
@@ -834,8 +837,7 @@ mod tests {
                     op: BinaryOperator::Gt,
                     right: Box::new(Expr::Value(sqlparser::ast::Value::Number("a".to_string(), true)))
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             vec![index_values[1].to_row_location(), index_values[2].to_row_location(), index_values[3].to_row_location()]
         );
@@ -859,8 +861,7 @@ mod tests {
                         }
                     ),
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             vec![index_values[1].to_row_location(), index_values[2].to_row_location()]
         );
@@ -890,7 +891,6 @@ mod tests {
         // Check that the correct row locations are returned
         let tables: Vec<(Table, String)> = vec![(table.clone(), table.name.clone())];
         let column_aliases: ColumnAliases = gen_column_aliases(&tables);
-        let index_refs: IndexRefs = get_index_refs(&column_aliases);
         assert_eq!(
             leaf_page.get_row_locations_matching_expr(
                 &Expr::BinaryOp {
@@ -898,8 +898,7 @@ mod tests {
                     op: BinaryOperator::Eq,
                     right: Box::new(Expr::Value(sqlparser::ast::Value::Number("3".to_string(), true)))
                 },
-                &column_aliases,
-                &index_refs
+                &column_aliases
             ).unwrap(),
             vec![index_values[2].to_row_location()]
         );

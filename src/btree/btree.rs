@@ -935,6 +935,104 @@ mod tests {
         delete_db_instance().unwrap();
     }
 
+    #[test]
+    #[serial]
+    fn test_non_first_key_index() {
+        let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
+        let table_name: String = String::from("create_btree_test_table");
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["name".to_string()];
+        let table_rows: Vec<Row> = vec![
+            vec![Value::I32(1),  Value::String("a".to_string())],
+            vec![Value::I32(4),  Value::String("b".to_string())],
+            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(10), Value::String("d".to_string())],
+            vec![Value::I32(13), Value::String("e".to_string())],
+            vec![Value::I32(16), Value::String("f".to_string())],
+            vec![Value::I32(19), Value::String("g".to_string())],
+            vec![Value::I32(49), Value::String("h".to_string())],
+            vec![Value::I32(25), Value::String("i".to_string())],
+            vec![Value::I32(28), Value::String("j".to_string())],
+            vec![Value::I32(31), Value::String("a".to_string())],
+            vec![Value::I32(34), Value::String("l".to_string())],
+            vec![Value::I32(37), Value::String("m".to_string())],
+            vec![Value::I32(40), Value::String("n".to_string())],
+            vec![Value::I32(43), Value::String("o".to_string())],
+            vec![Value::I32(68), Value::String("p".to_string())],
+            vec![Value::I32(46), Value::String("q".to_string())],
+            vec![Value::I32(49), Value::String("r".to_string())],
+            vec![Value::I32(52), Value::String("a".to_string())],
+            vec![Value::I32(55), Value::String("t".to_string())],
+        ];
+
+        // Create the table
+        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
+
+        // Create the index
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
+            &table_dir, 
+            &table_name, 
+            None, 
+            index_column_names,
+            index_name
+        ).unwrap();
+
+        // Re-read the table
+        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
+
+        // Insert the rows
+        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+
+        // Get the rows from the table that match 'name = "e"'
+        // There should be one
+        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("e".to_string(), true)))
+            }
+        ).unwrap();
+
+        // Compare the two
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows,
+            insert_diff.rows
+                .iter()
+                .filter(|row_info| row_info.row[1] == Value::String("e".to_string()))
+                .cloned()
+                .collect::<Vec<RowInfo>>()
+        );
+
+        // Get the rows from the table that match 'name = "a"'
+        // There should be three
+        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("a".to_string(), true)))
+            }
+        ).unwrap();
+
+        // Compare the two
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows,
+            insert_diff.rows
+                .iter()
+                .filter(|row_info| row_info.row[1] == Value::String("a".to_string()))
+                .cloned()
+                .collect::<Vec<RowInfo>>()
+        );
+
+        // Clean up
+        cleanup_test();
+    }
+
     fn setup_test() -> (Table, BTree, InsertDiff) {
         let table_dir: String = String::from("./testing");
         let index_name: String = String::from("test_index");
