@@ -98,7 +98,9 @@ fn parse_select(
         let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
         // For now, lets only support using indexing on a single table.
          {
-            if let Some(btree_pagenum) = tables[0].0.indexes.get(&index_id) {
+            if let Some(idx_val) = tables[0].0.indexes.get(&index_id) {
+                let btree_pagenum: u32 = idx_val.0;
+                let index_name: String = idx_val.1.clone();
                 let table: Table = tables[0].0.clone();
                 let index_key_type: IndexKeyType = index_id
                     .iter()
@@ -107,9 +109,11 @@ fn parse_select(
         
                 let btree: BTree = BTree::load_btree_from_root_page(
                     &tables[0].0,
-                    *btree_pagenum,
+                    btree_pagenum,
                     index_id,
-                    index_key_type)?;
+                    index_key_type,
+                    index_name
+                )?;
         
                 println!("Using btree indexing");
 
@@ -182,12 +186,19 @@ pub fn execute_update(
             } => {
                 let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
                 let table_name: String = table_name.to_string();
+                let index_name: String = name.0[0].value.clone();
 
                 let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
 
-                println!("Creating index {} on table {} with columns {:?}", name, table_name, column_names);
+                println!("Creating index {} on table {} with columns {:?}", index_name, table_name, column_names);
 
-                BTree::create_btree_index(&table_dir, &table_name, None, column_names)?;
+                BTree::create_btree_index(
+                    &table_dir,
+                    &table_name,
+                    None,
+                    column_names,
+                    index_name
+                )?;
 
                 results.push("Successfully created index".to_string());
             }

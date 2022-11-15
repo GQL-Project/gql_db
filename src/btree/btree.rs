@@ -5,6 +5,7 @@ use crate::executor::query::*;
 use crate::fileio::tableio::*;
 use crate::fileio::header::*;
 use crate::util::row::*;
+use crate::version_control::diff::{IndexCreateDiff, IndexRemoveDiff};
 use super::indexes;
 use super::indexes::*;
 use super::leaf_index_page::*;
@@ -13,6 +14,7 @@ use super::internal_index_page::*;
 #[derive(Clone)]
 pub struct BTree {
     index_key_type: IndexKeyType, // The type of the index keys
+    index_name: String,           // The name of the index
     root_page: InternalIndexPage, // The highest level internal index page (root of the tree)
     table: Table,                 // The table that this index is for
 }
@@ -24,8 +26,9 @@ impl BTree {
         table_dir: &String,
         table_name: &String,
         table_extension: Option<&String>, // Optionally specify a file extension. Defaults to TABLE_FILE_EXTENSION.
-        columns: Vec<String>
-    ) -> Result<Self, String> {
+        columns: Vec<String>,
+        index_name: String,
+    ) -> Result<(Self, IndexCreateDiff), String> {
         let mut table: Table = Table::new(table_dir, table_name, table_extension)?;
         
         // Get the index key composed of those column names
@@ -50,14 +53,68 @@ impl BTree {
             &mut table, 
             LeafIndexPage::convert_to_key_vals(table_rows, &index_id)?,
             &index_id, 
-            &index_key_type
+            &index_key_type,
+            index_name.clone()
         )?;
 
-        Ok(BTree {
-            index_key_type,
-            root_page,
-            table,
-        })
+        Ok(
+            (
+                BTree {
+                    index_key_type,
+                    index_name: index_name.clone(),
+                    root_page,
+                    table: table.clone(),
+                },
+                IndexCreateDiff {
+                    table_name: table.name.clone(),
+                    schema: table.schema.clone(),
+                    indexes: vec![(index_name, index_id)],
+                }
+            )
+        )
+    }
+
+    /// Removes a btree index from the table
+    pub fn drop_btree_index(
+        table_dir: &String,
+        table_name: &String,
+        table_extension: Option<&String>, // Optionally specify a file extension. Defaults to TABLE_FILE_EXTENSION.
+        index_name: &String
+    ) -> Result<IndexRemoveDiff, String> {
+        let mut table: Table = Table::new(table_dir, table_name, table_extension)?;
+
+        // Get the index_id from the index name
+        let mut index_id: Option<IndexID> = None;
+        table.indexes
+            .iter()
+            .position(|(id, index)| {
+                if index.1 == *index_name {
+                    index_id = Some(id.clone());
+                    return true;
+                }
+                false
+            });
+
+        if let Some(index_id) = index_id {
+            // Remove the index from the table
+            table.indexes.remove(&index_id);
+            
+            // Update the header
+            let new_header: Header = Header {
+                num_pages: table.max_pages,
+                schema: table.schema.clone(),
+                index_top_level_pages: table.indexes.clone(),
+            };
+            write_header(&table.path, &new_header)?;
+
+            Ok(IndexRemoveDiff {
+                table_name: table.name.clone(),
+                schema: table.schema.clone(),
+                indexes: vec![(index_name.clone(), index_id)],
+            })
+        } else {
+            Err(format!("Index {} does not exist", index_name))
+        }
     }
 
     /// Loads a btree from a given root page
@@ -65,7 +122,8 @@ impl BTree {
         table: &Table, 
         pagenum: u32,
         index_id: IndexID,
-        index_key_type: IndexKeyType
+        index_key_type: IndexKeyType,
+        index_name: String
     ) -> Result<Self, String> {
         let internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
             table.path.clone(),
@@ -77,6 +135,7 @@ impl BTree {
         
         Ok(BTree {
             index_key_type,
+            index_name,
             root_page: internal_page,
             table: table.clone(),
         })
@@ -104,7 +163,7 @@ impl BTree {
         rows: &Vec<RowInfo>
     ) -> Result<(), String> {
         for row in rows {
-            self.root_page.insert_row(row)?;
+            self.root_page.insert_row(row, self.index_name.clone())?;
         }
         Ok(())
     }
@@ -115,7 +174,7 @@ impl BTree {
         rows: &Vec<RowInfo>
     ) -> Result<(), String> {
         for row in rows {
-            self.root_page.remove_row(row)?;
+            self.root_page.remove_row(row, self.index_name.clone())?;
         }
         Ok(())
     }
@@ -139,6 +198,7 @@ impl BTree {
         key_values: Vec<(IndexKey, LeafIndexValue)>,
         index_id: &IndexID,
         index_key_type: &IndexKeyType,
+        index_name: String
     ) -> Result<InternalIndexPage, String> {
         let num_rows: usize = key_values.len();
 
@@ -189,7 +249,7 @@ impl BTree {
             internal_page.write_page()?;
 
             // Update the header
-            table.indexes.insert(index_id.clone(), internal_page.get_pagenum());
+            table.indexes.insert(index_id.clone(), (internal_page.get_pagenum(), index_name));
             let new_header: Header = Header {
                 num_pages: table.max_pages,
                 schema: table.schema.clone(),
@@ -343,7 +403,7 @@ impl BTree {
         let root_page: InternalIndexPage = internal_pages[internal_pages.len() - 1][0].clone();
 
         // Update the header
-        table.indexes.insert(index_id.clone(), root_page.get_pagenum());
+        table.indexes.insert(index_id.clone(), (root_page.get_pagenum(), index_name));
         let new_header: Header = Header {
             num_pages: table.max_pages,
             schema: table.schema.clone(),
@@ -371,6 +431,7 @@ mod tests {
     fn test_create_btree_index() {
         let table_dir: String = String::from("./testing");
         let table_name: String = String::from("create_btree_test_table");
+        let index_name: String = String::from("test_index");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(10))
@@ -406,11 +467,12 @@ mod tests {
         let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         // Get the row that has a key of 1
@@ -456,6 +518,7 @@ mod tests {
     #[serial]
     fn test_get_rows_matching_expr() {
         let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -492,11 +555,12 @@ mod tests {
         let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         fn compare_rows_using_id_eq_num(id_value: i32, btree: &BTree, insert_diff: &InsertDiff) {
@@ -549,6 +613,7 @@ mod tests {
     #[serial]
     fn test_create_index_immediately() {
         let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -564,7 +629,8 @@ mod tests {
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         // Clean up
@@ -575,6 +641,7 @@ mod tests {
     #[serial]
     fn test_insert_rows() {
         let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -608,11 +675,12 @@ mod tests {
         create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         // Re-read the table
@@ -684,6 +752,7 @@ mod tests {
     #[serial]
     fn test_remove_rows() {
         let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -717,11 +786,12 @@ mod tests {
         create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         // Re-read the table
@@ -784,6 +854,7 @@ mod tests {
     #[serial]
     fn test_update_rows() {
         let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -817,11 +888,12 @@ mod tests {
         create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         // Re-read the table
@@ -895,6 +967,7 @@ mod tests {
     #[serial]
     fn test_write_rows() {
         let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
@@ -928,11 +1001,12 @@ mod tests {
         create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
 
         // Create the index
-        let btree: BTree = BTree::create_btree_index(
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
             &table_dir, 
             &table_name, 
             None, 
-            index_column_names
+            index_column_names,
+            index_name
         ).unwrap();
 
         // Re-read the table
@@ -1034,6 +1108,7 @@ mod tests {
     #[serial]
     fn test_btree_speed() {
         let mut user: User = create_huge_bench_db(100, false);
+        let index_name: String = String::from("test_index");
 
         // Time the query
         let start_time_no_index: Instant = Instant::now();
@@ -1059,6 +1134,7 @@ mod tests {
             &"huge_table".to_string(),
             None,
             vec!["id1".to_string()],
+            index_name
         ).unwrap();
 
         // Time the query
@@ -1091,6 +1167,7 @@ mod tests {
     #[serial]
     fn test_btree_speed_huge() {
         let mut user: User = create_huge_bench_db(1000, false);
+        let index_name: String = String::from("test_index");
 
         // Time the query
         let start_time_no_index: Instant = Instant::now();
@@ -1116,6 +1193,7 @@ mod tests {
             &"huge_table".to_string(),
             None,
             vec!["id1".to_string()],
+            index_name
         ).unwrap();
 
         // Time the query

@@ -507,6 +507,39 @@ pub fn create_merge_diffs(
                         .table_remove_diff = Some(table_remove_source_diff.clone());
                 }
             }
+            Diff::IndexCreate(index_create_source_diff) => {
+                // Get the index_create diff from target_diffs_on_the_table if it exists
+                let index_create_diff_target_option =
+                    target_diffs_on_the_table
+                        .iter()
+                        .find_map(|diff| match diff {
+                            Diff::IndexCreate(index_create_diff) => Some(index_create_diff),
+                            _ => None,
+                        });
+
+                // If there is a index_create diff in the target, we need to remove any duplicate index creations.
+                let mut is_duplicate_index_create: bool = false;
+                if let Some(index_create_diff_target) = index_create_diff_target_option {
+                    if index_create_source_diff.schema == index_create_diff_target.schema {
+                        is_duplicate_index_create = true;
+                    }
+                }
+
+                if !is_duplicate_index_create {
+                    // Add the new index creation to the result_diffs
+                    result_diffs
+                        .table_diffs
+                        .entry(index_create_source_diff.table_name.clone())
+                        .or_insert_with(|| {
+                            TableSquashDiff::new(
+                                &index_create_source_diff.table_name,
+                                &index_create_source_diff.schema,
+                            )
+                        })
+                        .index_create_diffs
+                        .push(index_create_source_diff.clone());
+                }
+            }
         }
     }
 

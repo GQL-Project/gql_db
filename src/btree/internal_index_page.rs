@@ -147,7 +147,8 @@ impl InternalIndexPage {
     /// Inserts a row into the leaf page following all the pointers from this page down to the leaves.
     pub fn insert_row(
         &mut self,
-        rowinfo: &RowInfo
+        rowinfo: &RowInfo,
+        index_name: String
     ) -> Result<(), String> {
         let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
         let mut leaf_page: LeafIndexPage = self.get_leaf_page_for_key(index_key)?;
@@ -161,7 +162,7 @@ impl InternalIndexPage {
         // Check if the leaf page is full or empty
         if !leaf_page.has_room() {
             // Rebalance the B-Tree
-            self.rebalance()?;
+            self.rebalance(index_name)?;
         }
 
         Ok(())
@@ -170,7 +171,8 @@ impl InternalIndexPage {
     /// Removes a row from the leaf page following all the pointers from this page down to the leaves.
     pub fn remove_row(
         &mut self,
-        rowinfo: &RowInfo
+        rowinfo: &RowInfo,
+        index_name: String
     ) -> Result<(), String> {
         let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
         let mut leaf_page: LeafIndexPage = self.get_leaf_page_for_key(index_key)?;
@@ -184,7 +186,7 @@ impl InternalIndexPage {
         // Check if the leaf page is full or empty
         if leaf_page.is_empty() {
             // Rebalance the B-Tree
-            self.rebalance()?;
+            self.rebalance(index_name)?;
         }
 
         Ok(())
@@ -382,7 +384,8 @@ impl InternalIndexPage {
     /// Rebalances the tree below this page.
     /// It balances the tree by keeping all the pages non-empty and non-full.
     fn rebalance(
-        &mut self
+        &mut self,
+        index_name: String
     ) -> Result<(), String> {
         // We need to go through each of the leaf pages.
         // If the leaf page is empty, we need to combine its values with another page.
@@ -451,7 +454,8 @@ impl InternalIndexPage {
             &mut Table::new_from_path(self.table_path.clone(), self.table_name.clone())?,
             leaf_index_values,
             &self.index_id,
-            &self.index_key_type
+            &self.index_key_type,
+            index_name
         )?;
 
         // Make self the new root

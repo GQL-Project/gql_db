@@ -22,7 +22,7 @@ pub struct Table {
     pub row_num: u16,
     pub max_pages: u32,
     pub schema_size: usize,
-    pub indexes: HashMap<IndexID, u32>
+    pub indexes: HashMap<IndexID, (u32, String)> // Hashmap of index id to (page_num, index_name)
 }
 
 impl Table {
@@ -625,12 +625,13 @@ impl Table {
         index_id: &IndexID
     ) -> Result<BTree, String> {
 
-        if let Some(pagenum) = self.indexes.get(index_id) {
+        if let Some((pagenum, index_name)) = self.indexes.get(index_id) {
             BTree::load_btree_from_root_page(
                 &self,
                 *pagenum,
                 index_id.clone(),
                 cols_id_to_index_key_type(&index_id, &self.schema),
+                index_name.clone()
             )
         }
         else {
