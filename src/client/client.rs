@@ -17,9 +17,7 @@ const DEFAULT_REGISTER: bool = false;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query for IP address and port of server
-    let (mut client, request) = query_for_ip_port().await?;
-
-    let response: ConnectResult = client.connect_db(request).await?.into_inner();
+    let (mut client, response) = attempt_connection().await?;
 
     loop {
         print!("{}", &GQL_PROMPT.to_string());
@@ -107,9 +105,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Indefinitely loops until a successful connection is made
-async fn query_for_ip_port(
-) -> Result<(DatabaseConnectionClient<Channel>, LoginRequest), Box<dyn std::error::Error>> {
-    let client: DatabaseConnectionClient<Channel>;
+async fn attempt_connection() -> Result<(DatabaseConnectionClient<Channel>, ConnectResult), Box<dyn std::error::Error>> {
+    let mut client: DatabaseConnectionClient<Channel>;
     let mut request: LoginRequest;
 
     // Loop until we successfully connect
@@ -184,9 +181,9 @@ async fn query_for_ip_port(
         }
 
         request = LoginRequest {
-            username: username,
-            password: password,
-            create: create,
+            username,
+            password,
+            create,
         };
 
         // Attempt to connect to server
@@ -202,7 +199,12 @@ async fn query_for_ip_port(
                         .to_string()
                 );
                 io::stdout().flush()?;
-                break;
+                let response = client.connect_db(request).await;
+                if response.is_ok() {
+                    return Ok((client, response?.into_inner()));
+                } else {
+                    println!("Error logging in: {}", response.unwrap_err().message());
+                }
             }
             Err(_) => {
                 // Start over if connection fails
@@ -219,5 +221,4 @@ async fn query_for_ip_port(
             }
         }
     }
-    Ok((client, request))
 }
