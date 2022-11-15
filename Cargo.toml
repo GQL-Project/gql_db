@@ -34,6 +34,7 @@ serde_json = "1.0.86"
 serde = { version = "1.0.145", features = ["derive"] }
 shellwords = "1.1.0"
 pwhash = "1"
+rpassword = "7.0"
 
 [build-dependencies]
 tonic-build = "0.8.0"

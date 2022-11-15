@@ -18,7 +18,6 @@ pub struct UserCred {
 }
 
 pub struct UserCREDs {
-    filepath: String,
     user_creds_table: Table,
 }
 
@@ -63,7 +62,6 @@ impl UserCREDs {
         }
 
         Ok(UserCREDs {
-            filepath: filepath.clone(),
             user_creds_table: Table::new(
                 &dir_path.clone(),
                 &databaseio::USER_CREDS_FILE_NAME.to_string(),

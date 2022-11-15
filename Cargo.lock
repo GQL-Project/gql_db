@@ -467,6 +467,7 @@ dependencies = [
  "prost-types",
  "pwhash",
  "rand",
+ "rpassword",
  "serde",
  "serde_json",
  "serial_test",
@@ -1067,6 +1068,16 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
+ "winapi",
+]
+
+[[package]]
+name = "rpassword"
+version = "7.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20c9f5d2a0c3e2ea729ab3706d22217177770654c3ef5056b68b69d07332d3f5"
+dependencies = [
+ "libc",
  "winapi",
 ]
 
