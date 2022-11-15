@@ -19,7 +19,7 @@ use crate::{
 
 use crate::util::dbtype::Value;
 use itertools::Itertools;
-use sqlparser::ast::{Expr, Ident, Query, Select, SelectItem, SetExpr, Statement, SetOperator};
+use sqlparser::ast::{Expr, Ident, Query, Select, SelectItem, SetExpr, SetOperator, Statement};
 
 pub type Tables = Vec<(Table, String)>;
 pub type ColumnAliases = Vec<(String, Column, String)>;
@@ -46,12 +46,19 @@ pub fn execute_query(
     Err("No query found".to_string())
 }
 
-fn func(setExpr: &SetExpr, user: &mut User, query: &Query) -> Result<(Vec<String>, Vec<Row>), String> {
+fn func(
+    setExpr: &SetExpr,
+    user: &mut User,
+    query: &Query,
+) -> Result<(Vec<String>, Vec<Row>), String> {
     match &setExpr {
-        SetExpr::Select(s) => {
-            parse_select(&s, user, Some(query))
-        }
-        SetExpr::SetOperation { op, all: _, left, right } => {
+        SetExpr::Select(s) => parse_select(&s, user, Some(query)),
+        SetExpr::SetOperation {
+            op,
+            all: _,
+            left,
+            right,
+        } => {
             let (left_cols, left_rows) = func(&left, user, query)?;
             let (right_cols, right_rows) = func(&right, user, query)?;
             if left_cols.len() != right_cols.len() {
@@ -678,7 +685,11 @@ pub fn to_ident(s: String) -> Expr {
     })
 }
 
-pub fn set_operations(op: &SetOperator, left_rows: Vec<Vec<Value>>, right_rows: Vec<Vec<Value>>) -> Result<Vec<Row>, String> {
+pub fn set_operations(
+    op: &SetOperator,
+    left_rows: Vec<Vec<Value>>,
+    right_rows: Vec<Vec<Value>>,
+) -> Result<Vec<Row>, String> {
     // checking if the columns match
     if left_rows.is_empty() || right_rows.is_empty() {
         match op {
@@ -687,7 +698,7 @@ pub fn set_operations(op: &SetOperator, left_rows: Vec<Vec<Value>>, right_rows: 
                     return Ok(right_rows);
                 }
                 return Ok(left_rows);
-           }
+            }
             SetOperator::Except => {
                 return Ok(left_rows);
             }
@@ -696,13 +707,15 @@ pub fn set_operations(op: &SetOperator, left_rows: Vec<Vec<Value>>, right_rows: 
             }
         }
     }
-    
+
     for left in left_rows[0].iter() {
         // checking if the columns match
         // I32 and I64 counts as same type
-        if !right_rows[0].iter().any(|x| x.get_coltype() == left.get_coltype()
-                                        || (x.get_coltype().to_string() == "I32" && left.get_coltype().to_string() == "I64")
-                                            || (x.get_coltype().to_string() == "I64" && left.get_coltype().to_string() == "I32")) {
+        if !right_rows[0].iter().any(|x| {
+            x.get_coltype() == left.get_coltype()
+                || (x.get_coltype().to_string() == "I32" && left.get_coltype().to_string() == "I64")
+                || (x.get_coltype().to_string() == "I64" && left.get_coltype().to_string() == "I32")
+        }) {
             return Err("Incompatible types in set operation".to_string());
         }
     }
@@ -713,24 +726,20 @@ pub fn set_operations(op: &SetOperator, left_rows: Vec<Vec<Value>>, right_rows: 
 
     for row in right_rows.clone() {
         let temp_right = row
-        .into_iter()
-        .map(|val| {
-            Column::I64.coerce_type_numbers_only(val.clone())
-        })
-        .collect::<Result<Row, String>>()?;
+            .into_iter()
+            .map(|val| Column::I64.coerce_type_numbers_only(val.clone()))
+            .collect::<Result<Row, String>>()?;
         new_right.push(temp_right);
     }
 
     for row in left_rows.clone() {
         let temp_left = row
-        .into_iter()
-        .map(|val| {
-            Column::I64.coerce_type_numbers_only(val.clone())
-        })
-        .collect::<Result<Row, String>>()?;
+            .into_iter()
+            .map(|val| Column::I64.coerce_type_numbers_only(val.clone()))
+            .collect::<Result<Row, String>>()?;
         new_left.push(temp_left);
     }
-    
+
     match op {
         SetOperator::Union => {
             for row in new_right {
@@ -739,11 +748,10 @@ pub fn set_operations(op: &SetOperator, left_rows: Vec<Vec<Value>>, right_rows: 
                 }
             }
             Ok(new_left)
-       }
+        }
         SetOperator::Except => {
             let mut rows: Vec<Vec<Value>> = Vec::new();
             for row in new_left {
-
                 if !new_right.contains(&row) {
                     rows.push(row);
                 }
@@ -753,7 +761,6 @@ pub fn set_operations(op: &SetOperator, left_rows: Vec<Vec<Value>>, right_rows: 
         SetOperator::Intersect => {
             let mut rows: Vec<Vec<Value>> = Vec::new();
             for row in new_right {
-
                 if new_left.contains(&row) {
                     rows.push(row);
                 }
@@ -2005,8 +2012,10 @@ pub mod tests {
             .unwrap();
 
         let results = execute_query(
-            &parse("SELECT * from personal_info UNION SELECT * from locations",
-            false)
+            &parse(
+                "SELECT * from personal_info UNION SELECT * from locations",
+                false,
+            )
             .unwrap(),
             &mut user,
             &"".to_string(),
@@ -2026,25 +2035,27 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-            let schema: Schema = vec![
-                ("id".to_string(), Column::I32),
-                ("first_name".to_string(), Column::String(50)),
-                ("last_name".to_string(), Column::String(50)),
-                ("age".to_string(), Column::I64),
-                ("height".to_string(), Column::Float),
-                ("date_inserted".to_string(), Column::Timestamp),
-            ];
-            create_table(
-                &"test_table".to_string(),
-                &schema,
-                get_db_instance().unwrap(),
-                &mut user,
-            )
-            .unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("first_name".to_string(), Column::String(50)),
+            ("last_name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I64),
+            ("height".to_string(), Column::Float),
+            ("date_inserted".to_string(), Column::Timestamp),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
 
         let results = execute_query(
-            &parse("SELECT * from personal_info UNION SELECT * from test_table",
-            false)
+            &parse(
+                "SELECT * from personal_info UNION SELECT * from test_table",
+                false,
+            )
             .unwrap(),
             &mut user,
             &"".to_string(),
@@ -2052,9 +2063,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("SELECT * from personal_info",
-            false)
-            .unwrap(),
+            &parse("SELECT * from personal_info", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2073,25 +2082,27 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-            let schema: Schema = vec![
-                ("id".to_string(), Column::I32),
-                ("first_name".to_string(), Column::String(50)),
-                ("last_name".to_string(), Column::String(50)),
-                ("age".to_string(), Column::I64),
-                ("height".to_string(), Column::Float),
-                ("date_inserted".to_string(), Column::Timestamp),
-            ];
-            create_table(
-                &"test_table".to_string(),
-                &schema,
-                get_db_instance().unwrap(),
-                &mut user,
-            )
-            .unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("first_name".to_string(), Column::String(50)),
+            ("last_name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I64),
+            ("height".to_string(), Column::Float),
+            ("date_inserted".to_string(), Column::Timestamp),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
 
         let results = execute_query(
-            &parse("SELECT * from personal_info except SELECT * from test_table",
-            false)
+            &parse(
+                "SELECT * from personal_info except SELECT * from test_table",
+                false,
+            )
             .unwrap(),
             &mut user,
             &"".to_string(),
@@ -2099,9 +2110,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("SELECT * from personal_info",
-            false)
-            .unwrap(),
+            &parse("SELECT * from personal_info", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2120,25 +2129,27 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-            let schema: Schema = vec![
-                ("id".to_string(), Column::I32),
-                ("first_name".to_string(), Column::String(50)),
-                ("last_name".to_string(), Column::String(50)),
-                ("age".to_string(), Column::I64),
-                ("height".to_string(), Column::Float),
-                ("date_inserted".to_string(), Column::Timestamp),
-            ];
-            create_table(
-                &"test_table".to_string(),
-                &schema,
-                get_db_instance().unwrap(),
-                &mut user,
-            )
-            .unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("first_name".to_string(), Column::String(50)),
+            ("last_name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I64),
+            ("height".to_string(), Column::Float),
+            ("date_inserted".to_string(), Column::Timestamp),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
 
         let results = execute_query(
-            &parse("SELECT * from personal_info intersect SELECT * from test_table",
-            false)
+            &parse(
+                "SELECT * from personal_info intersect SELECT * from test_table",
+                false,
+            )
             .unwrap(),
             &mut user,
             &"".to_string(),
@@ -2146,9 +2157,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("SELECT * from test_table",
-            false)
-            .unwrap(),
+            &parse("SELECT * from test_table", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
