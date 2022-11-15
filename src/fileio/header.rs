@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::pageio::*;
-use crate::util::dbtype::Column;
 use crate::btree::indexes::*;
+use crate::util::dbtype::Column;
 pub struct Header {
     pub num_pages: u32,
     pub schema: Schema,
@@ -75,8 +75,12 @@ pub fn read_header(file: &String) -> Result<Header, String> {
         index_offset += 4;
         indexes.insert(index_key, (index_pagenum, index_name));
     }
-    
-    Ok(Header { num_pages, schema, index_top_level_pages: indexes })
+
+    Ok(Header {
+        num_pages,
+        schema,
+        index_top_level_pages: indexes,
+    })
 }
 
 pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
@@ -86,7 +90,11 @@ pub fn write_header(file: &String, header: &Header) -> Result<(), String> {
 
     // Write number of indexes to header
     let mut index_offset: usize = 5 + (header.schema.len() * 54);
-    write_type(buf.as_mut(), index_offset, header.index_top_level_pages.len() as u32)?;
+    write_type(
+        buf.as_mut(),
+        index_offset,
+        header.index_top_level_pages.len() as u32,
+    )?;
     index_offset += 4;
 
     // Write indexes to header

@@ -1,5 +1,5 @@
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 
 use crate::fileio::header::Schema;
 use crate::fileio::tableio::{delete_table_in_dir, Table};
@@ -503,32 +503,25 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
     let mut rows: Vec<Row> = Vec::with_capacity(num_rows);
     if random_values {
         for i in 0..num_rows {
-            rows.push(
-                vec![
-                    Value::I32(i as i32),
-                    Value::I32(i as i32),
-                    Value::I32(gen_age()),
-                    Value::String(gen_random()),
-                ]
-            );
+            rows.push(vec![
+                Value::I32(i as i32),
+                Value::I32(i as i32),
+                Value::I32(gen_age()),
+                Value::String(gen_random()),
+            ]);
         }
-    }
-    else {
+    } else {
         for i in 0..num_rows {
-            rows.push(
-                vec![
-                    Value::I32(i as i32),
-                    Value::I32(i as i32),
-                    Value::I32(20),
-                    Value::String("random text".to_string()),
-                ]
-            );
+            rows.push(vec![
+                Value::I32(i as i32),
+                Value::I32(i as i32),
+                Value::I32(20),
+                Value::String("random text".to_string()),
+            ]);
         }
     }
 
-    let diff: InsertDiff = table
-        .insert_rows(rows)
-        .unwrap();
+    let diff: InsertDiff = table.insert_rows(rows).unwrap();
     user.append_diff(&Diff::Insert(diff));
 
     let _ = get_db_instance()

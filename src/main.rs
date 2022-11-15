@@ -5,6 +5,7 @@ use tonic::transport::Server;
 
 use crate::util::bench;
 
+mod btree;
 mod client;
 mod executor;
 mod fileio;
@@ -13,7 +14,6 @@ mod server;
 mod user;
 mod util;
 mod version_control;
-mod btree;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = "None")]

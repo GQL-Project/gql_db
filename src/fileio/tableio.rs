@@ -4,10 +4,10 @@ use itertools::Itertools;
 
 use super::{databaseio::Database, header::*, pageio::*, rowio::*};
 use crate::{
+    btree::{btree::BTree, indexes::*},
     user::userdata::User,
     util::{dbtype::Value, row::*},
     version_control::diff::*,
-    btree::{indexes::*, btree::BTree},
 };
 
 pub const TABLE_FILE_EXTENSION: &str = ".db";
@@ -22,7 +22,7 @@ pub struct Table {
     pub row_num: u16,
     pub max_pages: u32,
     pub schema_size: usize,
-    pub indexes: HashMap<IndexID, (u32, String)> // Hashmap of index id to (page_num, index_name)
+    pub indexes: HashMap<IndexID, (u32, String)>, // Hashmap of index id to (page_num, index_name)
 }
 
 impl Table {
@@ -51,10 +51,7 @@ impl Table {
     }
 
     /// Construct a new table from an already existing file.
-    pub fn new_from_path(
-        path: String,
-        table_name: String,
-    ) -> Result<Table, String> {
+    pub fn new_from_path(path: String, table_name: String) -> Result<Table, String> {
         // If the file doesn't exist, return an error.
         if !std::path::Path::new(&path).exists() {
             return Err(format!("Table file {} does not exist.", path));
@@ -71,7 +68,7 @@ impl Table {
             page_num: 0,
             row_num: 0,
             max_pages: header.num_pages,
-            indexes: header.index_top_level_pages
+            indexes: header.index_top_level_pages,
         })
     }
 
@@ -108,7 +105,8 @@ impl Iterator for Table {
             // Find the first data page in the file
             loop {
                 self.page_num += 1;
-                let page_type: PageType = load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
+                let page_type: PageType =
+                    load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
                 if page_type == PageType::Data {
                     break;
                 }
@@ -128,7 +126,8 @@ impl Iterator for Table {
                         return None;
                     }
                     self.page_num += 1;
-                    let page_type: PageType = load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
+                    let page_type: PageType =
+                        load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
                     if page_type == PageType::Data {
                         self.row_num = 0;
                         break;
@@ -362,8 +361,7 @@ impl Table {
 
         // If this table has an index, update it
         for index_id in self.indexes.keys() {
-            self.load_btree(index_id)?
-                .insert_rows(&diff.rows)?;
+            self.load_btree(index_id)?.insert_rows(&diff.rows)?;
         }
 
         Ok(diff)
@@ -398,7 +396,12 @@ impl Table {
             while rowinfo.pagenum >= self.max_pages {
                 let new_page = Box::new([0; 4096]);
                 self.max_pages += 1;
-                write_page(self.max_pages - 1, &self.path, new_page.as_ref(), PageType::Data)?;
+                write_page(
+                    self.max_pages - 1,
+                    &self.path,
+                    new_page.as_ref(),
+                    PageType::Data,
+                )?;
 
                 // Update the header
                 let new_header: Header = Header {
@@ -423,7 +426,12 @@ impl Table {
 
             // Write the row to the page at the row number
             write_row(&self.schema, page.as_mut(), &rowinfo.row, rowinfo.rownum)?;
-            write_page(rowinfo.pagenum, &self.path, page.as_ref(), page_type.clone())?;
+            write_page(
+                rowinfo.pagenum,
+                &self.path,
+                page.as_ref(),
+                page_type.clone(),
+            )?;
 
             // Add the information to the diff
             diff.rows.push(RowInfo {
@@ -441,21 +449,18 @@ impl Table {
                 .rows
                 .iter()
                 // Filter out the rows that didn't change
-                .filter(|rowinfo| 
+                .filter(|rowinfo| {
                     old_rows
                         .iter()
-                        .map(|ri| 
-                            RowLocation { 
-                                pagenum: ri.pagenum,
-                                rownum: ri.rownum
-                            }
-                        ).contains(
-                            &RowLocation {
-                                pagenum: rowinfo.pagenum,
-                                rownum: rowinfo.rownum
-                            }
-                        )
-                )
+                        .map(|ri| RowLocation {
+                            pagenum: ri.pagenum,
+                            rownum: ri.rownum,
+                        })
+                        .contains(&RowLocation {
+                            pagenum: rowinfo.pagenum,
+                            rownum: rowinfo.rownum,
+                        })
+                })
                 .cloned()
                 .collect();
 
@@ -463,14 +468,11 @@ impl Table {
                 .rows
                 .iter()
                 // Filter out the rows that did change
-                .filter(|rowinfo| 
-                    !new_rows.contains(rowinfo)
-                )
+                .filter(|rowinfo| !new_rows.contains(rowinfo))
                 .cloned()
                 .collect();
 
-            self.load_btree(index_id)?
-                .insert_rows(&insert_rows)?;
+            self.load_btree(index_id)?.insert_rows(&insert_rows)?;
 
             self.load_btree(index_id)?
                 .update_rows(&old_rows, &new_rows)?;
@@ -532,8 +534,7 @@ impl Table {
 
         // If this table has an index, update it
         for index_id in self.indexes.keys() {
-            self.load_btree(index_id)?
-                .remove_rows(&diff.rows)?;
+            self.load_btree(index_id)?.remove_rows(&diff.rows)?;
         }
         Ok(diff)
     }
@@ -620,21 +621,16 @@ impl Table {
     }
 
     /// Loads a btree from the table for the specified index id
-    fn load_btree(
-        &self,
-        index_id: &IndexID
-    ) -> Result<BTree, String> {
-
+    fn load_btree(&self, index_id: &IndexID) -> Result<BTree, String> {
         if let Some((pagenum, index_name)) = self.indexes.get(index_id) {
             BTree::load_btree_from_root_page(
                 &self,
                 *pagenum,
                 index_id.clone(),
                 cols_id_to_index_key_type(&index_id, &self.schema),
-                index_name.clone()
+                index_name.clone(),
             )
-        }
-        else {
+        } else {
             Err(format!("Index {:?} does not exist", index_id))
         }
     }

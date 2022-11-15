@@ -520,13 +520,17 @@ pub fn create_merge_diffs(
                 // If there is a index_create diff in the target, we need to remove any duplicate index creations.
                 // If there is an insert diff in the target, we need to remove any duplicate row insertions.
                 if let Some(index_create_diff_target) = index_create_diff_target_option {
-                    index_create_source_diff.indexes.retain(|(x_idx_name, x_idx_id)| {
-                        !index_create_diff_target.indexes.iter().any(|(y_idx_name, y_idx_id)| {
-                            x_idx_name == y_idx_name && x_idx_id == y_idx_id
-                        })
-                    });
+                    index_create_source_diff
+                        .indexes
+                        .retain(|(x_idx_name, x_idx_id)| {
+                            !index_create_diff_target.indexes.iter().any(
+                                |(y_idx_name, y_idx_id)| {
+                                    x_idx_name == y_idx_name && x_idx_id == y_idx_id
+                                },
+                            )
+                        });
                 }
-                
+
                 // Add the new index creation to the result_diffs
                 result_diffs
                     .table_diffs
@@ -554,13 +558,17 @@ pub fn create_merge_diffs(
                 // If there is a index_remove diff in the target, we need to remove any duplicate index creations.
                 // If there is an insert diff in the target, we need to remove any duplicate row insertions.
                 if let Some(index_remove_diff_target) = index_remove_diff_target_option {
-                    index_remove_source_diff.indexes.retain(|(x_idx_name, x_idx_id)| {
-                        !index_remove_diff_target.indexes.iter().any(|(y_idx_name, y_idx_id)| {
-                            x_idx_name == y_idx_name && x_idx_id == y_idx_id
-                        })
-                    });
+                    index_remove_source_diff
+                        .indexes
+                        .retain(|(x_idx_name, x_idx_id)| {
+                            !index_remove_diff_target.indexes.iter().any(
+                                |(y_idx_name, y_idx_id)| {
+                                    x_idx_name == y_idx_name && x_idx_id == y_idx_id
+                                },
+                            )
+                        });
                 }
-                
+
                 // Add the new index creation to the result_diffs
                 result_diffs
                     .table_diffs

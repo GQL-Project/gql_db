@@ -10,21 +10,20 @@ use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
 use crate::version_control::diff::*;
 use crate::{
+    btree::{btree::*, indexes::*},
     fileio::{
         databaseio::*,
         header::*,
         tableio::{self, *},
     },
     util::row::RowLocation,
-    btree::{
-        btree::*,
-        indexes::*,
-    },
 };
 
 use crate::util::dbtype::Value;
 use itertools::Itertools;
-use sqlparser::ast::{Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement};
+use sqlparser::ast::{
+    Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement,
+};
 
 pub type Tables = Vec<(Table, String)>;
 pub type ColumnAliases = Vec<(String, Column, String)>;
@@ -109,10 +108,10 @@ fn parse_select(
             index_id = Some(get_index_id_from_expr(pred, &column_aliases, &index_refs)?);
             expr = Some(pred.clone());
             Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
-        },
+        }
         None => None,
     };
-    
+
     // Results
     let mut res_columns: Vec<String> = Vec::new();
     let mut res_rows: Vec<Row> = Vec::new();
@@ -132,33 +131,39 @@ fn parse_select(
                     .iter()
                     .map(|x| table.schema[*x as usize].1.clone())
                     .collect();
-        
+
                 let btree: BTree = BTree::load_btree_from_root_page(
                     &tables[0].0,
                     btree_pagenum,
                     index_id,
                     index_key_type,
-                    index_name
+                    index_name,
                 )?;
 
-                res_rows = btree.get_rows_matching_expr(&expr.unwrap())?.iter().map(|x| x.row.clone()).collect();
+                res_rows = btree
+                    .get_rows_matching_expr(&expr.unwrap())?
+                    .iter()
+                    .map(|x| x.row.clone())
+                    .collect();
 
                 // Get the column names
                 let table_aliases = gen_column_aliases(&tables);
-                resolve_columns(
-                    columns.clone(),
-                    &mut res_columns,
-                    &tables,
-                    &table_aliases,
-                )?;
+                resolve_columns(columns.clone(), &mut res_columns, &tables, &table_aliases)?;
                 using_index = true;
             }
         }
     }
 
     if !using_index {
-        (res_columns, res_rows) = select(columns.clone(), pred, s.group_by.clone(),
-        query.map_or(vec![], |q| q.order_by.clone()),&table_names, get_db_instance()?, user)?;
+        (res_columns, res_rows) = select(
+            columns.clone(),
+            pred,
+            s.group_by.clone(),
+            query.map_or(vec![], |q| q.order_by.clone()),
+            &table_names,
+            get_db_instance()?,
+            user,
+        )?;
     }
 
     // Limit and Offset
@@ -201,12 +206,12 @@ pub fn execute_update(
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
-            Statement::CreateIndex { 
+            Statement::CreateIndex {
                 name,
                 table_name,
                 columns,
                 unique: _,
-                if_not_exists: _
+                if_not_exists: _,
             } => {
                 let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
                 let table_name: String = table_name.to_string();
@@ -214,14 +219,17 @@ pub fn execute_update(
 
                 let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
 
-                println!("Creating index {} on table {} with columns {:?}", index_name, table_name, column_names);
+                println!(
+                    "Creating index {} on table {} with columns {:?}",
+                    index_name, table_name, column_names
+                );
 
                 let (_, idx_new_diff): (_, IndexCreateDiff) = BTree::create_btree_index(
                     &table_dir,
                     &table_name,
                     None,
                     column_names,
-                    index_name
+                    index_name,
                 )?;
 
                 user.append_diff(&Diff::IndexCreate(idx_new_diff));
@@ -337,7 +345,8 @@ pub fn execute_update(
                         let table_name: String = names[0].to_string();
 
                         // If the table doesn't exist on this branch, return an error
-                        if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
+                        if (!if_exists)
+                            && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
                         {
                             return Err(format!("Table {} does not exist", table_name));
                         }
@@ -359,14 +368,11 @@ pub fn execute_update(
                         let table_name: &String = &idents[0].value;
                         let index_name: &String = &idents[1].value;
 
-                        let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
+                        let table_dir: String =
+                            get_db_instance()?.get_current_working_branch_path(user);
 
-                        let idx_rem_diff: IndexRemoveDiff = BTree::drop_btree_index(
-                            &table_dir,
-                            table_name,
-                            None,
-                            index_name
-                        )?;
+                        let idx_rem_diff: IndexRemoveDiff =
+                            BTree::drop_btree_index(&table_dir, table_name, None, index_name)?;
 
                         user.append_diff(&Diff::IndexRemove(idx_rem_diff));
                         results.push(format!("Index dropped: {}", index_name));
@@ -485,7 +491,7 @@ pub fn select(
     let mut column_names: Vec<String> = Vec::new();
 
     let tables: Tables = load_aliased_tables(database, user, &table_names)?;
-    
+
     // This is where the fun begins... ;)
     let table_aliases = gen_column_aliases(&tables);
 

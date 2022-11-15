@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use rand::seq::index;
 
 use crate::{
+    btree::{btree::BTree, indexes::IndexID},
     fileio::{header::*, tableio::*},
-    util::row::*, btree::{indexes::IndexID, btree::BTree},
+    util::row::*,
 };
 
 /* Constants */
@@ -59,14 +60,18 @@ impl ToString for Diff {
             ),
             Diff::TableRemove(diff) => {
                 format!("\nREMOVED TABLE\nRemoved Table {}", diff.table_name)
-            },
+            }
             Diff::IndexCreate(diff) => format!(
                 "\nCREATED INDEX\nCreated {} Indexes on Table {} with Schemas {:?}",
-                diff.indexes.len(), diff.table_name, diff.schema
+                diff.indexes.len(),
+                diff.table_name,
+                diff.schema
             ),
             Diff::IndexRemove(diff) => format!(
                 "\nREMOVED INDEX\nRemoved {} Indexes on Table {} with Schemas {:?}",
-                diff.indexes.len(), diff.table_name, diff.schema
+                diff.indexes.len(),
+                diff.table_name,
+                diff.schema
             ),
         }
     }
@@ -388,7 +393,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
                         &index_create_diff.table_name,
                         None,
                         columns,
-                        index_name.clone()
+                        index_name.clone(),
                     )?;
                 }
             }
@@ -398,7 +403,7 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
                         table_dir,
                         &index_remove_diff.table_name,
                         None,
-                        index_name
+                        index_name,
                     )?;
                 }
             }
@@ -453,7 +458,7 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
                         table_dir,
                         &index_create_diff.table_name,
                         None,
-                        index_name
+                        index_name,
                     )?;
                 }
             }
@@ -469,7 +474,7 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
                         &index_remove_diff.table_name,
                         None,
                         columns,
-                        index_name.clone()
+                        index_name.clone(),
                     )?;
                 }
             }
@@ -530,26 +535,18 @@ pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
                 inverted_diffs.push(curr_diff);
             }
             Diff::IndexCreate(index_create_diff) => {
-                inverted_diffs.push(
-                    Diff::IndexRemove(
-                        IndexRemoveDiff {
-                            table_name: index_create_diff.table_name.clone(),
-                            schema: index_create_diff.schema.clone(),
-                            indexes: index_create_diff.indexes.clone(),
-                        }
-                    )
-                );
+                inverted_diffs.push(Diff::IndexRemove(IndexRemoveDiff {
+                    table_name: index_create_diff.table_name.clone(),
+                    schema: index_create_diff.schema.clone(),
+                    indexes: index_create_diff.indexes.clone(),
+                }));
             }
             Diff::IndexRemove(index_remove_diff) => {
-                inverted_diffs.push(
-                    Diff::IndexCreate(
-                        IndexCreateDiff {
-                            table_name: index_remove_diff.table_name.clone(),
-                            schema: index_remove_diff.schema.clone(),
-                            indexes: index_remove_diff.indexes.clone(),
-                        }
-                    )
-                );
+                inverted_diffs.push(Diff::IndexCreate(IndexCreateDiff {
+                    table_name: index_remove_diff.table_name.clone(),
+                    schema: index_remove_diff.schema.clone(),
+                    indexes: index_remove_diff.indexes.clone(),
+                }));
             }
         }
     }

@@ -1,12 +1,12 @@
 use sqlparser::ast::Expr;
 
-use crate::fileio::tableio::*;
+use super::indexes::*;
+use super::internal_index_page::*;
+use super::leaf_index_page::*;
 use crate::fileio::header::*;
+use crate::fileio::tableio::*;
 use crate::util::row::*;
 use crate::version_control::diff::{IndexCreateDiff, IndexRemoveDiff};
-use super::indexes::*;
-use super::leaf_index_page::*;
-use super::internal_index_page::*;
 
 #[derive(Clone)]
 pub struct BTree {
@@ -27,7 +27,7 @@ impl BTree {
         index_name: String,
     ) -> Result<(Self, IndexCreateDiff), String> {
         let mut table: Table = Table::new(table_dir, table_name, table_extension)?;
-        
+
         // Get the index key composed of those column names
         let index_id: IndexID = create_index_id(&columns, &table.schema)?;
         let index_key_type: IndexKeyType = cols_id_to_index_key_type(&index_id, &table.schema);
@@ -47,28 +47,26 @@ impl BTree {
 
         // Get the root internal index page
         let root_page: InternalIndexPage = Self::create_pages_for_btree(
-            &mut table, 
+            &mut table,
             LeafIndexPage::convert_to_key_vals(table_rows, &index_id)?,
-            &index_id, 
+            &index_id,
             &index_key_type,
-            index_name.clone()
+            index_name.clone(),
         )?;
 
-        Ok(
-            (
-                BTree {
-                    index_key_type,
-                    index_name: index_name.clone(),
-                    root_page,
-                    table: table.clone(),
-                },
-                IndexCreateDiff {
-                    table_name: table.name.clone(),
-                    schema: table.schema.clone(),
-                    indexes: vec![(index_name, index_id)],
-                }
-            )
-        )
+        Ok((
+            BTree {
+                index_key_type,
+                index_name: index_name.clone(),
+                root_page,
+                table: table.clone(),
+            },
+            IndexCreateDiff {
+                table_name: table.name.clone(),
+                schema: table.schema.clone(),
+                indexes: vec![(index_name, index_id)],
+            },
+        ))
     }
 
     /// Removes a btree index from the table
@@ -76,26 +74,24 @@ impl BTree {
         table_dir: &String,
         table_name: &String,
         table_extension: Option<&String>, // Optionally specify a file extension. Defaults to TABLE_FILE_EXTENSION.
-        index_name: &String
+        index_name: &String,
     ) -> Result<IndexRemoveDiff, String> {
         let mut table: Table = Table::new(table_dir, table_name, table_extension)?;
 
         // Get the index_id from the index name
         let mut index_id: Option<IndexID> = None;
-        table.indexes
-            .iter()
-            .position(|(id, index)| {
-                if index.1 == *index_name {
-                    index_id = Some(id.clone());
-                    return true;
-                }
-                false
-            });
+        table.indexes.iter().position(|(id, index)| {
+            if index.1 == *index_name {
+                index_id = Some(id.clone());
+                return true;
+            }
+            false
+        });
 
         if let Some(index_id) = index_id {
             // Remove the index from the table
             table.indexes.remove(&index_id);
-            
+
             // Update the header
             let new_header: Header = Header {
                 num_pages: table.max_pages,
@@ -116,11 +112,11 @@ impl BTree {
 
     /// Loads a btree from a given root page
     pub fn load_btree_from_root_page(
-        table: &Table, 
+        table: &Table,
         pagenum: u32,
         index_id: IndexID,
         index_key_type: IndexKeyType,
-        index_name: String
+        index_name: String,
     ) -> Result<Self, String> {
         let internal_page: InternalIndexPage = InternalIndexPage::load_from_table(
             table.path.clone(),
@@ -128,8 +124,9 @@ impl BTree {
             table.schema.clone(),
             pagenum,
             &index_id,
-            &index_key_type)?;
-        
+            &index_key_type,
+        )?;
+
         Ok(BTree {
             index_key_type,
             index_name,
@@ -139,26 +136,17 @@ impl BTree {
     }
 
     /// Gets the rows corresponding to the given index key
-    pub fn get_rows(
-        &self,
-        index_key: &IndexKey
-    ) -> Result<Vec<RowInfo>, String> {
+    pub fn get_rows(&self, index_key: &IndexKey) -> Result<Vec<RowInfo>, String> {
         self.root_page.get_rows_from_key(index_key)
     }
 
     /// Gets the rows corresponding to the given predicate
-    pub fn get_rows_matching_expr(
-        &self,
-        pred: &Expr
-    ) -> Result<Vec<RowInfo>, String> {
+    pub fn get_rows_matching_expr(&self, pred: &Expr) -> Result<Vec<RowInfo>, String> {
         self.root_page.get_rows_matching_expr(pred)
     }
 
     /// Inserts rows into the btree
-    pub fn insert_rows(
-        &mut self,
-        rows: &Vec<RowInfo>
-    ) -> Result<(), String> {
+    pub fn insert_rows(&mut self, rows: &Vec<RowInfo>) -> Result<(), String> {
         for row in rows {
             self.root_page.insert_row(row, self.index_name.clone())?;
         }
@@ -166,10 +154,7 @@ impl BTree {
     }
 
     /// Removes rows from the btree
-    pub fn remove_rows(
-        &mut self,
-        rows: &Vec<RowInfo>
-    ) -> Result<(), String> {
+    pub fn remove_rows(&mut self, rows: &Vec<RowInfo>) -> Result<(), String> {
         for row in rows {
             self.root_page.remove_row(row, self.index_name.clone())?;
         }
@@ -182,7 +167,7 @@ impl BTree {
     pub fn update_rows(
         &mut self,
         old_rows: &Vec<RowInfo>,
-        new_rows: &Vec<RowInfo>
+        new_rows: &Vec<RowInfo>,
     ) -> Result<(), String> {
         self.remove_rows(old_rows)?;
         self.insert_rows(new_rows)?;
@@ -195,7 +180,7 @@ impl BTree {
         key_values: Vec<(IndexKey, LeafIndexValue)>,
         index_id: &IndexID,
         index_key_type: &IndexKeyType,
-        index_name: String
+        index_name: String,
     ) -> Result<InternalIndexPage, String> {
         let num_rows: usize = key_values.len();
 
@@ -206,14 +191,14 @@ impl BTree {
                 table.path.clone(),
                 table.max_pages,
                 index_id,
-                index_key_type
+                index_key_type,
             )?;
             table.max_pages += 1;
             let mut leaf_page2: LeafIndexPage = LeafIndexPage::new(
                 table.path.clone(),
                 table.max_pages,
                 index_id,
-                index_key_type
+                index_key_type,
             )?;
             table.max_pages += 1;
 
@@ -223,10 +208,10 @@ impl BTree {
                 table.max_pages,
                 index_id,
                 index_key_type,
-                &InternalIndexValue { 
+                &InternalIndexValue {
                     pagenum: leaf_page1.get_pagenum(),
                 },
-                1u8
+                1u8,
             )?;
             table.max_pages += 1;
 
@@ -235,8 +220,8 @@ impl BTree {
                     .iter()
                     .map(|x| x.get_default_value())
                     .collect(),
-                &InternalIndexValue { 
-                    pagenum: leaf_page2.get_pagenum()
+                &InternalIndexValue {
+                    pagenum: leaf_page2.get_pagenum(),
                 },
             )?;
 
@@ -246,7 +231,9 @@ impl BTree {
             internal_page.write_page()?;
 
             // Update the header
-            table.indexes.insert(index_id.clone(), (internal_page.get_pagenum(), index_name));
+            table
+                .indexes
+                .insert(index_id.clone(), (internal_page.get_pagenum(), index_name));
             let new_header: Header = Header {
                 num_pages: table.max_pages,
                 schema: table.schema.clone(),
@@ -262,21 +249,26 @@ impl BTree {
         let mut num_pages_per_level: Vec<u32> = Vec::new();
 
         // Calculate how many rows pointers we can fit on a single leaf page
-        let max_pointers_per_leaf: usize = LeafIndexPage::get_max_index_pointers_per_page(&index_key_type);
+        let max_pointers_per_leaf: usize =
+            LeafIndexPage::get_max_index_pointers_per_page(&index_key_type);
 
         // Calculate how many leaf pages we need to store all the rows
         // Double it because we want to keep the leaves between 50% and 100% full
-        let num_leaf_pages: u32 = ((num_rows as f64 / max_pointers_per_leaf as f64).ceil() as u32) * 2;
+        let num_leaf_pages: u32 =
+            ((num_rows as f64 / max_pointers_per_leaf as f64).ceil() as u32) * 2;
         num_pages_per_level.push(num_leaf_pages);
 
         // Calculate how many pointers we can fit on a single internal page
-        let max_pointers_per_internal: usize = InternalIndexPage::get_max_index_pointers_per_page(&index_key_type);
+        let max_pointers_per_internal: usize =
+            InternalIndexPage::get_max_index_pointers_per_page(&index_key_type);
 
         // Calculate how many internal nodes we need to point to all the leaf pages
         let mut pages_on_level_below: u32 = num_leaf_pages;
         loop {
-            // Divide the max_pointers_per_internal by 2 because we want to keep the internal nodes between 50% and 100% full 
-            let num_internal_pages_for_level: u32 = (pages_on_level_below as f64 / (max_pointers_per_internal as f64 / 2 as f64)).ceil() as u32;
+            // Divide the max_pointers_per_internal by 2 because we want to keep the internal nodes between 50% and 100% full
+            let num_internal_pages_for_level: u32 = (pages_on_level_below as f64
+                / (max_pointers_per_internal as f64 / 2 as f64))
+                .ceil() as u32;
             num_pages_per_level.push(num_internal_pages_for_level);
             if num_internal_pages_for_level == 1 {
                 break;
@@ -288,10 +280,10 @@ impl BTree {
         let mut leaf_pages: Vec<LeafIndexPage> = Vec::new();
         for _ in 0..num_leaf_pages {
             let leaf_page: LeafIndexPage = LeafIndexPage::new(
-                table.path.clone(), 
-                table.max_pages, 
-                index_id, 
-                &index_key_type
+                table.path.clone(),
+                table.max_pages,
+                index_id,
+                &index_key_type,
             )?;
             table.max_pages += 1;
             leaf_pages.push(leaf_page);
@@ -305,7 +297,9 @@ impl BTree {
             rows_in_leaf_page += 1;
             // Evenly distribute the rows across the leaf pages
             let num_leaf_pages_unfilled: usize = (leaf_pages.len() - leaf_page_idx) - 1;
-            if rows_in_leaf_page > (num_rows / leaf_pages.len()) || i == (num_rows - 1) - num_leaf_pages_unfilled {
+            if rows_in_leaf_page > (num_rows / leaf_pages.len())
+                || i == (num_rows - 1) - num_leaf_pages_unfilled
+            {
                 // Advance the leaf page idx up until the last leaf page
                 if leaf_page_idx < (leaf_pages.len() - 1) {
                     leaf_page_idx += 1;
@@ -324,9 +318,11 @@ impl BTree {
         for leaf_page in leaf_pages.clone() {
             if let Some(smallest_key) = leaf_page.get_lowest_index_key() {
                 pages_on_level_below.push((leaf_page.get_pagenum(), smallest_key));
-            }
-            else {
-                return Err(format!("Leaf page {} has no index keys", leaf_page.get_pagenum()));
+            } else {
+                return Err(format!(
+                    "Leaf page {} has no index keys",
+                    leaf_page.get_pagenum()
+                ));
             }
         }
 
@@ -342,12 +338,14 @@ impl BTree {
                 // Create a new internal page if we need to
                 if num_pointers_in_page.is_none() {
                     let internal_page: InternalIndexPage = InternalIndexPage::new(
-                        &table, 
-                        table.max_pages, 
-                        &index_id, 
+                        &table,
+                        table.max_pages,
+                        &index_id,
                         &index_key_type,
-                        &InternalIndexValue { pagenum: page_below },
-                        level as u8
+                        &InternalIndexValue {
+                            pagenum: page_below,
+                        },
+                        level as u8,
                     )?;
                     table.max_pages += 1;
                     num_pointers_in_page = Some(1);
@@ -355,11 +353,18 @@ impl BTree {
                 }
                 // Insert the page on the level below into the current internal page
                 else {
-                    internal_pages_for_level[internal_page_idx].add_pointer_to_page(&page_below_lowest_key, &InternalIndexValue { pagenum: page_below })?;
+                    internal_pages_for_level[internal_page_idx].add_pointer_to_page(
+                        &page_below_lowest_key,
+                        &InternalIndexValue {
+                            pagenum: page_below,
+                        },
+                    )?;
                     num_pointers_in_page = Some(num_pointers_in_page.unwrap() + 1);
 
                     // If the internal page is bet, advance to the next one
-                    if num_pointers_in_page.unwrap() > (num_pages_on_level_below / num_pages_per_level[level] as usize) {
+                    if num_pointers_in_page.unwrap()
+                        > (num_pages_on_level_below / num_pages_per_level[level] as usize)
+                    {
                         num_pointers_in_page = None;
                         internal_page_idx += 1;
                         // Advance the page idx up until the last page
@@ -371,9 +376,10 @@ impl BTree {
             }
             // We should have filled part of every page on this level
             assert_eq!(
-                internal_page_idx, 
+                internal_page_idx,
                 (num_pages_per_level[level] - 1) as usize,
-                "Internal Index Pages on level {} were not all filled", level
+                "Internal Index Pages on level {} were not all filled",
+                level
             );
 
             // Update pages_on_level_below with the pages on this level
@@ -381,9 +387,11 @@ impl BTree {
             for internal_page in internal_pages_for_level.clone() {
                 if let Some(smallest_key) = internal_page.get_lowest_index_key() {
                     pages_on_level_below.push((internal_page.get_pagenum(), smallest_key));
-                }
-                else {
-                    return Err(format!("Internal page {} has no index keys", internal_page.get_pagenum()));
+                } else {
+                    return Err(format!(
+                        "Internal page {} has no index keys",
+                        internal_page.get_pagenum()
+                    ));
                 }
             }
 
@@ -400,7 +408,9 @@ impl BTree {
         let root_page: InternalIndexPage = internal_pages[internal_pages.len() - 1][0].clone();
 
         // Update the header
-        table.indexes.insert(index_id.clone(), (root_page.get_pagenum(), index_name));
+        table
+            .indexes
+            .insert(index_id.clone(), (root_page.get_pagenum(), index_name));
         let new_header: Header = Header {
             num_pages: table.max_pages,
             schema: table.schema.clone(),
@@ -409,26 +419,25 @@ impl BTree {
         write_header(&table.path, &new_header)?;
 
         // Get the root internal index page
-       Ok(root_page)
+        Ok(root_page)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
 
-    use serial_test::serial;
-    use sqlparser::ast::{Ident, BinaryOperator};
-    use crate::{
-        version_control::diff::*, 
-        util::{dbtype::*, bench::create_huge_bench_db}, 
-        user::userdata::User, 
-        parser::parser::parse, 
-        fileio::databaseio::{get_db_instance, delete_db_instance},
-        executor::query::*,
-    };
     use super::*;
+    use crate::{
+        executor::query::*,
+        fileio::databaseio::{delete_db_instance, get_db_instance},
+        parser::parser::parse,
+        user::userdata::User,
+        util::{bench::create_huge_bench_db, dbtype::*},
+        version_control::diff::*,
+    };
+    use serial_test::serial;
+    use sqlparser::ast::{BinaryOperator, Ident};
 
     #[test]
     #[serial]
@@ -438,13 +447,13 @@ mod tests {
         let index_name: String = String::from("test_index");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
+            ("name".to_string(), Column::String(10)),
         ];
         let index_column_names: Vec<String> = vec!["id".to_string()];
         let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(1), Value::String("a".to_string())],
+            vec![Value::I32(4), Value::String("b".to_string())],
+            vec![Value::I32(7), Value::String("c".to_string())],
             vec![Value::I32(10), Value::String("d".to_string())],
             vec![Value::I32(13), Value::String("e".to_string())],
             vec![Value::I32(16), Value::String("f".to_string())],
@@ -465,19 +474,22 @@ mod tests {
         ];
 
         // Create the table
-        let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir)
+            .unwrap()
+            .0;
 
         // Insert the rows
         let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
 
         // Create the index
         let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
+            &table_dir,
+            &table_name,
+            None,
             index_column_names,
-            index_name
-        ).unwrap();
+            index_name,
+        )
+        .unwrap();
 
         // Get the row that has a key of 1
         let index_key: IndexKey = vec![Value::I32(1)];
@@ -486,7 +498,8 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0],
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .find(|rowinfo| rowinfo.row[0] == Value::I32(1))
                 .unwrap()
@@ -500,7 +513,8 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .clone()
                 .iter()
                 .filter(|rowinfo| rowinfo.row[0] == Value::I32(49))
@@ -525,16 +539,23 @@ mod tests {
 
         fn compare_rows_using_id_eq_num(id_value: i32, btree: &BTree, insert_diff: &InsertDiff) {
             // Get the rows from the table that have match 'id = id_value'
-            let mut rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-                &Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+            let mut rows: Vec<RowInfo> = btree
+                .get_rows_matching_expr(&Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "id".to_string(),
+                        quote_style: None,
+                    })),
                     op: BinaryOperator::Eq,
-                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(id_value.to_string(), true)))
-                }
-            ).unwrap();
-    
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        id_value.to_string(),
+                        true,
+                    ))),
+                })
+                .unwrap();
+
             // Get the rows from the insert_diff that match 'id = id_value'
-            let mut expected_rows: Vec<RowInfo> = insert_diff.rows
+            let mut expected_rows: Vec<RowInfo> = insert_diff
+                .rows
                 .clone()
                 .iter()
                 .filter(|rowinfo| rowinfo.row[0] == Value::I32(id_value))
@@ -577,21 +598,24 @@ mod tests {
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
+            ("name".to_string(), Column::String(10)),
         ];
         let index_column_names: Vec<String> = vec!["id".to_string()];
 
         // Create the table
-        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
+        create_table_in_dir(&table_name, &table_schema, &table_dir)
+            .unwrap()
+            .0;
 
         // Create the index
         BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
+            &table_dir,
+            &table_name,
+            None,
             index_column_names,
-            index_name
-        ).unwrap();
+            index_name,
+        )
+        .unwrap();
 
         // Clean up
         cleanup_test();
@@ -604,32 +628,45 @@ mod tests {
 
         // Get the rows from the table that have match 'id = 5'
         // There should be none
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("5".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "5".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows, vec![]);
 
         // Get the rows from the table that have match 'id = 19'
         // There should be one
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("19".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "19".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(19))
                 .cloned()
@@ -638,19 +675,26 @@ mod tests {
 
         // Get the rows from the table that have match 'id = 49'
         // There should be two
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("49".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "49".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 2);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(49))
                 .cloned()
@@ -667,45 +711,59 @@ mod tests {
         let (table, btree, insert_diff): (Table, BTree, InsertDiff) = setup_test();
 
         // Remove rows that match 'id = 49'
-        table.remove_rows(
-            insert_diff.rows
-                .iter()
-                .filter(|row_info| row_info.row[0] == Value::I32(49))
-                .map(|row_info| 
-                    RowLocation { 
+        table
+            .remove_rows(
+                insert_diff
+                    .rows
+                    .iter()
+                    .filter(|row_info| row_info.row[0] == Value::I32(49))
+                    .map(|row_info| RowLocation {
                         pagenum: row_info.pagenum,
-                        rownum: row_info.rownum 
-                    }
-                )
-                .collect::<Vec<RowLocation>>()
-        ).unwrap();
+                        rownum: row_info.rownum,
+                    })
+                    .collect::<Vec<RowLocation>>(),
+            )
+            .unwrap();
 
         // Get the rows from the table that have match 'id = 49'
         // There should be none
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("49".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "49".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
         assert_eq!(rows.len(), 0);
 
         // Get the rows from the table that have match 'id = 19'
         // There should be one
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("19".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "19".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(19))
                 .cloned()
@@ -722,35 +780,43 @@ mod tests {
         let (table, btree, insert_diff): (Table, BTree, InsertDiff) = setup_test();
 
         // Udate rows that match 'id = 49'
-        let update_diff: UpdateDiff = table.rewrite_rows(
-            insert_diff.rows
-                .iter()
-                .filter(|row_info| row_info.row[0] == Value::I32(49))
-                .map(|row_info| 
-                    RowInfo { 
+        let update_diff: UpdateDiff = table
+            .rewrite_rows(
+                insert_diff
+                    .rows
+                    .iter()
+                    .filter(|row_info| row_info.row[0] == Value::I32(49))
+                    .map(|row_info| RowInfo {
                         row: vec![Value::I32(49), Value::String("z".to_string())],
                         pagenum: row_info.pagenum,
-                        rownum: row_info.rownum 
-                    }
-                )
-                .collect::<Vec<RowInfo>>()
-        ).unwrap();
+                        rownum: row_info.rownum,
+                    })
+                    .collect::<Vec<RowInfo>>(),
+            )
+            .unwrap();
 
         // Get the rows from the table that match 'id = 49'
         // There should be two
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("49".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "49".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 2);
         assert_eq!(
             rows,
-            update_diff.rows
+            update_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(49))
                 .cloned()
@@ -759,19 +825,26 @@ mod tests {
 
         // Get the rows from the table that have match 'id = 19'
         // There should be one
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("19".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "19".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(19))
                 .cloned()
@@ -787,43 +860,47 @@ mod tests {
     fn test_write_rows() {
         let (mut table, btree, insert_diff): (Table, BTree, InsertDiff) = setup_test();
 
-        let mut rows_to_write: Vec<RowInfo> = insert_diff.rows
+        let mut rows_to_write: Vec<RowInfo> = insert_diff
+            .rows
             .iter()
             .filter(|row_info| row_info.row[0] == Value::I32(49))
-            .map(|row_info| 
-                RowInfo { 
-                    row: vec![Value::I32(49), Value::String("z".to_string())],
-                    pagenum: row_info.pagenum,
-                    rownum: row_info.rownum 
-                }
-            )
+            .map(|row_info| RowInfo {
+                row: vec![Value::I32(49), Value::String("z".to_string())],
+                pagenum: row_info.pagenum,
+                rownum: row_info.rownum,
+            })
             .collect::<Vec<RowInfo>>();
 
-        rows_to_write.push(
-            RowInfo {
-                row: vec![Value::I32(100), Value::String("abc".to_string())],
-                pagenum: 5,
-                rownum: 0
-            }
-        );
+        rows_to_write.push(RowInfo {
+            row: vec![Value::I32(100), Value::String("abc".to_string())],
+            pagenum: 5,
+            rownum: 0,
+        });
 
         let write_diff: InsertDiff = table.write_rows(rows_to_write).unwrap();
 
         // Get the rows from the table that match 'id = 49'
         // There should be two
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("49".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "49".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 2);
         assert_eq!(
             rows,
-            write_diff.rows
+            write_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(49))
                 .cloned()
@@ -832,19 +909,26 @@ mod tests {
 
         // Get the rows from the table that match 'id = 100'
         // There should be one
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("100".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "100".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows,
-            write_diff.rows
+            write_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(100))
                 .cloned()
@@ -853,19 +937,26 @@ mod tests {
 
         // Get the rows from the table that have match 'id = 19'
         // There should be one
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "id".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("19".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "19".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[0] == Value::I32(19))
                 .cloned()
@@ -898,7 +989,9 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], Value::I32(1));
 
-        let table_dir: String = get_db_instance().unwrap().get_current_working_branch_path(&user);
+        let table_dir: String = get_db_instance()
+            .unwrap()
+            .get_current_working_branch_path(&user);
 
         // Create the index
         BTree::create_btree_index(
@@ -906,8 +999,9 @@ mod tests {
             &"huge_table".to_string(),
             None,
             vec!["id1".to_string()],
-            index_name
-        ).unwrap();
+            index_name,
+        )
+        .unwrap();
 
         // Time the query
         let start_time_with_index: Instant = Instant::now();
@@ -943,13 +1037,13 @@ mod tests {
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
+            ("name".to_string(), Column::String(10)),
         ];
         let index_column_names: Vec<String> = vec!["name".to_string()];
         let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(1), Value::String("a".to_string())],
+            vec![Value::I32(4), Value::String("b".to_string())],
+            vec![Value::I32(7), Value::String("c".to_string())],
             vec![Value::I32(10), Value::String("d".to_string())],
             vec![Value::I32(13), Value::String("e".to_string())],
             vec![Value::I32(16), Value::String("f".to_string())],
@@ -974,12 +1068,13 @@ mod tests {
 
         // Create the index
         let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
+            &table_dir,
+            &table_name,
+            None,
             index_column_names,
-            index_name
-        ).unwrap();
+            index_name,
+        )
+        .unwrap();
 
         // Re-read the table
         let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
@@ -989,19 +1084,26 @@ mod tests {
 
         // Get the rows from the table that match 'name = "e"'
         // There should be one
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "name".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("e".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "e".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[1] == Value::String("e".to_string()))
                 .cloned()
@@ -1010,19 +1112,26 @@ mod tests {
 
         // Get the rows from the table that match 'name = "a"'
         // There should be three
-        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
-            &Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident { value: "name".to_string(), quote_style: None })),
+        let rows: Vec<RowInfo> = btree
+            .get_rows_matching_expr(&Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "name".to_string(),
+                    quote_style: None,
+                })),
                 op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("a".to_string(), true)))
-            }
-        ).unwrap();
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "a".to_string(),
+                    true,
+                ))),
+            })
+            .unwrap();
 
         // Compare the two
         assert_eq!(rows.len(), 3);
         assert_eq!(
             rows,
-            insert_diff.rows
+            insert_diff
+                .rows
                 .iter()
                 .filter(|row_info| row_info.row[1] == Value::String("a".to_string()))
                 .cloned()
@@ -1039,13 +1148,13 @@ mod tests {
         let table_name: String = String::from("create_btree_test_table");
         let table_schema: Schema = vec![
             ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
+            ("name".to_string(), Column::String(10)),
         ];
         let index_column_names: Vec<String> = vec!["id".to_string()];
         let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(1), Value::String("a".to_string())],
+            vec![Value::I32(4), Value::String("b".to_string())],
+            vec![Value::I32(7), Value::String("c".to_string())],
             vec![Value::I32(10), Value::String("d".to_string())],
             vec![Value::I32(13), Value::String("e".to_string())],
             vec![Value::I32(16), Value::String("f".to_string())],
@@ -1070,12 +1179,13 @@ mod tests {
 
         // Create the index
         let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
+            &table_dir,
+            &table_name,
+            None,
             index_column_names,
-            index_name
-        ).unwrap();
+            index_name,
+        )
+        .unwrap();
 
         // Re-read the table
         let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
