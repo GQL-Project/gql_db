@@ -893,6 +893,145 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_write_rows() {
+        let table_dir: String = String::from("./testing");
+        let table_name: String = String::from("create_btree_test_table");
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let table_rows: Vec<Row> = vec![
+            vec![Value::I32(1),  Value::String("a".to_string())],
+            vec![Value::I32(4),  Value::String("b".to_string())],
+            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(10), Value::String("d".to_string())],
+            vec![Value::I32(13), Value::String("e".to_string())],
+            vec![Value::I32(16), Value::String("f".to_string())],
+            vec![Value::I32(19), Value::String("g".to_string())],
+            vec![Value::I32(49), Value::String("h".to_string())],
+            vec![Value::I32(25), Value::String("i".to_string())],
+            vec![Value::I32(28), Value::String("j".to_string())],
+            vec![Value::I32(31), Value::String("k".to_string())],
+            vec![Value::I32(34), Value::String("l".to_string())],
+            vec![Value::I32(37), Value::String("m".to_string())],
+            vec![Value::I32(40), Value::String("n".to_string())],
+            vec![Value::I32(43), Value::String("o".to_string())],
+            vec![Value::I32(68), Value::String("p".to_string())],
+            vec![Value::I32(46), Value::String("q".to_string())],
+            vec![Value::I32(49), Value::String("r".to_string())],
+            vec![Value::I32(52), Value::String("s".to_string())],
+            vec![Value::I32(55), Value::String("t".to_string())],
+        ];
+
+        // Create the table
+        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
+
+        // Create the index
+        let btree: BTree = BTree::create_btree_index(
+            &table_dir, 
+            &table_name, 
+            None, 
+            index_column_names
+        ).unwrap();
+
+        // Re-read the table
+        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
+
+        // Insert the rows
+        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+
+        let mut rows_to_write: Vec<RowInfo> = insert_diff.rows
+            .iter()
+            .filter(|row_info| row_info.row[0] == Value::I32(49))
+            .map(|row_info| 
+                RowInfo { 
+                    row: vec![Value::I32(49), Value::String("z".to_string())],
+                    pagenum: row_info.pagenum,
+                    rownum: row_info.rownum 
+                }
+            )
+            .collect::<Vec<RowInfo>>();
+
+        rows_to_write.push(
+            RowInfo {
+                row: vec![Value::I32(100), Value::String("abc".to_string())],
+                pagenum: 5,
+                rownum: 0
+            }
+        );
+
+        let write_diff: InsertDiff = table.write_rows(rows_to_write).unwrap();
+
+        // Get the rows from the table that match 'id = 49'
+        // There should be two
+        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("49".to_string(), true)))
+            }
+        ).unwrap();
+
+        // Compare the two
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows,
+            write_diff.rows
+                .iter()
+                .filter(|row_info| row_info.row[0] == Value::I32(49))
+                .cloned()
+                .collect::<Vec<RowInfo>>()
+        );
+
+        // Get the rows from the table that match 'id = 100'
+        // There should be one
+        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("100".to_string(), true)))
+            }
+        ).unwrap();
+
+        // Compare the two
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows,
+            write_diff.rows
+                .iter()
+                .filter(|row_info| row_info.row[0] == Value::I32(100))
+                .cloned()
+                .collect::<Vec<RowInfo>>()
+        );
+
+        // Get the rows from the table that have match 'id = 19'
+        // There should be one
+        let rows: Vec<RowInfo> = btree.get_rows_matching_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: None })),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number("19".to_string(), true)))
+            }
+        ).unwrap();
+
+        // Compare the two
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows,
+            insert_diff.rows
+                .iter()
+                .filter(|row_info| row_info.row[0] == Value::I32(19))
+                .cloned()
+                .collect::<Vec<RowInfo>>()
+        );
+
+        // Clean up
+        std::fs::remove_dir_all("./testing").unwrap();
+    }
+
+    #[test]
+    #[serial]
     fn test_btree_speed() {
         let mut user: User = create_huge_bench_db(100, false);
 

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use itertools::Itertools;
+
 use super::{databaseio::Database, header::*, pageio::*, rowio::*};
 use crate::{
     user::userdata::User,
@@ -377,6 +379,7 @@ impl Table {
             schema: self.schema.clone(),
             rows: Vec::new(),
         };
+        let mut old_rows: Vec<RowInfo> = Vec::new();
 
         // Just return right away if we aren't inserting any rows
         if rows.len() == 0 {
@@ -408,6 +411,16 @@ impl Table {
             // Read in the page
             (page, page_type) = read_page(rowinfo.pagenum, &self.path)?;
 
+            // Read in the old row if there is one
+            let row_read_opt: Option<Row> = read_row(&self.schema, &page, rowinfo.rownum);
+            if let Some(row_read) = row_read_opt {
+                old_rows.push(RowInfo {
+                    pagenum: rowinfo.pagenum,
+                    rownum: rowinfo.rownum,
+                    row: row_read,
+                });
+            }
+
             // Write the row to the page at the row number
             write_row(&self.schema, page.as_mut(), &rowinfo.row, rowinfo.rownum)?;
             write_page(rowinfo.pagenum, &self.path, page.as_ref(), page_type.clone())?;
@@ -421,6 +434,47 @@ impl Table {
         }
         // Write the last page
         write_page(pagenum, &self.path, page.as_mut(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            let new_rows: Vec<RowInfo> = diff
+                .rows
+                .iter()
+                // Filter out the rows that didn't change
+                .filter(|rowinfo| 
+                    old_rows
+                        .iter()
+                        .map(|ri| 
+                            RowLocation { 
+                                pagenum: ri.pagenum,
+                                rownum: ri.rownum
+                            }
+                        ).contains(
+                            &RowLocation {
+                                pagenum: rowinfo.pagenum,
+                                rownum: rowinfo.rownum
+                            }
+                        )
+                )
+                .cloned()
+                .collect();
+
+            let insert_rows: Vec<RowInfo> = diff
+                .rows
+                .iter()
+                // Filter out the rows that did change
+                .filter(|rowinfo| 
+                    !new_rows.contains(rowinfo)
+                )
+                .cloned()
+                .collect();
+
+            self.load_btree(index_id)?
+                .insert_rows(&insert_rows)?;
+
+            self.load_btree(index_id)?
+                .update_rows(&old_rows, &new_rows)?;
+        }
         Ok(diff)
     }
 
