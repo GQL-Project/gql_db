@@ -1106,65 +1106,6 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_btree_speed() {
-        let mut user: User = create_huge_bench_db(100, false);
-        let index_name: String = String::from("test_index");
-
-        // Time the query
-        let start_time_no_index: Instant = Instant::now();
-
-        let (_, results) = execute_query(
-            &parse("select * from huge_table WHERE id1 = 1", false).unwrap(),
-            &mut user,
-            &"".to_string(),
-        )
-        .unwrap();
-
-        let duration_no_index: Duration = Instant::now() - start_time_no_index;
-
-        // Assert that the results are correct
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0][0], Value::I32(1));
-
-        let table_dir: String = get_db_instance().unwrap().get_current_working_branch_path(&user);
-
-        // Create the index
-        BTree::create_btree_index(
-            &table_dir,
-            &"huge_table".to_string(),
-            None,
-            vec!["id1".to_string()],
-            index_name
-        ).unwrap();
-
-        // Time the query
-        let start_time_with_index: Instant = Instant::now();
-
-        let (_, results) = execute_query(
-            &parse("select * from huge_table WHERE id1 = 1", false).unwrap(),
-            &mut user,
-            &"".to_string(),
-        )
-        .unwrap();
-
-        let duration_with_index: Duration = Instant::now() - start_time_with_index;
-
-        // Assert that the results are correct
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0][0], Value::I32(1));
-
-        println!("Duration without index: {:?}", duration_no_index);
-        println!("Duration with index: {:?}", duration_with_index);
-
-        // Assert that the query with the index is faster
-        assert!(duration_with_index < duration_no_index);
-
-        // Delete the db instance
-        delete_db_instance().unwrap();
-    }
-
-    #[test]
-    #[serial]
     fn test_btree_speed_huge() {
         let mut user: User = create_huge_bench_db(1000, false);
         let index_name: String = String::from("test_index");

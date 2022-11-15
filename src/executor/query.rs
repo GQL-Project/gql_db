@@ -181,8 +181,8 @@ pub fn execute_update(
                 name,
                 table_name,
                 columns,
-                unique,
-                if_not_exists
+                unique: _,
+                if_not_exists: _
             } => {
                 let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
                 let table_name: String = table_name.to_string();
@@ -192,7 +192,7 @@ pub fn execute_update(
 
                 println!("Creating index {} on table {} with columns {:?}", index_name, table_name, column_names);
 
-                BTree::create_btree_index(
+                let (_, idx_new_diff): (_, IndexCreateDiff) = BTree::create_btree_index(
                     &table_dir,
                     &table_name,
                     None,
@@ -200,6 +200,7 @@ pub fn execute_update(
                     index_name
                 )?;
 
+                user.append_diff(&Diff::IndexCreate(idx_new_diff));
                 results.push("Successfully created index".to_string());
             }
             Statement::Update {
@@ -303,22 +304,52 @@ pub fn execute_update(
                 cascade: _,
                 purge: _,
             } => {
-                if object_type.clone() == sqlparser::ast::ObjectType::Table {
-                    if names.len() != 1 {
-                        return Err("Can only drop one table at a time".to_string());
+                match object_type.clone() {
+                    sqlparser::ast::ObjectType::Table => {
+                        if names.len() != 1 {
+                            return Err("Can only drop one table at a time".to_string());
+                        }
+
+                        let table_name: String = names[0].to_string();
+
+                        // If the table doesn't exist on this branch, return an error
+                        if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
+                        {
+                            return Err(format!("Table {} does not exist", table_name));
+                        }
+
+                        let result: TableRemoveDiff =
+                            drop_table(&table_name, get_db_instance()?, user)?;
+                        results.push(format!("Table dropped: {}", result.table_name));
                     }
+                    sqlparser::ast::ObjectType::Index => {
+                        if names.len() != 1 {
+                            return Err("Can only drop one index at a time".to_string());
+                        }
 
-                    let table_name: String = names[0].to_string();
+                        let idents: Vec<Ident> = names[0].0.clone();
+                        if idents.len() != 2 {
+                            return Err("Must specify one index and table to drop {table_name}.{index_name}".to_string());
+                        }
 
-                    // If the table doesn't exist on this branch, return an error
-                    if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
-                    {
-                        return Err(format!("Table {} does not exist", table_name));
+                        let table_name: &String = &idents[0].value;
+                        let index_name: &String = &idents[1].value;
+
+                        let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
+
+                        let idx_rem_diff: IndexRemoveDiff = BTree::drop_btree_index(
+                            &table_dir,
+                            table_name,
+                            None,
+                            index_name
+                        )?;
+
+                        user.append_diff(&Diff::IndexRemove(idx_rem_diff));
+                        results.push(format!("Index dropped: {}", index_name));
                     }
-
-                    let result: TableRemoveDiff =
-                        drop_table(&table_name, get_db_instance()?, user)?;
-                    results.push(format!("Table dropped: {}", result.table_name));
+                    _ => {
+                        return Err("Can only drop tables and indexes".to_string());
+                    }
                 }
             }
             Statement::CreateTable { name, columns, .. } => {
