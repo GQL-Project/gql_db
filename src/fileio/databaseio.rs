@@ -1,6 +1,7 @@
 use super::header::schema_size;
 use super::pageio::PAGE_SIZE;
 use super::tableio::*;
+use crate::user::usercreds::UserCREDs;
 use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
 use crate::version_control::command::del_branch;
@@ -32,6 +33,10 @@ pub const BRANCHES_FILE_EXTENSION: &str = ".gql";
 pub const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
 pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
+// User CREDs File Constants
+pub const USER_CREDS_FILE_NAME: &str = "user_creds";
+pub const USER_CREDS_FILE_EXTENSION: &str = ".gql";
+
 // #[derive(Clone)] I'm keeping this commented. We do NOT want the database to be cloneable.
 pub struct Database {
     db_path: String, // This is the full patch to the database directory: <path>/<db_name>
@@ -39,6 +44,7 @@ pub struct Database {
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
     branches: Branches, // The Branches file object for this database
     commit_file: CommitFile, // The CommitFile object for this database
+    user_creds: UserCREDs, // The UserCreds object for this database
     mutex: ReentrantMutex<()>, // This is the mutex that is used to lock the database
                      // TODO: maybe add permissions here
 }
@@ -128,6 +134,12 @@ impl Database {
         std::fs::File::create(&branches_file_path)
             .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
+        // Create the user credentials file, which holds all the user credentials for the database
+        // './databases/<database_name>/user_creds.gql'
+        let user_creds = Database::append_user_creds_file_path(db_path.clone());
+        std::fs::File::create(&user_creds)
+            .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+
         // Create the branch_heads file, which holds all the branch HEADs for the database
         // './databases/<database_name>/branch_heads.gql'
         let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), true)?;
@@ -137,6 +149,9 @@ impl Database {
 
         // Create the commit file object
         let commit_file: CommitFile = CommitFile::new(&db_path.clone(), true)?;
+
+        // Create the user credentials file object
+        let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), true)?;
 
         // Now create the directory for the main branch
         // './databases/<database_name>/<database_name>-<branch_name>/'
@@ -155,6 +170,7 @@ impl Database {
             branch_heads: branch_heads,
             branches: branches,
             commit_file: commit_file,
+            user_creds: user_creds,
             mutex: ReentrantMutex::new(()),
         })
     }
@@ -182,12 +198,16 @@ impl Database {
         // Create the commit file object
         let commit_file: CommitFile = CommitFile::new(&db_path.clone(), false)?;
 
+        // Create the user credentials file object
+        let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), false)?;
+
         Ok(Database {
             db_path: db_path,
             db_name: database_name,
             branch_heads: branch_heads,
             branches: branches,
             commit_file: commit_file,
+            user_creds: user_creds,
             mutex: ReentrantMutex::new(()),
         })
     }
@@ -393,6 +413,21 @@ impl Database {
         &mut self.branches
     }
 
+    /// Returns the database's users
+    pub fn get_user_creds_file(&self) -> &UserCREDs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &self.user_creds
+    }
+
+    pub fn get_user_creds_file_mut(&mut self) -> &mut UserCREDs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &mut self.user_creds
+    }
+
     /// returns the database's commit file
     pub fn get_commit_file_mut(&mut self) -> &mut CommitFile {
         // Make sure to lock the database before doing anything
@@ -473,6 +508,14 @@ impl Database {
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         Ok(self.branch_heads.get_all_branch_names()?)
+    }
+
+    // Returns a list of all users on the database
+    pub fn get_all_usernames(&mut self) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        Ok(self.user_creds.get_all_usernames()?)
     }
 
     /// Deletes the database at the given path.
@@ -1329,6 +1372,16 @@ impl Database {
         Database::append_branch_heads_file_path(db_dir_path.clone())
     }
 
+    /// Return the path to the database's user CREDs file: <path>/<db_name>/user_creds.gql
+    pub fn get_user_creds_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the user creds file path appended to the database path
+        Database::append_user_creds_file_path(db_dir_path.clone())
+    }
+
     /// Private static method that appends the deltas file path to the database_path
     fn append_deltas_file_path(database_path: String) -> String {
         let mut deltas_file_path = database_path;
@@ -1363,6 +1416,15 @@ impl Database {
         branch_heads_file_path.push_str(BRANCH_HEADS_FILE_NAME);
         branch_heads_file_path.push_str(BRANCH_HEADS_FILE_EXTENSION);
         branch_heads_file_path
+    }
+
+    // Private static method that appends the user creds file path to the database_path
+    fn append_user_creds_file_path(database_path: String) -> String {
+        let mut user_creds_file_path = database_path;
+        user_creds_file_path.push(std::path::MAIN_SEPARATOR);
+        user_creds_file_path.push_str(USER_CREDS_FILE_NAME);
+        user_creds_file_path.push_str(USER_CREDS_FILE_EXTENSION);
+        user_creds_file_path
     }
 }
 

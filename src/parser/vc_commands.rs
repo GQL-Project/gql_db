@@ -102,4 +102,6 @@ pub enum VersionControlSubCommand {
         #[arg(long, short, default_value = "false")]
         json: bool,
     },
+    /// Returns the current user and all users
+    User,
 }
