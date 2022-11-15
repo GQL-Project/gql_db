@@ -1,4 +1,5 @@
 use colored::Colorize;
+use rpassword::read_password;
 use std::io::{self, Write};
 use std::string::String;
 use tonic::transport::Channel;
@@ -175,9 +176,8 @@ async fn query_for_ip_port(
         /* Query for password */
         print!("{}", "Enter Password> ");
         io::stdout().flush()?;
-        let mut password: String = String::new();
         // store user input
-        io::stdin().read_line(&mut password)?;
+        let mut password: String = read_password().unwrap();
         password = password.replace("\n", "").trim().to_string();
         if password.is_empty() {
             password = DEFAULT_PASSWORD.to_string();
