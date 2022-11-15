@@ -150,7 +150,51 @@ impl InternalIndexPage {
         rowinfo: &RowInfo
     ) -> Result<(), String> {
         let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
+        let mut leaf_page: LeafIndexPage = self.get_leaf_page_for_key(index_key)?;
 
+        // Insert the row into the leaf page
+        leaf_page.add_pointer_to_row(rowinfo)?;
+
+        // Write the leaf page back to disk
+        leaf_page.write_page()?;
+
+        // Check if the leaf page is full or empty
+        if !leaf_page.has_room() {
+            // Rebalance the B-Tree
+            self.rebalance()?;
+        }
+
+        Ok(())
+    }
+
+    /// Removes a row from the leaf page following all the pointers from this page down to the leaves.
+    pub fn remove_row(
+        &mut self,
+        rowinfo: &RowInfo
+    ) -> Result<(), String> {
+        let index_key: IndexKey = get_index_key_from_row(&rowinfo.row, &self.index_id);
+        let mut leaf_page: LeafIndexPage = self.get_leaf_page_for_key(index_key)?;
+
+        // Remove the row from the leaf page
+        leaf_page.remove_pointer_to_row(rowinfo)?;
+
+        // Write the leaf page back to disk
+        leaf_page.write_page()?;
+
+        // Check if the leaf page is full or empty
+        if leaf_page.is_empty() {
+            // Rebalance the B-Tree
+            self.rebalance()?;
+        }
+
+        Ok(())
+    }
+
+
+    fn get_leaf_page_for_key(
+        &self,
+        index_key: IndexKey
+    ) -> Result<LeafIndexPage, String> {
         let mut last_internal_page: InternalIndexPage = self.clone();
 
         for _ in 1..self.page_depth {
@@ -187,26 +231,12 @@ impl InternalIndexPage {
         let leaf_pagenum: u32 = last_internal_page.index_values[index].pagenum;
 
         // Get the leaf page
-        let mut leaf_page: LeafIndexPage = LeafIndexPage::load_from_table(
+        LeafIndexPage::load_from_table(
             self.table_path.clone(),
             leaf_pagenum,
             &self.index_id,
             &self.index_key_type
-        )?;
-
-        // Insert the row into the leaf page
-        leaf_page.add_pointer_to_row(rowinfo)?;
-
-        // Write the leaf page back to disk
-        leaf_page.write_page()?;
-
-        // Check if the leaf page is full or empty
-        if !leaf_page.has_room() {
-            // Rebalance the B-Tree
-            self.rebalance();
-        }
-
-        Ok(())
+        )
     }
     
     /// Inserts a page pointer into the page.

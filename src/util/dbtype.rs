@@ -258,6 +258,22 @@ impl Column {
             _ => Err(format!("Unsupported value type: {:?}", parse)),
         }
     }
+
+    /// Gets a default value for this column type.
+    pub fn get_default_value(
+        &self
+    ) -> Value {
+        match self {
+            Column::I32 => Value::I32(0),
+            Column::I64 => Value::I64(0),
+            Column::Float => Value::Float(0.0),
+            Column::Double => Value::Double(0.0),
+            Column::Bool => Value::Bool(false),
+            Column::Timestamp => Value::Timestamp(parse_time(&"1970-01-01 00:00:00".to_string()).unwrap()),
+            Column::String(_) => Value::String(String::new()),
+            Column::Nullable(_) => Value::Null,
+        }
+    }
 }
 
 impl Value {

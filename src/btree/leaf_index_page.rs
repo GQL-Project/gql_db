@@ -94,6 +94,11 @@ impl LeafIndexPage {
     ) -> Result<(), String> {
         // Write the number of values to the page
         write_type::<u16>(&mut self.page, 0, self.indexes.len() as u16)?;
+        // Write the keys into the page
+        for (i, (key, value)) in self.indexes.clone().iter().enumerate().sorted() {
+            Self::write_index_key(&key, &self.index_key_type, &mut self.page, i)?;
+            Self::write_index_value(&value, &self.index_key_type, &mut self.page, i)?;
+        }
         write_page(self.pagenum, &self.table_path, &self.page, PageType::LeafIndex)?;
         Ok(())
     }
@@ -138,35 +143,41 @@ impl LeafIndexPage {
         leaf_value: LeafIndexValue
     ) -> Result<bool, String> {
         // Find the index where we need to insert the key. Locate the first index where the key is greater than the index_key we're inserting.
-        let mut idx_to_insert: Option<usize> = None;
+        let mut did_insert: bool = false;
         for (i, (key, _)) in self.indexes.clone().iter().enumerate().sorted() {
             if compare_indexes(&key, &index_key) == KeyComparison::Greater {
-                idx_to_insert = Some(i);
-
-                // Insert the key at the index in the page
-                Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, i)?;
-                Self::write_index_value(&leaf_value, &self.index_key_type, &mut self.page, i)?;
-
-                // Write the rest of the keys and values that come after index i
-                for (j, (key, value)) in self.indexes.clone().iter().enumerate().sorted().skip(i) {
-                    Self::write_index_key(&key, &self.index_key_type, &mut self.page, j + 1)?;
-                    Self::write_index_value(&value, &self.index_key_type, &mut self.page, j + 1)?;
-                }
-
+                self.indexes.insert(i, (index_key.clone(), leaf_value.clone()));
+                did_insert = true;
                 break;
             }
         }
         // If we didn't insert in the middle of the page, then we need to insert at the end
-        if idx_to_insert.is_none() {
-            idx_to_insert = Some(self.indexes.len());
-            Self::write_index_key(&index_key, &self.index_key_type, &mut self.page, self.indexes.len())?;
-            Self::write_index_value(&leaf_value, &self.index_key_type, &mut self.page, self.indexes.len())?;
+        if !did_insert {
+            // Insert the key into the vector
+            self.indexes.push((index_key.clone(), leaf_value));
         }
 
-        // Insert the key into the vector
-        self.indexes.insert(idx_to_insert.unwrap(), (index_key.clone(), leaf_value));
-
         Ok(true)
+    }
+
+    /// Removes a row from the page.
+    pub fn remove_pointer_to_row(
+        &mut self,
+        rowinfo: &RowInfo
+    ) -> Result<(), String> {
+        if self.is_empty() {
+            return Err(format!("Error: leaf index page {} is empty", self.pagenum));
+        }
+
+        // Remove the rows from the indexes
+        self.indexes.retain(|(_, val)| {
+            if val.pagenum == rowinfo.pagenum && val.rownum == rowinfo.rownum {
+                return false;
+            }
+            true
+        });
+
+        Ok(())
     }
 
     /// Gets the row info for the rows that match the given expression.
@@ -251,6 +262,13 @@ impl LeafIndexPage {
             return true;
         }
         false
+    }
+
+    /// Returns true if this leaf page has no key-value pairs.
+    pub fn is_empty(
+        &self
+    ) -> bool {
+        self.indexes.len() == 0
     }
 
     /***********************************************************************************************/

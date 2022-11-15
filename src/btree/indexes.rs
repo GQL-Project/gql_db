@@ -94,6 +94,13 @@ fn get_index_key_type(
     index_key.iter().map(|val| val.get_coltype()).collect()
 }
 
+/// Gets a default index key value from the index key type
+pub fn get_default_index_key(
+    index_key_type: &IndexKeyType
+) -> IndexKey {
+    index_key_type.iter().map(|col| col.get_default_value()).collect()
+}
+
 /// Gets the index id that corresponds to the given expression.
 pub fn get_index_id_from_expr(
     expr: &Expr,

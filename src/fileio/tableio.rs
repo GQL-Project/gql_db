@@ -350,6 +350,13 @@ impl Table {
         }
         // Write the last page
         write_page(pagenum, &self.path, page.as_mut(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            self.load_btree(index_id)?
+                .insert_rows(&diff.rows)?;
+        }
+
         Ok(diff)
     }
 
@@ -461,6 +468,12 @@ impl Table {
         }
         // Write the last page
         write_page(curr_page, &self.path, page.as_ref(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            self.load_btree(index_id)?
+                .remove_rows(&diff.rows)?;
+        }
         Ok(diff)
     }
 
@@ -542,6 +555,25 @@ impl Table {
         RowLocation {
             pagenum: (index / rows_per_page) as u32 + 1,
             rownum: (index % rows_per_page) as u16,
+        }
+    }
+
+    /// Loads a btree from the table for the specified index id
+    fn load_btree(
+        &self,
+        index_id: &IndexID
+    ) -> Result<BTree, String> {
+
+        if let Some(pagenum) = self.indexes.get(index_id) {
+            BTree::load_btree_from_root_page(
+                &self,
+                *pagenum,
+                index_id.clone(),
+                cols_id_to_index_key_type(&index_id, &self.schema),
+            )
+        }
+        else {
+            Err(format!("Index {:?} does not exist", index_id))
         }
     }
 }
