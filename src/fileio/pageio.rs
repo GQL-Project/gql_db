@@ -13,6 +13,7 @@ pub enum PageType {
     InternalIndex = 1,
     LeafIndex     = 2,
     Data          = 3,
+    Empty         = 4,
 }
 pub const PAGE_HEADER_SIZE: usize = 1; // 1 byte for page type
 
@@ -25,6 +26,7 @@ impl TryFrom<u8> for PageType {
             1 => Ok(PageType::InternalIndex),
             2 => Ok(PageType::LeafIndex),
             3 => Ok(PageType::Data),
+            4 => Ok(PageType::Empty),
             _ => Err(format!("Invalid page type: {}", value)),
         }
     }

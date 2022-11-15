@@ -1134,6 +1134,9 @@ mod tests {
             false
         );
         delete_db_instance().unwrap();
+        
+        // Clean up
+        std::fs::remove_dir_all("./test_revert_copy_dir").unwrap();
     }
 
     /// Helper that compares two tables to make sure that they are identical, but in separate directories

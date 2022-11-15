@@ -297,6 +297,13 @@ impl Table {
         }
         // Write the last page
         write_page(pagenum, &self.path, page.as_ref(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            self.load_btree(index_id)?
+                .update_rows(&diff.old_rows, &diff.rows)?;
+        }
+
         Ok(diff)
     }
 

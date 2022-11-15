@@ -190,7 +190,8 @@ impl InternalIndexPage {
         Ok(())
     }
 
-
+    /// Gets the leaf page that either contains the specified key,
+    /// or the page that would contain the key if it were inserted.
     fn get_leaf_page_for_key(
         &self,
         index_key: IndexKey
