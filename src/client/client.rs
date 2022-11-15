@@ -105,7 +105,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Indefinitely loops until a successful connection is made
-async fn attempt_connection() -> Result<(DatabaseConnectionClient<Channel>, ConnectResult), Box<dyn std::error::Error>> {
+async fn attempt_connection(
+) -> Result<(DatabaseConnectionClient<Channel>, ConnectResult), Box<dyn std::error::Error>> {
     let mut client: DatabaseConnectionClient<Channel>;
     let mut request: LoginRequest;
 
@@ -203,7 +204,12 @@ async fn attempt_connection() -> Result<(DatabaseConnectionClient<Channel>, Conn
                 if response.is_ok() {
                     return Ok((client, response?.into_inner()));
                 } else {
-                    println!("Error logging in: {}", response.unwrap_err().message());
+                    println!(
+                        "{}",
+                        format!("Error logging in: {}", response.unwrap_err().message())
+                            .red()
+                            .to_string()
+                    );
                 }
             }
             Err(_) => {
