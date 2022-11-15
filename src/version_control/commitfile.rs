@@ -25,7 +25,7 @@ impl CommitFile {
         if page.is_err() {
             Ok(Box::new([0; PAGE_SIZE]))
         } else {
-            page
+            Ok(page.unwrap().0)
         }
     }
 
@@ -40,7 +40,7 @@ impl CommitFile {
         if *offset + size >= PAGE_SIZE as u32 {
             *offset = 0;
             *pagenum = *pagenum + 1;
-            *page = *read_page(*pagenum, &self.delta_path)?;
+            *page = *read_page(*pagenum, &self.delta_path)?.0;
         }
         let string = read_string(page, *offset as usize, size as usize)?;
         *offset = *offset + size;
@@ -57,7 +57,7 @@ impl CommitFile {
     ) -> Result<(), String> {
         // If offset is greater than the page size, read the next page and reset the offset
         if *offset + size >= PAGE_SIZE as u32 {
-            write_page(*pagenum, &self.delta_path, page)?;
+            write_page(*pagenum, &self.delta_path, page, PageType::Data)?;
             *offset = 0;
             *pagenum = *pagenum + 1;
             *page = *self.sread_page(*pagenum)?
@@ -100,10 +100,10 @@ impl CommitFile {
         // If offset is greater than the page size, read the next page and reset the offset
         let size = std::mem::size_of::<T>() as u32;
         if *offset + size >= PAGE_SIZE as u32 {
-            write_page(*pagenum, &self.delta_path, page)?;
+            write_page(*pagenum, &self.delta_path, page, PageType::Data)?;
             *offset = 0;
             *pagenum = *pagenum + 1;
-            *page = *read_page(*pagenum, &self.delta_path)?;
+            *page = *read_page(*pagenum, &self.delta_path)?.0;
         }
         let t = read_type(page, *offset as usize)?;
         *offset = *offset + size;
@@ -120,7 +120,7 @@ impl CommitFile {
         // If offset is greater than the page size, read the next page and reset the offset
         let size = std::mem::size_of::<T>() as u32;
         if *offset + size >= PAGE_SIZE as u32 {
-            write_page(*pagenum, &self.delta_path, page)?;
+            write_page(*pagenum, &self.delta_path, page, PageType::Data)?;
             *offset = 0;
             *pagenum = *pagenum + 1;
             *page = *self.sread_page(*pagenum)?;
@@ -141,7 +141,7 @@ impl CommitFile {
         if *offset + size >= PAGE_SIZE as u32 {
             *offset = 0;
             *pagenum = *pagenum + 1;
-            *page = *read_page(*pagenum, &self.delta_path)?;
+            *page = *read_page(*pagenum, &self.delta_path)?.0;
         }
         let mut row = Row::new();
         let check: u8 = self.sread_type(page, pagenum, offset)?;
@@ -163,7 +163,7 @@ impl CommitFile {
     ) -> Result<(), String> {
         let size = schema_size(schema) as u32; // Ensure the row is not split across pages
         if *offset + size >= PAGE_SIZE as u32 {
-            write_page(*pagenum, &self.delta_path, page)?;
+            write_page(*pagenum, &self.delta_path, page, PageType::Data)?;
             *offset = 0;
             *pagenum = *pagenum + 1;
             *page = *self.sread_page(*pagenum)?

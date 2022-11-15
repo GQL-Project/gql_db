@@ -5,6 +5,7 @@ use rand::Rng;
 use super::commitfile::*;
 use super::diff;
 use super::diff::*;
+use crate::btree::indexes::IndexID;
 use crate::{
     fileio::{
         databaseio,
@@ -125,12 +126,13 @@ impl CommitFile {
             let header = Header {
                 num_pages: 2,
                 schema,
+                index_top_level_pages: HashMap::new(),
             };
             write_header(&header_path, &header)?;
 
             // Write a blank page to the table
             let page = [0u8; PAGE_SIZE];
-            write_page(1, &header_path, &page)?;
+            write_page(1, &header_path, &page, PageType::Data)?;
 
             // Delta File
             std::fs::File::create(delta_path.clone()).map_err(|e| e.to_string())?;
@@ -221,7 +223,7 @@ impl CommitFile {
 
     pub fn read_commit(&self, mut pagenum: u32) -> Result<Commit, String> {
         // Read the commit information first
-        let page = &mut read_page(pagenum, &self.delta_path)?;
+        let page = &mut read_page(pagenum, &self.delta_path)?.0;
         let pagenum = &mut pagenum;
         let offset = &mut 0;
         let byte: u8 = self.sread_type(page, pagenum, offset)?;
@@ -313,6 +315,48 @@ impl CommitFile {
                         rows_removed: rows,
                     })
                 }
+                INDEX_CREATE_TYPE => {
+                    // Create Index
+                    let num_indexes: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                    let schema: Schema = self.sread_schema(page, pagenum, offset)?;
+
+                    let mut indexes: Vec<(String, IndexID)> = Vec::new();
+                    for _ in 0..num_indexes {
+                        let index_name: String = self.sdread_string(page, pagenum, offset)?;
+                        let mut index_id: IndexID = Vec::new();
+                        let index_id_len: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                        for _ in 0..index_id_len {
+                            index_id.push(self.sread_type::<u8>(page, pagenum, offset)?);
+                        }
+                        indexes.push((index_name, index_id));
+                    }
+                    Diff::IndexCreate(IndexCreateDiff {
+                        table_name,
+                        schema,
+                        indexes,
+                    })
+                }
+                INDEX_REMOVE_TYPE => {
+                    // Remove Index
+                    let num_indexes: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                    let schema: Schema = self.sread_schema(page, pagenum, offset)?;
+
+                    let mut indexes: Vec<(String, IndexID)> = Vec::new();
+                    for _ in 0..num_indexes {
+                        let index_name: String = self.sdread_string(page, pagenum, offset)?;
+                        let mut index_id: IndexID = Vec::new();
+                        let index_id_len: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                        for _ in 0..index_id_len {
+                            index_id.push(self.sread_type::<u8>(page, pagenum, offset)?);
+                        }
+                        indexes.push((index_name, index_id));
+                    }
+                    Diff::IndexRemove(IndexRemoveDiff {
+                        table_name,
+                        schema,
+                        indexes,
+                    })
+                }
                 _ => return Err("Invalid diff type".to_string()),
             };
             diffs.push(diff);
@@ -377,9 +421,33 @@ impl CommitFile {
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
                     }
                 }
+                Diff::IndexCreate(create) => {
+                    self.swrite_type::<u8>(page, pagenum, offset, create.indexes.len() as u8)?;
+                    self.swrite_schema(page, pagenum, offset, &create.schema)?;
+
+                    for (index_name, index_id) in &create.indexes {
+                        self.sdwrite_string(page, pagenum, offset, index_name)?;
+                        self.swrite_type::<u8>(page, pagenum, offset, index_id.len() as u8)?;
+                        for index in index_id {
+                            self.swrite_type::<u8>(page, pagenum, offset, *index as u8)?;
+                        }
+                    }
+                }
+                Diff::IndexRemove(remove) => {
+                    self.swrite_type::<u8>(page, pagenum, offset, remove.indexes.len() as u8)?;
+                    self.swrite_schema(page, pagenum, offset, &remove.schema)?;
+
+                    for (index_name, index_id) in &remove.indexes {
+                        self.sdwrite_string(page, pagenum, offset, index_name)?;
+                        self.swrite_type::<u8>(page, pagenum, offset, index_id.len() as u8)?;
+                        for index in index_id {
+                            self.swrite_type::<u8>(page, pagenum, offset, *index as u8)?;
+                        }
+                    }
+                }
             }
         }
-        write_page(*pagenum, &self.delta_path, page)?;
+        write_page(*pagenum, &self.delta_path, page, PageType::Data)?;
         Ok(())
     }
 
@@ -735,6 +803,12 @@ impl CommitFile {
                             add_diff(&mut map, diff.clone(), remove.table_name.clone());
                         }
                     } // End of TableRemove
+                    Diff::IndexCreate(create) => {
+                        add_diff(&mut map, diff.clone(), create.table_name.clone());
+                    }
+                    Diff::IndexRemove(remove) => {
+                        add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                    }
                 }
             }
         }

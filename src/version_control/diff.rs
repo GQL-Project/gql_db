@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use rand::seq::index;
+
 use crate::{
     fileio::{header::*, tableio::*},
-    util::row::*,
+    util::row::*, btree::{indexes::IndexID, btree::BTree},
 };
 
 /* Constants */
@@ -12,6 +14,8 @@ pub const UPDATE_TYPE: i32 = 1;
 pub const REMOVE_TYPE: i32 = 2;
 pub const TABLE_CREATE_TYPE: i32 = 3;
 pub const TABLE_REMOVE_TYPE: i32 = 4;
+pub const INDEX_CREATE_TYPE: i32 = 5;
+pub const INDEX_REMOVE_TYPE: i32 = 6;
 
 /***************************************************************************************************/
 /*                                         Diff Structs                                            */
@@ -24,6 +28,8 @@ pub enum Diff {
     Remove(RemoveDiff),
     TableCreate(TableCreateDiff),
     TableRemove(TableRemoveDiff),
+    IndexCreate(IndexCreateDiff),
+    IndexRemove(IndexRemoveDiff),
 }
 
 impl ToString for Diff {
@@ -53,7 +59,15 @@ impl ToString for Diff {
             ),
             Diff::TableRemove(diff) => {
                 format!("\nREMOVED TABLE\nRemoved Table {}", diff.table_name)
-            }
+            },
+            Diff::IndexCreate(diff) => format!(
+                "\nCREATED INDEX\nCreated {} Indexes on Table {} with Schemas {:?}",
+                diff.indexes.len(), diff.table_name, diff.schema
+            ),
+            Diff::IndexRemove(diff) => format!(
+                "\nREMOVED INDEX\nRemoved {} Indexes on Table {} with Schemas {:?}",
+                diff.indexes.len(), diff.table_name, diff.schema
+            ),
         }
     }
 }
@@ -66,6 +80,8 @@ impl Diff {
             Diff::Remove(diff) => diff.table_name.clone(),
             Diff::TableCreate(diff) => diff.table_name.clone(),
             Diff::TableRemove(diff) => diff.table_name.clone(),
+            Diff::IndexCreate(diff) => diff.table_name.clone(),
+            Diff::IndexRemove(diff) => diff.table_name.clone(),
         }
     }
 
@@ -76,6 +92,8 @@ impl Diff {
             Diff::Remove(diff) => diff.schema.clone(),
             Diff::TableCreate(diff) => diff.schema.clone(),
             Diff::TableRemove(diff) => diff.schema.clone(),
+            Diff::IndexCreate(diff) => diff.schema.clone(),
+            Diff::IndexRemove(diff) => diff.schema.clone(),
         }
     }
 
@@ -86,6 +104,8 @@ impl Diff {
             Diff::Remove(diff) => Ok(diff.rows.clone()),
             Diff::TableCreate(_) => Err("Cannot get rows from a TableCreateDiff".to_string()),
             Diff::TableRemove(_) => Err("Cannot get rows from a TableRemoveDiff".to_string()),
+            Diff::IndexCreate(_) => Err("Cannot get rows from a IndexCreateDiff".to_string()),
+            Diff::IndexRemove(_) => Err("Cannot get rows from a IndexRemoveDiff".to_string()),
         }
     }
 
@@ -96,6 +116,8 @@ impl Diff {
             Diff::Remove(_) => RemoveDiff::get_type(),
             Diff::TableCreate(_) => TableCreateDiff::get_type(),
             Diff::TableRemove(_) => TableRemoveDiff::get_type(),
+            Diff::IndexCreate(_) => IndexCreateDiff::get_type(),
+            Diff::IndexRemove(_) => IndexRemoveDiff::get_type(),
         }
     }
 
@@ -106,6 +128,8 @@ impl Diff {
             Diff::Remove(diff) => diff.rows.is_empty(),
             Diff::TableCreate(_) => false,
             Diff::TableRemove(_) => false,
+            Diff::IndexCreate(_) => false,
+            Diff::IndexRemove(_) => false,
         }
     }
 }
@@ -145,6 +169,20 @@ pub struct TableRemoveDiff {
     pub rows_removed: Vec<RowInfo>, // The rows that were removed from the table.
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexCreateDiff {
+    pub table_name: String, // The name of the table that had an index created.
+    pub schema: Schema,
+    pub indexes: Vec<(String, IndexID)>, // The name of the index and the index id.
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexRemoveDiff {
+    pub table_name: String, // The name of the table that had an index created.
+    pub schema: Schema,
+    pub indexes: Vec<(String, IndexID)>, // The name of the index and the index id.
+}
+
 /// This represents a set of diffs that would result from squashing a series of diffs together.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SquashDiffs {
@@ -160,6 +198,8 @@ pub struct TableSquashDiff {
     pub remove_diff: RemoveDiff,
     pub table_create_diff: Option<TableCreateDiff>,
     pub table_remove_diff: Option<TableRemoveDiff>,
+    pub index_create_diff: IndexCreateDiff,
+    pub index_remove_diff: IndexRemoveDiff,
 }
 
 /***************************************************************************************************/
@@ -201,6 +241,20 @@ impl TableRemoveDiff {
     }
 }
 
+impl IndexCreateDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        INDEX_CREATE_TYPE
+    }
+}
+
+impl IndexRemoveDiff {
+    /// Gets the type for the diff.
+    pub fn get_type() -> i32 {
+        INDEX_REMOVE_TYPE
+    }
+}
+
 impl SquashDiffs {
     /// Creates a new empty squash diff object
     pub fn new() -> SquashDiffs {
@@ -232,6 +286,16 @@ impl TableSquashDiff {
             },
             table_create_diff: None,
             table_remove_diff: None,
+            index_create_diff: IndexCreateDiff {
+                table_name: table_name.clone(),
+                schema: schema.clone(),
+                indexes: Vec::new(),
+            },
+            index_remove_diff: IndexRemoveDiff {
+                table_name: table_name.clone(),
+                schema: schema.clone(),
+                indexes: Vec::new(),
+            },
         }
     }
 }
@@ -261,6 +325,18 @@ impl PartialOrd for TableCreateDiff {
 }
 
 impl PartialOrd for TableRemoveDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for IndexCreateDiff {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.table_name.cmp(&other.table_name))
+    }
+}
+
+impl PartialOrd for IndexRemoveDiff {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.table_name.cmp(&other.table_name))
     }
@@ -299,6 +375,32 @@ pub fn construct_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Res
             }
             Diff::TableRemove(table_remove_diff) => {
                 delete_table_in_dir(&table_remove_diff.table_name, table_dir)?;
+            }
+            Diff::IndexCreate(index_create_diff) => {
+                for (index_name, index_id) in &index_create_diff.indexes {
+                    // Get the columns from the index_id and schema
+                    let columns: Vec<String> = index_id
+                        .iter()
+                        .map(|index| index_create_diff.schema[*index as usize].0.clone())
+                        .collect();
+                    BTree::create_btree_index(
+                        table_dir,
+                        &index_create_diff.table_name,
+                        None,
+                        columns,
+                        index_name.clone()
+                    )?;
+                }
+            }
+            Diff::IndexRemove(index_remove_diff) => {
+                for (index_name, _) in &index_remove_diff.indexes {
+                    BTree::drop_btree_index(
+                        table_dir,
+                        &index_remove_diff.table_name,
+                        None,
+                        index_name
+                    )?;
+                }
             }
         }
     }
@@ -344,6 +446,32 @@ pub fn revert_tables_from_diffs(table_dir: &String, diffs: &Vec<Diff>) -> Result
                 // We need to insert the rows back into the table
                 let mut table = Table::new(table_dir, &table_remove_diff.table_name, None)?;
                 table.write_rows(table_remove_diff.rows_removed.clone())?;
+            }
+            Diff::IndexCreate(index_create_diff) => {
+                for (index_name, _) in &index_create_diff.indexes {
+                    BTree::drop_btree_index(
+                        table_dir,
+                        &index_create_diff.table_name,
+                        None,
+                        index_name
+                    )?;
+                }
+            }
+            Diff::IndexRemove(index_remove_diff) => {
+                for (index_name, index_id) in &index_remove_diff.indexes {
+                    // Get the columns from the index_id and schema
+                    let columns: Vec<String> = index_id
+                        .iter()
+                        .map(|index| index_remove_diff.schema[*index as usize].0.clone())
+                        .collect();
+                    BTree::create_btree_index(
+                        table_dir,
+                        &index_remove_diff.table_name,
+                        None,
+                        columns,
+                        index_name.clone()
+                    )?;
+                }
             }
         }
     }
@@ -400,6 +528,28 @@ pub fn reverse_diffs(diffs: &Vec<Diff>) -> Result<Vec<Diff>, String> {
                     schema: table_remove_diff.schema.clone(),
                 });
                 inverted_diffs.push(curr_diff);
+            }
+            Diff::IndexCreate(index_create_diff) => {
+                inverted_diffs.push(
+                    Diff::IndexRemove(
+                        IndexRemoveDiff {
+                            table_name: index_create_diff.table_name.clone(),
+                            schema: index_create_diff.schema.clone(),
+                            indexes: index_create_diff.indexes.clone(),
+                        }
+                    )
+                );
+            }
+            Diff::IndexRemove(index_remove_diff) => {
+                inverted_diffs.push(
+                    Diff::IndexCreate(
+                        IndexCreateDiff {
+                            table_name: index_remove_diff.table_name.clone(),
+                            schema: index_remove_diff.schema.clone(),
+                            indexes: index_remove_diff.indexes.clone(),
+                        }
+                    )
+                );
             }
         }
     }
