@@ -519,8 +519,8 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
                 vec![
                     Value::I32(i as i32),
                     Value::I32(i as i32),
-                    Value::I32(gen_age()),
-                    Value::String(gen_random()),
+                    Value::I32(20),
+                    Value::String("random text".to_string()),
                 ]
             );
         }

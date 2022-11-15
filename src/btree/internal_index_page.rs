@@ -1086,7 +1086,7 @@ mod tests {
     use sqlparser::ast::{Ident, BinaryOperator};
 
     use super::*;
-    use crate::{util::dbtype::*, fileio::tableio::*};
+    use crate::{fileio::tableio::*};
 
     #[test]
     fn test_read_write_index_key() {

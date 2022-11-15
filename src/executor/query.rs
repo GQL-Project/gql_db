@@ -97,7 +97,7 @@ fn parse_select(
         let index_id: IndexID = index_id.unwrap();
         let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
         // For now, lets only support using indexing on a single table.
-         {
+        if tables.len() == 1 {
             if let Some(idx_val) = tables[0].0.indexes.get(&index_id) {
                 let btree_pagenum: u32 = idx_val.0;
                 let index_name: String = idx_val.1.clone();
@@ -114,8 +114,6 @@ fn parse_select(
                     index_key_type,
                     index_name
                 )?;
-        
-                println!("Using btree indexing");
 
                 res_rows = btree.get_rows_matching_expr(&expr.unwrap())?.iter().map(|x| x.row.clone()).collect();
 

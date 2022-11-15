@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::mem::size_of;
-use sqlparser::ast::{Expr, BinaryOperator, UnaryOperator, Value as SqlValue};
+use sqlparser::ast::{Expr, BinaryOperator, UnaryOperator};
 
 use crate::executor::predicate::resolve_reference;
 use crate::executor::query::{ColumnAliases, IndexRefs};
@@ -14,7 +14,7 @@ use crate::util::row::{Row, RowLocation};
 pub type IndexID = Vec<u8>;
 /// The vector of column types that make up the index key
 pub type IndexKeyType = Vec<Column>;
-/// The vector of column values that make up the index key
+/// The vector of column values that make up an individual index key
 pub type IndexKey = Vec<Value>;
 
 /// The value of an index in an internal index page

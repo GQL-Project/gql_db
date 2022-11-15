@@ -1,12 +1,9 @@
 use sqlparser::ast::Expr;
 
-use crate::executor::predicate::*;
-use crate::executor::query::*;
 use crate::fileio::tableio::*;
 use crate::fileio::header::*;
 use crate::util::row::*;
 use crate::version_control::diff::{IndexCreateDiff, IndexRemoveDiff};
-use super::indexes;
 use super::indexes::*;
 use super::leaf_index_page::*;
 use super::internal_index_page::*;
@@ -423,7 +420,14 @@ mod tests {
 
     use serial_test::serial;
     use sqlparser::ast::{Ident, BinaryOperator};
-    use crate::{version_control::diff::*, util::{dbtype::*, bench::create_huge_bench_db}, user::userdata::User, parser::parser::parse, fileio::databaseio::{get_db_instance, delete_db_instance}};
+    use crate::{
+        version_control::diff::*, 
+        util::{dbtype::*, bench::create_huge_bench_db}, 
+        user::userdata::User, 
+        parser::parser::parse, 
+        fileio::databaseio::{get_db_instance, delete_db_instance},
+        executor::query::*,
+    };
     use super::*;
 
     #[test]
@@ -517,51 +521,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_rows_matching_expr() {
-        let table_dir: String = String::from("./testing");
-        let index_name: String = String::from("test_index");
-        let table_name: String = String::from("create_btree_test_table");
-        let table_schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
-        ];
-        let index_column_names: Vec<String> = vec!["id".to_string()];
-        let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
-            vec![Value::I32(10), Value::String("d".to_string())],
-            vec![Value::I32(13), Value::String("e".to_string())],
-            vec![Value::I32(16), Value::String("f".to_string())],
-            vec![Value::I32(19), Value::String("g".to_string())],
-            vec![Value::I32(49), Value::String("h".to_string())],
-            vec![Value::I32(25), Value::String("i".to_string())],
-            vec![Value::I32(28), Value::String("j".to_string())],
-            vec![Value::I32(31), Value::String("k".to_string())],
-            vec![Value::I32(34), Value::String("l".to_string())],
-            vec![Value::I32(37), Value::String("m".to_string())],
-            vec![Value::I32(40), Value::String("n".to_string())],
-            vec![Value::I32(43), Value::String("o".to_string())],
-            vec![Value::I32(68), Value::String("p".to_string())],
-            vec![Value::I32(46), Value::String("q".to_string())],
-            vec![Value::I32(49), Value::String("r".to_string())],
-            vec![Value::I32(52), Value::String("s".to_string())],
-            vec![Value::I32(55), Value::String("t".to_string())],
-        ];
-
-        // Create the table
-        let mut table: Table = create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap().0;
-
-        // Insert the rows
-        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
-
-        // Create the index
-        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
-            index_column_names,
-            index_name
-        ).unwrap();
+        let (_, btree, insert_diff): (_, BTree, InsertDiff) = setup_test();
 
         fn compare_rows_using_id_eq_num(id_value: i32, btree: &BTree, insert_diff: &InsertDiff) {
             // Get the rows from the table that have match 'id = id_value'
@@ -634,60 +594,13 @@ mod tests {
         ).unwrap();
 
         // Clean up
-        std::fs::remove_dir_all("./testing").unwrap();
+        cleanup_test();
     }
 
     #[test]
     #[serial]
     fn test_insert_rows() {
-        let table_dir: String = String::from("./testing");
-        let index_name: String = String::from("test_index");
-        let table_name: String = String::from("create_btree_test_table");
-        let table_schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
-        ];
-        let index_column_names: Vec<String> = vec!["id".to_string()];
-        let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
-            vec![Value::I32(10), Value::String("d".to_string())],
-            vec![Value::I32(13), Value::String("e".to_string())],
-            vec![Value::I32(16), Value::String("f".to_string())],
-            vec![Value::I32(19), Value::String("g".to_string())],
-            vec![Value::I32(49), Value::String("h".to_string())],
-            vec![Value::I32(25), Value::String("i".to_string())],
-            vec![Value::I32(28), Value::String("j".to_string())],
-            vec![Value::I32(31), Value::String("k".to_string())],
-            vec![Value::I32(34), Value::String("l".to_string())],
-            vec![Value::I32(37), Value::String("m".to_string())],
-            vec![Value::I32(40), Value::String("n".to_string())],
-            vec![Value::I32(43), Value::String("o".to_string())],
-            vec![Value::I32(68), Value::String("p".to_string())],
-            vec![Value::I32(46), Value::String("q".to_string())],
-            vec![Value::I32(49), Value::String("r".to_string())],
-            vec![Value::I32(52), Value::String("s".to_string())],
-            vec![Value::I32(55), Value::String("t".to_string())],
-        ];
-
-        // Create the table
-        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
-
-        // Create the index
-        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
-            index_column_names,
-            index_name
-        ).unwrap();
-
-        // Re-read the table
-        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
-
-        // Insert the rows
-        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+        let (_, btree, insert_diff): (_, BTree, InsertDiff) = setup_test();
 
         // Get the rows from the table that have match 'id = 5'
         // There should be none
@@ -745,60 +658,13 @@ mod tests {
         );
 
         // Clean up
-        std::fs::remove_dir_all("./testing").unwrap();
+        cleanup_test();
     }
 
     #[test]
     #[serial]
     fn test_remove_rows() {
-        let table_dir: String = String::from("./testing");
-        let index_name: String = String::from("test_index");
-        let table_name: String = String::from("create_btree_test_table");
-        let table_schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
-        ];
-        let index_column_names: Vec<String> = vec!["id".to_string()];
-        let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
-            vec![Value::I32(10), Value::String("d".to_string())],
-            vec![Value::I32(13), Value::String("e".to_string())],
-            vec![Value::I32(16), Value::String("f".to_string())],
-            vec![Value::I32(19), Value::String("g".to_string())],
-            vec![Value::I32(49), Value::String("h".to_string())],
-            vec![Value::I32(25), Value::String("i".to_string())],
-            vec![Value::I32(28), Value::String("j".to_string())],
-            vec![Value::I32(31), Value::String("k".to_string())],
-            vec![Value::I32(34), Value::String("l".to_string())],
-            vec![Value::I32(37), Value::String("m".to_string())],
-            vec![Value::I32(40), Value::String("n".to_string())],
-            vec![Value::I32(43), Value::String("o".to_string())],
-            vec![Value::I32(68), Value::String("p".to_string())],
-            vec![Value::I32(46), Value::String("q".to_string())],
-            vec![Value::I32(49), Value::String("r".to_string())],
-            vec![Value::I32(52), Value::String("s".to_string())],
-            vec![Value::I32(55), Value::String("t".to_string())],
-        ];
-
-        // Create the table
-        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
-
-        // Create the index
-        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
-            index_column_names,
-            index_name
-        ).unwrap();
-
-        // Re-read the table
-        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
-
-        // Insert the rows
-        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+        let (table, btree, insert_diff): (Table, BTree, InsertDiff) = setup_test();
 
         // Remove rows that match 'id = 49'
         table.remove_rows(
@@ -847,60 +713,13 @@ mod tests {
         );
 
         // Clean up
-        std::fs::remove_dir_all("./testing").unwrap();
+        cleanup_test();
     }
 
     #[test]
     #[serial]
     fn test_update_rows() {
-        let table_dir: String = String::from("./testing");
-        let index_name: String = String::from("test_index");
-        let table_name: String = String::from("create_btree_test_table");
-        let table_schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
-        ];
-        let index_column_names: Vec<String> = vec!["id".to_string()];
-        let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
-            vec![Value::I32(10), Value::String("d".to_string())],
-            vec![Value::I32(13), Value::String("e".to_string())],
-            vec![Value::I32(16), Value::String("f".to_string())],
-            vec![Value::I32(19), Value::String("g".to_string())],
-            vec![Value::I32(49), Value::String("h".to_string())],
-            vec![Value::I32(25), Value::String("i".to_string())],
-            vec![Value::I32(28), Value::String("j".to_string())],
-            vec![Value::I32(31), Value::String("k".to_string())],
-            vec![Value::I32(34), Value::String("l".to_string())],
-            vec![Value::I32(37), Value::String("m".to_string())],
-            vec![Value::I32(40), Value::String("n".to_string())],
-            vec![Value::I32(43), Value::String("o".to_string())],
-            vec![Value::I32(68), Value::String("p".to_string())],
-            vec![Value::I32(46), Value::String("q".to_string())],
-            vec![Value::I32(49), Value::String("r".to_string())],
-            vec![Value::I32(52), Value::String("s".to_string())],
-            vec![Value::I32(55), Value::String("t".to_string())],
-        ];
-
-        // Create the table
-        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
-
-        // Create the index
-        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
-            index_column_names,
-            index_name
-        ).unwrap();
-
-        // Re-read the table
-        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
-
-        // Insert the rows
-        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+        let (table, btree, insert_diff): (Table, BTree, InsertDiff) = setup_test();
 
         // Udate rows that match 'id = 49'
         let update_diff: UpdateDiff = table.rewrite_rows(
@@ -960,60 +779,13 @@ mod tests {
         );
 
         // Clean up
-        std::fs::remove_dir_all("./testing").unwrap();
+        cleanup_test();
     }
 
     #[test]
     #[serial]
     fn test_write_rows() {
-        let table_dir: String = String::from("./testing");
-        let index_name: String = String::from("test_index");
-        let table_name: String = String::from("create_btree_test_table");
-        let table_schema: Schema = vec![
-            ("id".to_string(), Column::I32),
-            ("name".to_string(), Column::String(10))
-        ];
-        let index_column_names: Vec<String> = vec!["id".to_string()];
-        let table_rows: Vec<Row> = vec![
-            vec![Value::I32(1),  Value::String("a".to_string())],
-            vec![Value::I32(4),  Value::String("b".to_string())],
-            vec![Value::I32(7),  Value::String("c".to_string())],
-            vec![Value::I32(10), Value::String("d".to_string())],
-            vec![Value::I32(13), Value::String("e".to_string())],
-            vec![Value::I32(16), Value::String("f".to_string())],
-            vec![Value::I32(19), Value::String("g".to_string())],
-            vec![Value::I32(49), Value::String("h".to_string())],
-            vec![Value::I32(25), Value::String("i".to_string())],
-            vec![Value::I32(28), Value::String("j".to_string())],
-            vec![Value::I32(31), Value::String("k".to_string())],
-            vec![Value::I32(34), Value::String("l".to_string())],
-            vec![Value::I32(37), Value::String("m".to_string())],
-            vec![Value::I32(40), Value::String("n".to_string())],
-            vec![Value::I32(43), Value::String("o".to_string())],
-            vec![Value::I32(68), Value::String("p".to_string())],
-            vec![Value::I32(46), Value::String("q".to_string())],
-            vec![Value::I32(49), Value::String("r".to_string())],
-            vec![Value::I32(52), Value::String("s".to_string())],
-            vec![Value::I32(55), Value::String("t".to_string())],
-        ];
-
-        // Create the table
-        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
-
-        // Create the index
-        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
-            &table_dir, 
-            &table_name, 
-            None, 
-            index_column_names,
-            index_name
-        ).unwrap();
-
-        // Re-read the table
-        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
-
-        // Insert the rows
-        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+        let (mut table, btree, insert_diff): (Table, BTree, InsertDiff) = setup_test();
 
         let mut rows_to_write: Vec<RowInfo> = insert_diff.rows
             .iter()
@@ -1101,7 +873,7 @@ mod tests {
         );
 
         // Clean up
-        std::fs::remove_dir_all("./testing").unwrap();
+        cleanup_test();
     }
 
     #[test]
@@ -1161,5 +933,62 @@ mod tests {
 
         // Delete the db instance
         delete_db_instance().unwrap();
+    }
+
+    fn setup_test() -> (Table, BTree, InsertDiff) {
+        let table_dir: String = String::from("./testing");
+        let index_name: String = String::from("test_index");
+        let table_name: String = String::from("create_btree_test_table");
+        let table_schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(10))
+        ];
+        let index_column_names: Vec<String> = vec!["id".to_string()];
+        let table_rows: Vec<Row> = vec![
+            vec![Value::I32(1),  Value::String("a".to_string())],
+            vec![Value::I32(4),  Value::String("b".to_string())],
+            vec![Value::I32(7),  Value::String("c".to_string())],
+            vec![Value::I32(10), Value::String("d".to_string())],
+            vec![Value::I32(13), Value::String("e".to_string())],
+            vec![Value::I32(16), Value::String("f".to_string())],
+            vec![Value::I32(19), Value::String("g".to_string())],
+            vec![Value::I32(49), Value::String("h".to_string())],
+            vec![Value::I32(25), Value::String("i".to_string())],
+            vec![Value::I32(28), Value::String("j".to_string())],
+            vec![Value::I32(31), Value::String("k".to_string())],
+            vec![Value::I32(34), Value::String("l".to_string())],
+            vec![Value::I32(37), Value::String("m".to_string())],
+            vec![Value::I32(40), Value::String("n".to_string())],
+            vec![Value::I32(43), Value::String("o".to_string())],
+            vec![Value::I32(68), Value::String("p".to_string())],
+            vec![Value::I32(46), Value::String("q".to_string())],
+            vec![Value::I32(49), Value::String("r".to_string())],
+            vec![Value::I32(52), Value::String("s".to_string())],
+            vec![Value::I32(55), Value::String("t".to_string())],
+        ];
+
+        // Create the table
+        create_table_in_dir(&table_name, &table_schema, &table_dir).unwrap();
+
+        // Create the index
+        let (btree, _): (BTree, IndexCreateDiff) = BTree::create_btree_index(
+            &table_dir, 
+            &table_name, 
+            None, 
+            index_column_names,
+            index_name
+        ).unwrap();
+
+        // Re-read the table
+        let mut table: Table = Table::new(&table_dir, &table_name, None).unwrap();
+
+        // Insert the rows
+        let insert_diff: InsertDiff = table.insert_rows(table_rows.clone()).unwrap();
+
+        (table, btree, insert_diff)
+    }
+
+    fn cleanup_test() {
+        std::fs::remove_dir_all("./testing").unwrap();
     }
 }
