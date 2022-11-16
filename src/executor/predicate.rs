@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::util::dbtype::{Value, Column};
+use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 use prost_types::Timestamp;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
@@ -209,7 +209,9 @@ pub fn solve_value(
     if contains_aggregate(expr)? {
         // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
         // (i.e. when we're evaluating the groups)
-        return Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null(Column::I32)))));
+        return Ok(Box::new(move |_| {
+            Ok(JointValues::DBValue(Value::Null(Column::I32)))
+        }));
     }
     match expr {
         // This would mean that we're referencing a column name, so we just need to figure out the
@@ -620,7 +622,10 @@ mod tests {
         executor::query::{execute_query, execute_update},
         fileio::databaseio::{delete_db_instance, get_db_instance},
         parser::parser::parse,
-        util::{bench::create_demo_db, dbtype::{Value, Column}},
+        util::{
+            bench::create_demo_db,
+            dbtype::{Column, Value},
+        },
     };
 
     #[test]
@@ -771,7 +776,9 @@ mod tests {
                     assert!(x < y);
                     if let Value::I64(z) = row[3] {
                         assert!(
-                            z > y.into() || (row[8] == Value::Bool(true) && row[4] == Value::Null(Column::Float))
+                            z > y.into()
+                                || (row[8] == Value::Bool(true)
+                                    && row[4] == Value::Null(Column::Float))
                         );
                         assert!(z < 32);
                     } else {

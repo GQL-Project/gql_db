@@ -1,4 +1,4 @@
-use super::dbtype::{Value, Column};
+use super::dbtype::{Column, Value};
 use super::row::Row;
 use crate::server::server::db_connection::cell_value::CellType::*;
 use crate::server::server::db_connection::*;

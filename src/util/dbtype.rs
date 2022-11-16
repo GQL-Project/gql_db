@@ -199,7 +199,6 @@ impl Column {
         }
     }
 
-
     pub fn size(&self) -> usize {
         match self {
             Column::I32 => size_of::<i32>(),
