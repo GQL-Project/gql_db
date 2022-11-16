@@ -199,30 +199,6 @@ impl Column {
         }
     }
 
-    pub fn coerce_type_numbers_only(&self, value: Value) -> Result<Value, String> {
-        match (self, &value) {
-            (Column::I32, Value::I32(_)) => Ok(value),
-            (Column::I64, Value::I64(_)) => Ok(value),
-            (Column::Float, Value::Float(_)) => Ok(value),
-            (Column::Double, Value::Double(_)) => Ok(value),
-            // Type conversions
-            (Column::I32, Value::I64(x)) => Ok(Value::I32(*x as i32)),
-            (Column::I64, Value::I32(x)) => Ok(Value::I64(*x as i64)),
-            (Column::Float, Value::Double(x)) => Ok(Value::Float(*x as f32)),
-            (Column::Double, Value::Float(x)) => Ok(Value::Double(*x as f64)),
-            // Floats to Ints
-            (Column::I32, Value::Float(x)) => Ok(Value::I32(*x as i32)),
-            (Column::I32, Value::Double(x)) => Ok(Value::I32(*x as i32)),
-            (Column::I64, Value::Float(x)) => Ok(Value::I64(*x as i64)),
-            (Column::I64, Value::Double(x)) => Ok(Value::I64(*x as i64)),
-            // Ints to Floats
-            (Column::Float, Value::I32(x)) => Ok(Value::Float(*x as f32)),
-            (Column::Float, Value::I64(x)) => Ok(Value::Float(*x as f32)),
-            (Column::Double, Value::I32(x)) => Ok(Value::Double(*x as f64)),
-            (Column::Double, Value::I64(x)) => Ok(Value::Double(*x as f64)),
-            _ => Ok(value),
-        }
-    }
 
     pub fn size(&self) -> usize {
         match self {
@@ -304,10 +280,10 @@ impl Column {
         self.coerce_type(other.get_default_value()).is_ok()
     }
 
-    pub fn is_null(&self) -> bool {
+    pub fn as_nullable(self) -> Column {
         match self {
-            Column::Nullable(_) => true,
-            _ => false,
+            Column::Nullable(_) => self,
+            _ => Column::Nullable(Box::new(self)),
         }
     }
 }

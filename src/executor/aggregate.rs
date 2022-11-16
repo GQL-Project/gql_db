@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::util::dbtype::{Value, Column};
+use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 
 use sqlparser::ast::{BinaryOperator, Expr, FunctionArgExpr, UnaryOperator};

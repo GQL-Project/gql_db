@@ -875,33 +875,47 @@ pub fn set_operations(
         }
     }
 
-    for left in left_rows[0].iter() {
-        if !right_rows[0]
-            .iter()
-            .any(|x| x.get_coltype().match_type(&left.get_coltype()))
-        {
-            return Err("Incompatible types in set operation".to_string());
-        }
+    let left_columns: Vec<Column> = left_rows[0]
+        .iter()
+        .map(|v| v.get_coltype().as_nullable())
+        .collect();
+    let right_columns: Vec<Column> = right_rows[0]
+        .iter()
+        .map(|v| v.get_coltype().as_nullable())
+        .collect();
+
+    // Checking if the columns match
+    if left_columns.len() != right_columns.len() {
+        return Err("Columns don't match".to_string());
     }
 
-    let mut new_right: Vec<Row> = Vec::new();
-    let mut new_left: Vec<Row> = Vec::new();
+    let schemas_match = left_columns
+        .iter()
+        // For each table 1, join it with it's column in table 2
+        .zip(right_columns.iter())
+        // Check if any do not match the condition that their types *should* match.
+        .any(|(l, r)| l.match_type(r));
 
-    for row in right_rows.clone() {
-        let temp_right = row
-            .into_iter()
-            .map(|val| Column::I64.coerce_type_numbers_only(val.clone()))
-            .collect::<Result<Row, String>>()?;
-        new_right.push(temp_right);
+    if !schemas_match {
+        return Err("Columns don't match".to_string());
     }
 
-    for row in left_rows.clone() {
-        let temp_left = row
-            .into_iter()
-            .map(|val| Column::I64.coerce_type_numbers_only(val.clone()))
-            .collect::<Result<Row, String>>()?;
-        new_left.push(temp_left);
-    }
+    let mut new_left: Vec<Row> = left_rows;
+    // Create right rows by converting them to the same schema as the left rows
+    let new_right: Vec<Row> = right_rows
+        .into_iter()
+        // For each row
+        .map(|row| {
+            // For each value
+            row.into_iter()
+                // Combine each value with it's supposed type
+                .zip(left_columns.iter())
+                // Convert the value to the correct type
+                .map(|(val, col_type)| col_type.coerce_type(val))
+                // Collect the values into a row
+                .collect::<Result<Row, String>>()
+        })
+        .collect::<Result<Vec<Row>, String>>()?;
 
     match op {
         SetOperator::Union => {
