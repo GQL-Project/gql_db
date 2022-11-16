@@ -430,7 +430,12 @@ pub fn execute_update(
                 name,
                 operation
             } => {
+                let instace = get_db_instance()?;
                 let table_name = name.0[0].value.to_string();
+                let all_tables = instace.get_tables(user)?;
+                if !all_tables.clone().contains(&table_name) {
+                    return Err(format!("Table {} does not exist", table_name));
+                }
                 println!("Alter table name: {:?}", table_name);
                 // println!("Operation: {:?}", operation);
                 match operation {
