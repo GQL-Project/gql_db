@@ -15,6 +15,7 @@ use tabled::{builder::Builder, Style};
 
 use std::fs;
 
+use super::branch_heads::BranchHEADs;
 use super::diff::{reverse_diffs, revert_tables_from_diffs};
 use super::{
     branches::{BranchNode, Branches},
@@ -446,6 +447,45 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 
     let json = serde_json::to_string(&schema_objects).unwrap();
     Ok((log_string, json))
+}
+
+/// Lists all the commits for all branches
+pub fn list_all_commits() -> Result<String, String> {
+    let branch_heads_file: &mut BranchHEADs = get_db_instance()?.get_branch_heads_file_mut();
+    let branches_file: &Branches = &mut get_db_instance()?.get_branch_file();
+    let branch_names: Vec<String> = branch_heads_file.get_all_branch_names()?;
+
+    // Get all the branch nodes for each branch HEAD
+    let mut branch_head_nodes: Vec<BranchNode> = Vec::new();
+    for branch_name in branch_names {
+        let branch_head_node: BranchNode = branch_heads_file.get_branch_node_from_head(&branch_name, branches_file)?;
+        branch_head_nodes.push(branch_head_node);
+    }
+
+    // Collect all the branch nodes for each branch.
+    // Store it in a vector of tuples where each tuple is (branch_name, branch_nodes)
+    let mut all_branch_nodes: Vec<(String, Vec<BranchNode>)> = Vec::new();
+    for head_node in branch_head_nodes {
+        let branch_name: String = head_node.branch_name.clone();
+        let mut branch_nodes: Vec<BranchNode> = Vec::new();
+
+        let mut current_node: BranchNode = head_node;
+        branch_nodes.push(current_node.clone());
+        while let Some(prev_node) = branches_file.get_prev_branch_node(&current_node)? {
+            branch_nodes.push(prev_node.clone());
+            // If the previous node is different from the current node's branch name, then we have reached the end of the branch
+            if prev_node.branch_name != branch_name {
+                break;
+            }
+            current_node = prev_node;
+        }
+        all_branch_nodes.push((branch_name, branch_nodes));
+    }
+
+    // Turn all branch nodes into a column/row table
+    let mut builder = Builder::default();
+
+    return Ok("".to_string());
 }
 
 #[cfg(test)]
