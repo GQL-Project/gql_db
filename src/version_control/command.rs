@@ -9,10 +9,12 @@ use crate::{
     util::dbtype::Column,
 };
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tabled::{builder::Builder, Style};
 
+use std::collections::HashMap;
 use std::fs;
 
 use super::branch_heads::BranchHEADs;
@@ -449,6 +451,31 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
     Ok((log_string, json))
 }
 
+/*
+{
+    column: 0,
+    row: 0,
+    src_col: 1, // The column where this is branched from, or -1
+    commit_hash: "1234567890",
+}
+*/
+
+pub struct CommitGraphNode {
+    pub commit_hash: String,
+    pub column: u32,
+    pub row: u32,
+}
+
+pub struct CommitGraphEdge {
+    pub src_commit_hash: String,
+    pub dest_commit_hash: String,
+}
+
+pub struct CommitGraph {
+    pub nodes: Vec<CommitGraphNode>,
+    pub edges: Vec<CommitGraphEdge>,
+}
+
 /// Lists all the commits for all branches
 pub fn list_all_commits() -> Result<String, String> {
     let branch_heads_file: &mut BranchHEADs = get_db_instance()?.get_branch_heads_file_mut();
@@ -464,7 +491,9 @@ pub fn list_all_commits() -> Result<String, String> {
 
     // Collect all the branch nodes for each branch.
     // Store it in a vector of tuples where each tuple is (branch_name, branch_nodes)
+    // The branch_nodes are in chronological order (origin is first, head is last)
     let mut all_branch_nodes: Vec<(String, Vec<BranchNode>)> = Vec::new();
+    let mut max_branch_len: usize = 0;
     for head_node in branch_head_nodes {
         let branch_name: String = head_node.branch_name.clone();
         let mut branch_nodes: Vec<BranchNode> = Vec::new();
@@ -473,17 +502,65 @@ pub fn list_all_commits() -> Result<String, String> {
         branch_nodes.push(current_node.clone());
         while let Some(prev_node) = branches_file.get_prev_branch_node(&current_node)? {
             branch_nodes.push(prev_node.clone());
-            // If the previous node is different from the current node's branch name, then we have reached the end of the branch
-            if prev_node.branch_name != branch_name {
-                break;
-            }
             current_node = prev_node;
         }
+        branch_nodes.reverse();
         all_branch_nodes.push((branch_name, branch_nodes));
     }
 
-    // Turn all branch nodes into a column/row table
-    let mut builder = Builder::default();
+    // Turn all branch nodes into a json table thingy
+    let mut graph: CommitGraph = CommitGraph {
+        nodes: Vec::new(),
+        edges: Vec::new(),
+    };
+
+    let mut row: u32 = 0;
+    // Maps the branch_name to the column number
+    let mut used_cols: HashMap<String, u32> = HashMap::new();
+    loop {
+        // Get the unique branch nodes at this row level
+        let mut unique_branch_nodes: Vec<BranchNode> = Vec::new();
+        for (branch_name, branch_nodes) in &all_branch_nodes {
+            if *branch_name == branch_nodes[row as usize].branch_name {
+                unique_branch_nodes.push(branch_nodes[row as usize].clone());
+            }
+        }
+
+        for unique_node in unique_branch_nodes {
+            let branch_name: String = unique_node.branch_name.clone();
+            let commit_hash: String = unique_node.commit_hash.clone();
+
+            // If this is the first time we've seen this branch, add it to the used_cols map
+            if !used_cols.contains_key(&branch_name) {
+                let mut new_col: u32 = 0;
+                loop {
+                    if !used_cols.values().contains(&new_col) {
+                        break
+                    }
+                    new_col += 1;
+                }
+                used_cols.insert(branch_name.clone(), new_col);
+            }
+
+            // Add the node to the graph
+            graph.nodes.push(
+                CommitGraphNode {
+                    commit_hash: commit_hash.clone(),
+                    column: used_cols[&branch_name],
+                    row: row,
+                }
+            );
+
+            // Add the edge to the graph if it exists
+            if let Some(prev_node) = branches_file.get_prev_branch_node(&unique_node)? {
+                let edge = CommitGraphEdge {
+                    src_commit_hash: prev_node.commit_hash.clone(),
+                    dest_commit_hash: commit_hash.clone(),
+                };
+                graph.edges.push(edge);
+            }
+        }
+    }
 
     return Ok("".to_string());
 }
