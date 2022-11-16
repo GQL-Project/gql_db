@@ -507,6 +507,82 @@ pub fn create_merge_diffs(
                         .table_remove_diff = Some(table_remove_source_diff.clone());
                 }
             }
+            Diff::IndexCreate(mut index_create_source_diff) => {
+                // Get the index_create diff from target_diffs_on_the_table if it exists
+                let index_create_diff_target_option =
+                    target_diffs_on_the_table
+                        .iter()
+                        .find_map(|diff| match diff {
+                            Diff::IndexCreate(index_create_diff) => Some(index_create_diff),
+                            _ => None,
+                        });
+
+                // If there is a index_create diff in the target, we need to remove any duplicate index creations.
+                // If there is an insert diff in the target, we need to remove any duplicate row insertions.
+                if let Some(index_create_diff_target) = index_create_diff_target_option {
+                    index_create_source_diff
+                        .indexes
+                        .retain(|(x_idx_name, x_idx_id)| {
+                            !index_create_diff_target.indexes.iter().any(
+                                |(y_idx_name, y_idx_id)| {
+                                    x_idx_name == y_idx_name && x_idx_id == y_idx_id
+                                },
+                            )
+                        });
+                }
+
+                // Add the new index creation to the result_diffs
+                result_diffs
+                    .table_diffs
+                    .entry(index_create_source_diff.table_name.clone())
+                    .or_insert_with(|| {
+                        TableSquashDiff::new(
+                            &index_create_source_diff.table_name,
+                            &index_create_source_diff.schema,
+                        )
+                    })
+                    .index_create_diff
+                    .indexes
+                    .extend(index_create_source_diff.indexes);
+            }
+            Diff::IndexRemove(mut index_remove_source_diff) => {
+                // Get the index_remove diff from target_diffs_on_the_table if it exists
+                let index_remove_diff_target_option =
+                    target_diffs_on_the_table
+                        .iter()
+                        .find_map(|diff| match diff {
+                            Diff::IndexRemove(index_remove_diff) => Some(index_remove_diff),
+                            _ => None,
+                        });
+
+                // If there is a index_remove diff in the target, we need to remove any duplicate index creations.
+                // If there is an insert diff in the target, we need to remove any duplicate row insertions.
+                if let Some(index_remove_diff_target) = index_remove_diff_target_option {
+                    index_remove_source_diff
+                        .indexes
+                        .retain(|(x_idx_name, x_idx_id)| {
+                            !index_remove_diff_target.indexes.iter().any(
+                                |(y_idx_name, y_idx_id)| {
+                                    x_idx_name == y_idx_name && x_idx_id == y_idx_id
+                                },
+                            )
+                        });
+                }
+
+                // Add the new index creation to the result_diffs
+                result_diffs
+                    .table_diffs
+                    .entry(index_remove_source_diff.table_name.clone())
+                    .or_insert_with(|| {
+                        TableSquashDiff::new(
+                            &index_remove_source_diff.table_name,
+                            &index_remove_source_diff.schema,
+                        )
+                    })
+                    .index_remove_diff
+                    .indexes
+                    .extend(index_remove_source_diff.indexes);
+            }
         }
     }
 
@@ -1146,6 +1222,8 @@ fn verify_only_one_type_of_diff_per_table(diffs: &Vec<Diff>) -> Result<(), Strin
             let mut contains_insert: bool = false;
             let mut contains_remove: bool = false;
             let mut contains_update: bool = false;
+            let mut contains_index_create: bool = false;
+            let mut contains_index_remove: bool = false;
             for diff in diffs_of_same_table {
                 match diff {
                     Diff::TableCreate(_) => {
@@ -1192,6 +1270,24 @@ fn verify_only_one_type_of_diff_per_table(diffs: &Vec<Diff>) -> Result<(), Strin
                             ));
                         }
                         contains_update = true;
+                    }
+                    Diff::IndexCreate(_) => {
+                        if contains_index_create {
+                            return Err(format!(
+                                "Multiple index create diffs for table {}",
+                                diff.get_table_name()
+                            ));
+                        }
+                        contains_index_create = true;
+                    }
+                    Diff::IndexRemove(_) => {
+                        if contains_index_remove {
+                            return Err(format!(
+                                "Multiple index remove diffs for table {}",
+                                diff.get_table_name()
+                            ));
+                        }
+                        contains_index_remove = true;
                     }
                 }
             }

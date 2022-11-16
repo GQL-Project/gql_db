@@ -5,6 +5,7 @@ use rand::Rng;
 use super::commitfile::*;
 use super::diff;
 use super::diff::*;
+use crate::btree::indexes::IndexID;
 use crate::{
     fileio::{
         databaseio,
@@ -314,6 +315,48 @@ impl CommitFile {
                         rows_removed: rows,
                     })
                 }
+                INDEX_CREATE_TYPE => {
+                    // Create Index
+                    let num_indexes: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                    let schema: Schema = self.sread_schema(page, pagenum, offset)?;
+
+                    let mut indexes: Vec<(String, IndexID)> = Vec::new();
+                    for _ in 0..num_indexes {
+                        let index_name: String = self.sdread_string(page, pagenum, offset)?;
+                        let mut index_id: IndexID = Vec::new();
+                        let index_id_len: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                        for _ in 0..index_id_len {
+                            index_id.push(self.sread_type::<u8>(page, pagenum, offset)?);
+                        }
+                        indexes.push((index_name, index_id));
+                    }
+                    Diff::IndexCreate(IndexCreateDiff {
+                        table_name,
+                        schema,
+                        indexes,
+                    })
+                }
+                INDEX_REMOVE_TYPE => {
+                    // Remove Index
+                    let num_indexes: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                    let schema: Schema = self.sread_schema(page, pagenum, offset)?;
+
+                    let mut indexes: Vec<(String, IndexID)> = Vec::new();
+                    for _ in 0..num_indexes {
+                        let index_name: String = self.sdread_string(page, pagenum, offset)?;
+                        let mut index_id: IndexID = Vec::new();
+                        let index_id_len: u8 = self.sread_type::<u8>(page, pagenum, offset)?;
+                        for _ in 0..index_id_len {
+                            index_id.push(self.sread_type::<u8>(page, pagenum, offset)?);
+                        }
+                        indexes.push((index_name, index_id));
+                    }
+                    Diff::IndexRemove(IndexRemoveDiff {
+                        table_name,
+                        schema,
+                        indexes,
+                    })
+                }
                 _ => return Err("Invalid diff type".to_string()),
             };
             diffs.push(diff);
@@ -376,6 +419,30 @@ impl CommitFile {
                         self.swrite_row(page, pagenum, offset, &row.row, &remove.schema)?;
                         self.swrite_type(page, pagenum, offset, row.pagenum)?;
                         self.swrite_type(page, pagenum, offset, row.rownum)?;
+                    }
+                }
+                Diff::IndexCreate(create) => {
+                    self.swrite_type::<u8>(page, pagenum, offset, create.indexes.len() as u8)?;
+                    self.swrite_schema(page, pagenum, offset, &create.schema)?;
+
+                    for (index_name, index_id) in &create.indexes {
+                        self.sdwrite_string(page, pagenum, offset, index_name)?;
+                        self.swrite_type::<u8>(page, pagenum, offset, index_id.len() as u8)?;
+                        for index in index_id {
+                            self.swrite_type::<u8>(page, pagenum, offset, *index as u8)?;
+                        }
+                    }
+                }
+                Diff::IndexRemove(remove) => {
+                    self.swrite_type::<u8>(page, pagenum, offset, remove.indexes.len() as u8)?;
+                    self.swrite_schema(page, pagenum, offset, &remove.schema)?;
+
+                    for (index_name, index_id) in &remove.indexes {
+                        self.sdwrite_string(page, pagenum, offset, index_name)?;
+                        self.swrite_type::<u8>(page, pagenum, offset, index_id.len() as u8)?;
+                        for index in index_id {
+                            self.swrite_type::<u8>(page, pagenum, offset, *index as u8)?;
+                        }
                     }
                 }
             }
@@ -736,6 +803,12 @@ impl CommitFile {
                             add_diff(&mut map, diff.clone(), remove.table_name.clone());
                         }
                     } // End of TableRemove
+                    Diff::IndexCreate(create) => {
+                        add_diff(&mut map, diff.clone(), create.table_name.clone());
+                    }
+                    Diff::IndexRemove(remove) => {
+                        add_diff(&mut map, diff.clone(), remove.table_name.clone());
+                    }
                 }
             }
         }

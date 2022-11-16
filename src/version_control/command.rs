@@ -381,8 +381,7 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
         let (page, page_type) = read_page(0, &path)?;
         if page_type == PageType::Header {
             page_read.push(page);
-        }
-        else {
+        } else {
             return Err(format!("Page 0 in {} is not a header page", path));
         }
     }
@@ -1134,6 +1133,9 @@ mod tests {
             false
         );
         delete_db_instance().unwrap();
+
+        // Clean up
+        std::fs::remove_dir_all("./test_revert_copy_dir").unwrap();
     }
 
     /// Helper that compares two tables to make sure that they are identical, but in separate directories

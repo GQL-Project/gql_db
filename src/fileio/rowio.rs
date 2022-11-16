@@ -41,7 +41,12 @@ pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Re
 }
 
 /// This function writes a row to the page at the given offset
-pub fn write_row_at_offset(schema: &Schema, page: &mut Page, row: &Row, offset: usize) -> Result<(), String> {
+pub fn write_row_at_offset(
+    schema: &Schema,
+    page: &mut Page,
+    row: &Row,
+    offset: usize,
+) -> Result<(), String> {
     let mut temp_offset: usize = offset;
     write_type::<u8>(page, temp_offset, 1)?;
     temp_offset += 1;

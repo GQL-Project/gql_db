@@ -199,6 +199,31 @@ impl Column {
         }
     }
 
+    pub fn coerce_type_numbers_only(&self, value: Value) -> Result<Value, String> {
+        match (self, &value) {
+            (Column::I32, Value::I32(_)) => Ok(value),
+            (Column::I64, Value::I64(_)) => Ok(value),
+            (Column::Float, Value::Float(_)) => Ok(value),
+            (Column::Double, Value::Double(_)) => Ok(value),
+            // Type conversions
+            (Column::I32, Value::I64(x)) => Ok(Value::I32(*x as i32)),
+            (Column::I64, Value::I32(x)) => Ok(Value::I64(*x as i64)),
+            (Column::Float, Value::Double(x)) => Ok(Value::Float(*x as f32)),
+            (Column::Double, Value::Float(x)) => Ok(Value::Double(*x as f64)),
+            // Floats to Ints
+            (Column::I32, Value::Float(x)) => Ok(Value::I32(*x as i32)),
+            (Column::I32, Value::Double(x)) => Ok(Value::I32(*x as i32)),
+            (Column::I64, Value::Float(x)) => Ok(Value::I64(*x as i64)),
+            (Column::I64, Value::Double(x)) => Ok(Value::I64(*x as i64)),
+            // Ints to Floats
+            (Column::Float, Value::I32(x)) => Ok(Value::Float(*x as f32)),
+            (Column::Float, Value::I64(x)) => Ok(Value::Float(*x as f32)),
+            (Column::Double, Value::I32(x)) => Ok(Value::Double(*x as f64)),
+            (Column::Double, Value::I64(x)) => Ok(Value::Double(*x as f64)),
+            _ => Ok(value),
+        }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             Column::I32 => size_of::<i32>(),
@@ -258,6 +283,22 @@ impl Column {
             _ => Err(format!("Unsupported value type: {:?}", parse)),
         }
     }
+
+    /// Gets a default value for this column type.
+    pub fn get_default_value(&self) -> Value {
+        match self {
+            Column::I32 => Value::I32(0),
+            Column::I64 => Value::I64(0),
+            Column::Float => Value::Float(0.0),
+            Column::Double => Value::Double(0.0),
+            Column::Bool => Value::Bool(false),
+            Column::Timestamp => {
+                Value::Timestamp(parse_time(&"1970-01-01 00:00:00".to_string()).unwrap())
+            }
+            Column::String(_) => Value::String(String::new()),
+            Column::Nullable(_) => Value::Null,
+        }
+    }
 }
 
 impl Value {
@@ -282,6 +323,19 @@ impl Value {
             Value::Timestamp(_) => Column::Timestamp,
             Value::String(_) => Column::String(0),
             Value::Null => Column::Nullable(Box::new(Column::I32)),
+        }
+    }
+
+    pub fn value_to_string(&self) -> String {
+        match self {
+            Value::I32(x) => format!("{}", x),
+            Value::I64(x) => format!("{}", x),
+            Value::Float(x) => format!("{}", x),
+            Value::Double(x) => format!("{}", x),
+            Value::Bool(x) => format!("{}", x),
+            Value::Timestamp(x) => format!("{}", x),
+            Value::String(x) => format!("{}", x),
+            Value::Null => "NULL".to_string(),
         }
     }
 }
@@ -406,24 +460,46 @@ impl Ord for Value {
             (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(Ordering::Less),
             (Value::Double(x), Value::Double(y)) => x.partial_cmp(y).unwrap_or(Ordering::Less),
             (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
-            (Value::Timestamp(x), Value::Timestamp(y)) => x.seconds.cmp(&y.seconds).then(x.nanos.cmp(&y.nanos)),
+            (Value::Timestamp(x), Value::Timestamp(y)) => {
+                x.seconds.cmp(&y.seconds).then(x.nanos.cmp(&y.nanos))
+            }
             (Value::String(x), Value::String(y)) => x.cmp(y),
             // Type coercions
             (Value::I64(x), Value::I32(y)) => x.cmp(&(*y as i64)),
-            (Value::I64(x), Value::Double(y)) => (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less),
-            (Value::I64(x), Value::Float(y)) => (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less),
+            (Value::I64(x), Value::Double(y)) => {
+                (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less)
+            }
+            (Value::I64(x), Value::Float(y)) => {
+                (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less)
+            }
 
             (Value::I32(x), Value::I64(y)) => (*x as i64).cmp(y),
-            (Value::I32(x), Value::Float(y)) => (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less),
-            (Value::I32(x), Value::Double(y)) => (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less),
+            (Value::I32(x), Value::Float(y)) => {
+                (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less)
+            }
+            (Value::I32(x), Value::Double(y)) => {
+                (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less)
+            }
 
-            (Value::Float(x), Value::I32(y)) => x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less),
-            (Value::Float(x), Value::I64(y)) => x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less),
-            (Value::Float(x), Value::Double(y)) => x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less),
+            (Value::Float(x), Value::I32(y)) => {
+                x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less)
+            }
+            (Value::Float(x), Value::I64(y)) => {
+                x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less)
+            }
+            (Value::Float(x), Value::Double(y)) => {
+                x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less)
+            }
 
-            (Value::Double(x), Value::I32(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less),
-            (Value::Double(x), Value::I64(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less),
-            (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less),
+            (Value::Double(x), Value::I32(y)) => {
+                x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less)
+            }
+            (Value::Double(x), Value::I64(y)) => {
+                x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less)
+            }
+            (Value::Double(x), Value::Float(y)) => {
+                x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less)
+            }
             // Null cases
             (Value::Null, Value::Null) => Ordering::Equal,
             (Value::Null, _) => Ordering::Less,
@@ -432,7 +508,7 @@ impl Ord for Value {
         }
     }
 }
-   
+
 impl Eq for Value {}
 
 impl PartialEq for Value {

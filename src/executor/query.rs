@@ -10,21 +10,20 @@ use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
 use crate::version_control::diff::*;
 use crate::{
+    btree::{btree::*, indexes::*},
     fileio::{
         databaseio::*,
         header::*,
         tableio::{self, *},
     },
     util::row::RowLocation,
-    btree::{
-        btree::*,
-        indexes::*,
-    },
 };
 
 use crate::util::dbtype::Value;
 use itertools::Itertools;
-use sqlparser::ast::{Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, Statement};
+use sqlparser::ast::{
+    Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement,
+};
 
 pub type Tables = Vec<(Table, String)>;
 pub type ColumnAliases = Vec<(String, Column, String)>;
@@ -42,16 +41,42 @@ pub fn execute_query(
     }
     for a in ast.iter() {
         match a {
-            Statement::Query(q) => match &*q.body {
-                SetExpr::Select(s) => {
-                    return parse_select(s, user, Some(q));
-                }
-                _ => print!("Not a select\n"),
-            },
+            Statement::Query(q) => {
+                return func(&q.body, user, q);
+            }
             _ => print!("Not a query\n"),
         };
     }
     Err("No query found".to_string())
+}
+
+fn func(
+    setExpr: &SetExpr,
+    user: &mut User,
+    query: &Query,
+) -> Result<(Vec<String>, Vec<Row>), String> {
+    match &setExpr {
+        SetExpr::Select(s) => parse_select(&s, user, Some(query)),
+        SetExpr::SetOperation {
+            op,
+            all: _,
+            left,
+            right,
+        } => {
+            let (left_cols, left_rows) = func(&left, user, query)?;
+            let (right_cols, right_rows) = func(&right, user, query)?;
+            if left_cols.len() != right_cols.len() {
+                return Err("Incompatible types in set operation".to_string());
+            }
+
+            let row = set_operations(op, left_rows.clone(), right_rows.clone())?;
+            if left_rows.is_empty() && !right_rows.is_empty() {
+                return Ok((right_cols, row));
+            }
+            Ok((left_cols, row))
+        }
+        _ => Err("Not a select\n".to_string()),
+    }
 }
 
 fn parse_select(
@@ -83,10 +108,10 @@ fn parse_select(
             index_id = Some(get_index_id_from_expr(pred, &column_aliases, &index_refs)?);
             expr = Some(pred.clone());
             Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
-        },
+        }
         None => None,
     };
-    
+
     // Results
     let mut res_columns: Vec<String> = Vec::new();
     let mut res_rows: Vec<Row> = Vec::new();
@@ -97,40 +122,48 @@ fn parse_select(
         let index_id: IndexID = index_id.unwrap();
         let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
         // For now, lets only support using indexing on a single table.
-         {
-            if let Some(btree_pagenum) = tables[0].0.indexes.get(&index_id) {
+        if tables.len() == 1 {
+            if let Some(idx_val) = tables[0].0.indexes.get(&index_id) {
+                let btree_pagenum: u32 = idx_val.0;
+                let index_name: String = idx_val.1.clone();
                 let table: Table = tables[0].0.clone();
                 let index_key_type: IndexKeyType = index_id
                     .iter()
                     .map(|x| table.schema[*x as usize].1.clone())
                     .collect();
-        
+
                 let btree: BTree = BTree::load_btree_from_root_page(
                     &tables[0].0,
-                    *btree_pagenum,
+                    btree_pagenum,
                     index_id,
-                    index_key_type)?;
-        
-                println!("Using btree indexing");
+                    index_key_type,
+                    index_name,
+                )?;
 
-                res_rows = btree.get_rows_matching_expr(&expr.unwrap())?.iter().map(|x| x.row.clone()).collect();
+                res_rows = btree
+                    .get_rows_matching_expr(&expr.unwrap())?
+                    .iter()
+                    .map(|x| x.row.clone())
+                    .collect();
 
                 // Get the column names
                 let table_aliases = gen_column_aliases(&tables);
-                resolve_columns(
-                    columns.clone(),
-                    &mut res_columns,
-                    &tables,
-                    &table_aliases,
-                )?;
+                resolve_columns(columns.clone(), &mut res_columns, &tables, &table_aliases)?;
                 using_index = true;
             }
         }
     }
 
     if !using_index {
-        (res_columns, res_rows) = select(columns.clone(), pred, s.group_by.clone(),
-        query.map_or(vec![], |q| q.order_by.clone()),&table_names, get_db_instance()?, user)?;
+        (res_columns, res_rows) = select(
+            columns.clone(),
+            pred,
+            s.group_by.clone(),
+            query.map_or(vec![], |q| q.order_by.clone()),
+            &table_names,
+            get_db_instance()?,
+            user,
+        )?;
     }
 
     // Limit and Offset
@@ -173,22 +206,33 @@ pub fn execute_update(
     // Commands: create, insert, select
     for a in ast.iter() {
         match a {
-            Statement::CreateIndex { 
+            Statement::CreateIndex {
                 name,
                 table_name,
                 columns,
-                unique,
-                if_not_exists
+                unique: _,
+                if_not_exists: _,
             } => {
                 let table_dir: String = get_db_instance()?.get_current_working_branch_path(user);
                 let table_name: String = table_name.to_string();
+                let index_name: String = name.0[0].value.clone();
 
                 let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
 
-                println!("Creating index {} on table {} with columns {:?}", name, table_name, column_names);
+                println!(
+                    "Creating index {} on table {} with columns {:?}",
+                    index_name, table_name, column_names
+                );
 
-                BTree::create_btree_index(&table_dir, &table_name, None, column_names)?;
+                let (_, idx_new_diff): (_, IndexCreateDiff) = BTree::create_btree_index(
+                    &table_dir,
+                    &table_name,
+                    None,
+                    column_names,
+                    index_name,
+                )?;
 
+                user.append_diff(&Diff::IndexCreate(idx_new_diff));
                 results.push("Successfully created index".to_string());
             }
             Statement::Update {
@@ -292,22 +336,50 @@ pub fn execute_update(
                 cascade: _,
                 purge: _,
             } => {
-                if object_type.clone() == sqlparser::ast::ObjectType::Table {
-                    if names.len() != 1 {
-                        return Err("Can only drop one table at a time".to_string());
+                match object_type.clone() {
+                    sqlparser::ast::ObjectType::Table => {
+                        if names.len() != 1 {
+                            return Err("Can only drop one table at a time".to_string());
+                        }
+
+                        let table_name: String = names[0].to_string();
+
+                        // If the table doesn't exist on this branch, return an error
+                        if (!if_exists)
+                            && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
+                        {
+                            return Err(format!("Table {} does not exist", table_name));
+                        }
+
+                        let result: TableRemoveDiff =
+                            drop_table(&table_name, get_db_instance()?, user)?;
+                        results.push(format!("Table dropped: {}", result.table_name));
                     }
+                    sqlparser::ast::ObjectType::Index => {
+                        if names.len() != 1 {
+                            return Err("Can only drop one index at a time".to_string());
+                        }
 
-                    let table_name: String = names[0].to_string();
+                        let idents: Vec<Ident> = names[0].0.clone();
+                        if idents.len() != 2 {
+                            return Err("Must specify one index and table to drop {table_name}.{index_name}".to_string());
+                        }
 
-                    // If the table doesn't exist on this branch, return an error
-                    if (!if_exists) && (!get_db_instance()?.get_tables(user)?.contains(&table_name))
-                    {
-                        return Err(format!("Table {} does not exist", table_name));
+                        let table_name: &String = &idents[0].value;
+                        let index_name: &String = &idents[1].value;
+
+                        let table_dir: String =
+                            get_db_instance()?.get_current_working_branch_path(user);
+
+                        let idx_rem_diff: IndexRemoveDiff =
+                            BTree::drop_btree_index(&table_dir, table_name, None, index_name)?;
+
+                        user.append_diff(&Diff::IndexRemove(idx_rem_diff));
+                        results.push(format!("Index dropped: {}", index_name));
                     }
-
-                    let result: TableRemoveDiff =
-                        drop_table(&table_name, get_db_instance()?, user)?;
-                    results.push(format!("Table dropped: {}", result.table_name));
+                    _ => {
+                        return Err("Can only drop tables and indexes".to_string());
+                    }
                 }
             }
             Statement::CreateTable { name, columns, .. } => {
@@ -419,7 +491,7 @@ pub fn select(
     let mut column_names: Vec<String> = Vec::new();
 
     let tables: Tables = load_aliased_tables(database, user, &table_names)?;
-    
+
     // This is where the fun begins... ;)
     let table_aliases = gen_column_aliases(&tables);
 
@@ -778,6 +850,91 @@ pub fn to_ident(s: String) -> Expr {
         value: s.to_string(),
         quote_style: None,
     })
+}
+
+pub fn set_operations(
+    op: &SetOperator,
+    left_rows: Vec<Vec<Value>>,
+    right_rows: Vec<Vec<Value>>,
+) -> Result<Vec<Row>, String> {
+    // checking if the columns match
+    if left_rows.is_empty() || right_rows.is_empty() {
+        match op {
+            SetOperator::Union => {
+                if left_rows.is_empty() {
+                    return Ok(right_rows);
+                }
+                return Ok(left_rows);
+            }
+            SetOperator::Except => {
+                return Ok(left_rows);
+            }
+            SetOperator::Intersect => {
+                return Ok(vec![]);
+            }
+        }
+    }
+
+    for left in left_rows[0].iter() {
+        // checking if the columns match
+        // I32 and I64 counts as same type
+        if !right_rows[0].iter().any(|x| {
+            x.get_coltype() == left.get_coltype()
+                || (x.get_coltype().to_string() == "I32" && left.get_coltype().to_string() == "I64")
+                || (x.get_coltype().to_string() == "I64" && left.get_coltype().to_string() == "I32")
+        }) {
+            return Err("Incompatible types in set operation".to_string());
+        }
+    }
+
+    // convert all int to i64
+    let mut new_right: Vec<Vec<Value>> = Vec::new();
+    let mut new_left: Vec<Vec<Value>> = Vec::new();
+
+    for row in right_rows.clone() {
+        let temp_right = row
+            .into_iter()
+            .map(|val| Column::I64.coerce_type_numbers_only(val.clone()))
+            .collect::<Result<Row, String>>()?;
+        new_right.push(temp_right);
+    }
+
+    for row in left_rows.clone() {
+        let temp_left = row
+            .into_iter()
+            .map(|val| Column::I64.coerce_type_numbers_only(val.clone()))
+            .collect::<Result<Row, String>>()?;
+        new_left.push(temp_left);
+    }
+
+    match op {
+        SetOperator::Union => {
+            for row in new_right {
+                if !new_left.contains(&row) {
+                    new_left.push(row);
+                }
+            }
+            Ok(new_left)
+        }
+        SetOperator::Except => {
+            let mut rows: Vec<Vec<Value>> = Vec::new();
+            for row in new_left {
+                if !new_right.contains(&row) {
+                    rows.push(row);
+                }
+            }
+            Ok(rows)
+        }
+        SetOperator::Intersect => {
+            let mut rows: Vec<Vec<Value>> = Vec::new();
+            for row in new_right {
+                if new_left.contains(&row) {
+                    rows.push(row);
+                }
+            }
+            Ok(rows)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2106,5 +2263,171 @@ pub mod tests {
                 panic!("Invalid value type");
             }
         }
+    }
+
+    #[test]
+    #[serial]
+    // Test set operation with incompatible types
+    fn test_set_operations_incompatible_types() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "SELECT * from personal_info UNION SELECT * from locations",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap_err();
+        println!("THIS IS PRINTING {:?}", results);
+        assert!(results == "Incompatible types in set operation");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_union() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("first_name".to_string(), Column::String(50)),
+            ("last_name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I64),
+            ("height".to_string(), Column::Float),
+            ("date_inserted".to_string(), Column::Timestamp),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "SELECT * from personal_info UNION SELECT * from test_table",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_except() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("first_name".to_string(), Column::String(50)),
+            ("last_name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I64),
+            ("height".to_string(), Column::Float),
+            ("date_inserted".to_string(), Column::Timestamp),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "SELECT * from personal_info except SELECT * from test_table",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_intersect() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("first_name".to_string(), Column::String(50)),
+            ("last_name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I64),
+            ("height".to_string(), Column::Float),
+            ("date_inserted".to_string(), Column::Timestamp),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "SELECT * from personal_info intersect SELECT * from test_table",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("SELECT * from test_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
     }
 }

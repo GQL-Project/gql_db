@@ -9,10 +9,11 @@ pub type Page = [u8; PAGE_SIZE]; // Array of Size 4KB
 #[derive(Debug, Clone, PartialEq)]
 #[repr(u8)]
 pub enum PageType {
-    Header        = 0,
+    Header = 0,
     InternalIndex = 1,
-    LeafIndex     = 2,
-    Data          = 3,
+    LeafIndex = 2,
+    Data = 3,
+    Empty = 4,
 }
 pub const PAGE_HEADER_SIZE: usize = 1; // 1 byte for page type
 
@@ -25,11 +26,11 @@ impl TryFrom<u8> for PageType {
             1 => Ok(PageType::InternalIndex),
             2 => Ok(PageType::LeafIndex),
             3 => Ok(PageType::Data),
+            4 => Ok(PageType::Empty),
             _ => Err(format!("Invalid page type: {}", value)),
         }
     }
 }
-
 
 // Creates file with given name and size of Page Size
 pub fn create_file(path: &String) -> Result<(), Error> {
@@ -51,17 +52,20 @@ pub fn read_page(page_num: u32, path: &String) -> Result<(Box<Page>, PageType), 
     let mut buf: [u8; PAGE_SIZE + PAGE_HEADER_SIZE] = [0; PAGE_SIZE + PAGE_HEADER_SIZE];
     let f = RandomAccessFile::open(path).map_err(map_error)?;
     let x = f
-        .read_at((page_num * (PAGE_SIZE + PAGE_HEADER_SIZE) as u32) as u64, buf.as_mut())
+        .read_at(
+            (page_num * (PAGE_SIZE + PAGE_HEADER_SIZE) as u32) as u64,
+            buf.as_mut(),
+        )
         .map_err(map_error)?;
     if x != PAGE_SIZE + PAGE_HEADER_SIZE {
         return Err(format!("Error reading page {}", page_num));
     }
-    
+
     // Read the page type and data buffer from the buffer read from the file
     let page_type: PageType = PageType::from(buf[0].try_into()?);
     let mut data_buf: Box<Page> = Box::new([0; PAGE_SIZE]);
     data_buf[0..PAGE_SIZE].copy_from_slice(&buf[PAGE_HEADER_SIZE..(PAGE_SIZE + PAGE_HEADER_SIZE)]);
-    
+
     Ok((data_buf, page_type))
 }
 
@@ -70,19 +74,27 @@ pub fn load_page(page_num: u32, path: &String, page: &mut Page) -> Result<PageTy
     let mut buf: [u8; PAGE_SIZE + PAGE_HEADER_SIZE] = [0; PAGE_SIZE + PAGE_HEADER_SIZE];
     let f = RandomAccessFile::open(path).map_err(map_error)?;
     let x = f
-        .read_at((page_num * (PAGE_SIZE + PAGE_HEADER_SIZE) as u32) as u64, buf.as_mut())
+        .read_at(
+            (page_num * (PAGE_SIZE + PAGE_HEADER_SIZE) as u32) as u64,
+            buf.as_mut(),
+        )
         .map_err(map_error)?;
     if x != PAGE_SIZE + PAGE_HEADER_SIZE {
         return Err(format!("Error reading page {}", page_num));
     }
-    
+
     let page_type: PageType = PageType::from(buf[0].try_into()?);
     page[0..PAGE_SIZE].copy_from_slice(&buf[PAGE_HEADER_SIZE..(PAGE_SIZE + PAGE_HEADER_SIZE)]);
 
     Ok(page_type)
 }
 
-pub fn write_page(page_num: u32, path: &String, page: &Page, page_type: PageType) -> Result<(), String> {
+pub fn write_page(
+    page_num: u32,
+    path: &String,
+    page: &Page,
+    page_type: PageType,
+) -> Result<(), String> {
     || -> Result<(), Error> {
         let file = OpenOptions::new().write(true).open(path)?;
         let file_size = file.size()?.expect("File size is not available");
@@ -91,7 +103,7 @@ pub fn write_page(page_num: u32, path: &String, page: &Page, page_type: PageType
             file.set_len(offset + (PAGE_SIZE + PAGE_HEADER_SIZE) as u64)?;
         }
         let mut f = RandomAccessFile::try_new(file)?;
-        
+
         // Construct the buffer to write
         let mut buffer: [u8; PAGE_SIZE + PAGE_HEADER_SIZE] = [0; PAGE_HEADER_SIZE + PAGE_SIZE];
         buffer[0] = page_type as u8;
