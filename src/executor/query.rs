@@ -22,7 +22,7 @@ use crate::{
 use crate::util::dbtype::Value;
 use itertools::Itertools;
 use sqlparser::ast::{
-    Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement,
+    Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement, AlterTableOperation,
 };
 
 pub type Tables = Vec<(Table, String)>;
@@ -425,6 +425,34 @@ pub fn execute_update(
                     }
                 }
                 results.push(insert(all_data, table_name, get_db_instance()?, user)?.0);
+            }
+            Statement::AlterTable {
+                name,
+                operation
+            } => {
+                let table_name = name.0[0].value.to_string();
+                println!("Alter table name: {:?}", table_name);
+                // println!("Operation: {:?}", operation);
+                match operation {
+                    AlterTableOperation::AddColumn { column_def } => {
+                        let column_name = column_def.name.value.to_string();
+                        let column = Column::from_col_def(&column_def)?;
+                        println!("Column name: {:?}", column_name);
+                        println!("Column: {:?}", column);
+                        // let result = alter_table_add_column(&table_name, &column_name, &column, get_db_instance()?, user)?;
+                        // results.push(format!("Column added: {}", result.column_name));
+                        results.push(format!("Schema added {}({:?}) to Table {}", column_name, column, table_name));
+                    }
+                    AlterTableOperation::DropColumn { column_name, if_exists, cascade } => {
+                        let column_name = column_name.to_string();
+                        // let result = alter_table_drop_column(&table_name, &column_name, get_db_instance()?, user)?;
+                        // results.push(format!("Column dropped: {}", result.column_name));
+                        results.push(format!("Schema {} deleted in Table {}", column_name, table_name));
+                    }
+                    _ => {
+                        return Err("Can only add or drop columns".to_string());
+                    }
+                }
             }
             _ => {
                 return Err(format!("Not a valid command: {0}", a));
