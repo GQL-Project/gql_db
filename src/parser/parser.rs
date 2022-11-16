@@ -31,151 +31,151 @@ pub fn parse(query: &str, _update: bool) -> Result<Vec<Statement>, String> {
 pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Result<String, String> {
     let command = shellwords::split(query)
         .map_err(|e| format!("Mismatched quotes while parsing query: {}", e))?;
-    let parse = VersionControl::try_parse_from(command);
-    match parse {
-        Ok(parse) => {
-            match parse.subcmd {
-                VersionControlSubCommand::Commit { message } => {
-                    // Make sure the user has some changes to commit
-                    if user.get_diffs().len() == 0 {
-                        return Err("No changes to commit".to_string());
-                    }
+    let parse = VersionControl::try_parse_from(command).map_err(|e| e.to_string())?;
 
-                    let (res_node, res_commit) = get_db_instance()?.create_commit_and_node(
-                        &message.to_string(),
-                        &user.get_commands().join(":"),
-                        user,
-                        None,
-                    )?;
-                    Ok(format!(
-                        "Commit created on branch {} with hash {}",
-                        res_node.branch_name, res_commit.hash
-                    ))
-                }
-                VersionControlSubCommand::Log { json } => {
-                    let log_results = command::log(user)?;
-                    if json {
-                        Ok(log_results.2)
-                    } else {
-                        Ok(log_results.0)
-                    }
-                }
-                VersionControlSubCommand::Info { commit: hash } => command::info(&hash),
-                VersionControlSubCommand::Status => Ok(user.get_status().0),
-                VersionControlSubCommand::CreateBranch { branch_name } => {
-                    get_db_instance()?
-                        .create_branch(&branch_name, user)
-                        .map_err(|e| e.to_string())?;
-                    Ok(format!("Branch {} created!", branch_name))
-                }
-                VersionControlSubCommand::ListBranch { current } => {
-                    if current {
-                        Ok(user.get_current_branch_name())
-                    } else {
-                        command::list_branches(user)
-                    }
-                }
-                VersionControlSubCommand::SwitchBranch { branch_name } => {
-                    get_db_instance()?
-                        .switch_branch(&branch_name, user)
-                        .map_err(|e| e.to_string())?;
-                    Ok(format!("Branch switched to {}", branch_name))
-                }
-                VersionControlSubCommand::MergeBranch {
-                    src_branch,
-                    dest_branch,
-                    message,
-                    delete_src,
-                    strategy,
-                } => {
-                    // Get the strategy from the command string
-                    let merge_strategy = match strategy.as_str() {
-                        "ours" => MergeConflictResolutionAlgo::UseSource,
-                        "theirs" => MergeConflictResolutionAlgo::UseTarget,
-                        "clean" => MergeConflictResolutionAlgo::NoConflicts,
-                        _ => Err(
-                            "Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'"
-                                .to_string(),
-                        )?,
-                    };
+    match parse.subcmd {
+        VersionControlSubCommand::Commit { message } => {
+            // Make sure the user has some changes to commit
+            if user.get_diffs().len() == 0 {
+                return Err("No changes to commit".to_string());
+            }
 
-                    if src_branch == dest_branch {
-                        return Err("Cannot merge a branch into itself".to_string());
-                    }
-
-                    // Make sure user does not have any uncommitted changes
-                    if user.get_diffs().len() > 0 {
-                        return Err("Cannot merge with uncommitted changes".to_string());
-                    }
-
-                    // Swap user to the destination branch
-                    get_db_instance()?
-                        .switch_branch(&dest_branch, user)
-                        .map_err(|e| e.to_string())?;
-
-                    // Merge the source branch into the destination branch
-                    let merge_commit: Commit = get_db_instance()?
-                        .merge_branches(
-                            &src_branch,
-                            user,
-                            &message,
-                            true,
-                            merge_strategy,
-                            delete_src,
-                        )
-                        .map_err(|e| e.to_string())?;
-
-                    Ok(format!("Merge Successful Made at hash {}", merge_commit.hash).to_string())
-                }
-                VersionControlSubCommand::DeleteBranch { branch_name, force } => {
-                    let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
-                    let branch_exist =
-                        branch_heads_instance.does_branch_exist(branch_name.clone())?;
-                    if !branch_exist {
-                        return Err("Branch does not exist".to_string());
-                    }
-                    let del_results =
-                        command::del_branch(user, &branch_name.clone(), force, all_users)?;
-                    Ok(del_results)
-                }
-                VersionControlSubCommand::SquashCommit {
-                    src_commit,
-                    dest_commit,
-                } => {
-                    let squash_results = command::squash(&src_commit, &dest_commit, user)?;
-                    Ok(format!(
-                        "Squash Commit Made at hash: {}",
-                        squash_results.hash
-                    ))
-                }
-                VersionControlSubCommand::RevertCommit { commit } => {
-                    let revert_results = command::revert(user, &commit)?;
-                    Ok(format!("Reverted Commit at hash: {}", revert_results.hash))
-                }
-                VersionControlSubCommand::SchemaTable { json } => {
-                    let schema_results = command::schema_table(user)?;
-                    if json {
-                        Ok(schema_results.1)
-                    } else {
-                        Ok(schema_results.0)
-                    }
-                    // command::schema_table(user)
-                }
-                VersionControlSubCommand::DiscardChanges => {
-                    command::discard(user)?;
-                    Ok("Discarded changes".to_string())
-                }
-                VersionControlSubCommand::User => {
-                    let user_creds_instance = get_db_instance()?.get_user_creds_file_mut();
-                    Ok(format!(
-                        "\nCurrent user: {} \nAll users: {:?}",
-                        user.get_user_id(),
-                        user_creds_instance.get_all_usernames()
-                    ))
-                }
+            let (res_node, res_commit) = get_db_instance()?.create_commit_and_node(
+                &message.to_string(),
+                &user.get_commands().join(":"),
+                user,
+                None,
+            )?;
+            Ok(format!(
+                "Commit created on branch {} with hash {}",
+                res_node.branch_name, res_commit.hash
+            ))
+        }
+        VersionControlSubCommand::Log { json } => {
+            let log_results = command::log(user)?;
+            if json {
+                Ok(log_results.2)
+            } else {
+                Ok(log_results.0)
             }
         }
-        Err(e) => Err(e.to_string()),
+        VersionControlSubCommand::Info { commit: hash } => command::info(&hash),
+        VersionControlSubCommand::Status => Ok(user.get_status().0),
+        VersionControlSubCommand::CreateBranch { branch_name } => {
+            get_db_instance()?
+                .create_branch(&branch_name, user)
+                .map_err(|e| e.to_string())?;
+            Ok(format!("Branch {} created!", branch_name))
+        }
+        VersionControlSubCommand::ListBranch { current } => {
+            if current {
+                Ok(user.get_current_branch_name())
+            } else {
+                command::list_branches(user)
+            }
+        }
+        VersionControlSubCommand::SwitchBranch { branch_name } => {
+            get_db_instance()?
+                .switch_branch(&branch_name, user)
+                .map_err(|e| e.to_string())?;
+            Ok(format!("Branch switched to {}", branch_name))
+        }
+        VersionControlSubCommand::MergeBranch {
+            src_branch,
+            dest_branch,
+            message,
+            delete_src,
+            strategy,
+        } => {
+            // Get the strategy from the command string
+            let merge_strategy = match strategy.as_str() {
+                "ours" => MergeConflictResolutionAlgo::UseSource,
+                "theirs" => MergeConflictResolutionAlgo::UseTarget,
+                "clean" => MergeConflictResolutionAlgo::NoConflicts,
+                _ => Err(
+                    "Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'"
+                        .to_string(),
+                )?,
+            };
+
+            if src_branch == dest_branch {
+                return Err("Cannot merge a branch into itself".to_string());
+            }
+
+            // Make sure user does not have any uncommitted changes
+            if user.get_diffs().len() > 0 {
+                return Err("Cannot merge with uncommitted changes".to_string());
+            }
+
+            // Swap user to the destination branch
+            get_db_instance()?
+                .switch_branch(&dest_branch, user)
+                .map_err(|e| e.to_string())?;
+
+            // Merge the source branch into the destination branch
+            let merge_commit: Commit = get_db_instance()?
+                .merge_branches(
+                    &src_branch,
+                    user,
+                    &message,
+                    true,
+                    merge_strategy,
+                    delete_src,
+                )
+                .map_err(|e| e.to_string())?;
+
+            Ok(format!("Merge Successful Made at hash {}", merge_commit.hash).to_string())
+        }
+        VersionControlSubCommand::DeleteBranch { branch_name, force } => {
+            let branch_heads_instance = get_db_instance()?.get_branch_heads_file_mut();
+            let branch_exist =
+                branch_heads_instance.does_branch_exist(branch_name.clone())?;
+            if !branch_exist {
+                return Err("Branch does not exist".to_string());
+            }
+            let del_results =
+                command::del_branch(user, &branch_name.clone(), force, all_users)?;
+            Ok(del_results)
+        }
+        VersionControlSubCommand::SquashCommit {
+            src_commit,
+            dest_commit,
+        } => {
+            let squash_results = command::squash(&src_commit, &dest_commit, user)?;
+            Ok(format!(
+                "Squash Commit Made at hash: {}",
+                squash_results.hash
+            ))
+        }
+        VersionControlSubCommand::RevertCommit { commit } => {
+            let revert_results = command::revert(user, &commit)?;
+            Ok(format!("Reverted Commit at hash: {}", revert_results.hash))
+        }
+        VersionControlSubCommand::ViewBranch => {
+            let results: String = command::list_all_commits()?;
+            Ok(format!("Branch View: {}", results))
+        }
+        VersionControlSubCommand::SchemaTable { json } => {
+            let schema_results = command::schema_table(user)?;
+            if json {
+                Ok(schema_results.1)
+            } else {
+                Ok(schema_results.0)
+            }
+            // command::schema_table(user)
+        }
+        VersionControlSubCommand::DiscardChanges => {
+            command::discard(user)?;
+            Ok("Discarded changes".to_string())
+        }
+        VersionControlSubCommand::User => {
+            let user_creds_instance = get_db_instance()?.get_user_creds_file_mut();
+            Ok(format!(
+                "\nCurrent user: {} \nAll users: {:?}",
+                user.get_user_id(),
+                user_creds_instance.get_all_usernames()
+            ))
+        }
     }
 }
 

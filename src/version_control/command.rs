@@ -460,17 +460,20 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 }
 */
 
+#[derive(Serialize)]
 pub struct CommitGraphNode {
     pub commit_hash: String,
     pub column: u32,
     pub row: u32,
 }
 
+#[derive(Serialize)]
 pub struct CommitGraphEdge {
     pub src_commit_hash: String,
     pub dest_commit_hash: String,
 }
 
+#[derive(Serialize)]
 pub struct CommitGraph {
     pub nodes: Vec<CommitGraphNode>,
     pub edges: Vec<CommitGraphEdge>,
@@ -497,15 +500,21 @@ pub fn list_all_commits() -> Result<String, String> {
     for head_node in branch_head_nodes {
         let branch_name: String = head_node.branch_name.clone();
         let mut branch_nodes: Vec<BranchNode> = Vec::new();
+        let mut this_branch_len: usize = 1;
 
         let mut current_node: BranchNode = head_node;
         branch_nodes.push(current_node.clone());
         while let Some(prev_node) = branches_file.get_prev_branch_node(&current_node)? {
             branch_nodes.push(prev_node.clone());
             current_node = prev_node;
+            this_branch_len += 1;
         }
         branch_nodes.reverse();
         all_branch_nodes.push((branch_name, branch_nodes));
+
+        if this_branch_len > max_branch_len {
+            max_branch_len = this_branch_len;
+        }
     }
 
     // Turn all branch nodes into a json table thingy
@@ -514,15 +523,14 @@ pub fn list_all_commits() -> Result<String, String> {
         edges: Vec::new(),
     };
 
-    let mut row: u32 = 0;
     // Maps the branch_name to the column number
     let mut used_cols: HashMap<String, u32> = HashMap::new();
-    loop {
+    for i in 0..max_branch_len {
         // Get the unique branch nodes at this row level
         let mut unique_branch_nodes: Vec<BranchNode> = Vec::new();
         for (branch_name, branch_nodes) in &all_branch_nodes {
-            if *branch_name == branch_nodes[row as usize].branch_name {
-                unique_branch_nodes.push(branch_nodes[row as usize].clone());
+            if branch_nodes.len() > i && *branch_name == branch_nodes[i].branch_name {
+                unique_branch_nodes.push(branch_nodes[i].clone());
             }
         }
 
@@ -547,7 +555,7 @@ pub fn list_all_commits() -> Result<String, String> {
                 CommitGraphNode {
                     commit_hash: commit_hash.clone(),
                     column: used_cols[&branch_name],
-                    row: row,
+                    row: i as u32,
                 }
             );
 
@@ -562,7 +570,7 @@ pub fn list_all_commits() -> Result<String, String> {
         }
     }
 
-    return Ok("".to_string());
+    return Ok(serde_json::to_string(&graph).map_err(|e| e.to_string())?);
 }
 
 #[cfg(test)]
