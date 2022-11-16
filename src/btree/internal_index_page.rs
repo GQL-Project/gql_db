@@ -693,7 +693,7 @@ impl InternalIndexPage {
             Expr::IsNull(pred) => {
                 let pred = Self::solve_index_value(pred, column_aliases, index_refs, index_id)?;
                 Ok(Box::new(move |row| match pred(row)? {
-                    JointValues::DBValue(Value::Null) => Ok(true),
+                    JointValues::DBValue(Value::Null(_)) => Ok(true),
                     JointValues::SQLValue(SqlValue::Null) => Ok(true),
                     _ => Ok(false),
                 }))
@@ -701,7 +701,7 @@ impl InternalIndexPage {
             Expr::IsNotNull(pred) => {
                 let pred = Self::solve_index_value(pred, column_aliases, index_refs, index_id)?;
                 Ok(Box::new(move |row| match pred(row)? {
-                    JointValues::DBValue(Value::Null) => Ok(false),
+                    JointValues::DBValue(Value::Null(_)) => Ok(false),
                     JointValues::SQLValue(SqlValue::Null) => Ok(false),
                     _ => Ok(true),
                 }))

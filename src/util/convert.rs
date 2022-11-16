@@ -1,4 +1,4 @@
-use super::dbtype::Value;
+use super::dbtype::{Value, Column};
 use super::row::Row;
 use crate::server::server::db_connection::cell_value::CellType::*;
 use crate::server::server::db_connection::*;
@@ -54,7 +54,7 @@ pub fn to_value(value: Value) -> CellValue {
         Value::Bool(b) => CellValue {
             cell_type: Some(ColBool { 0: b }),
         },
-        Value::Null => CellValue {
+        Value::Null(x) => CellValue {
             cell_type: Some(ColNull { 0: () }),
         },
     }
@@ -77,7 +77,7 @@ pub fn from_value(value: CellValue) -> Value {
         ColI64 { 0: i } => Value::I64(i),
         ColDouble { 0: d } => Value::Double(d),
         ColBool { 0: b } => Value::Bool(b),
-        ColNull(()) => Value::Null,
+        ColNull(()) => Value::Null(Column::I32),
     }
 }
 

@@ -4114,7 +4114,7 @@ mod tests {
                     Value::String("Chris".to_string()),
                     Value::String("Hemsworth".to_string()),
                     Value::I64(28),
-                    Value::Null,
+                    Value::Null(Column::Float),
                     Value::Timestamp(parse_time(&"2020-01-09 12:00:23".to_string()).unwrap()),
                 ],
                 vec![

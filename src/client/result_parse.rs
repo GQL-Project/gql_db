@@ -27,7 +27,7 @@ pub fn result_parse(result_inner: QueryResult) -> Result<(), String> {
                 Value::I64(i) => row_value.push(i.to_string()),
                 Value::Double(d) => row_value.push(d.to_string()),
                 Value::Bool(b) => row_value.push(b.to_string()),
-                Value::Null => row_value.push("NULL".to_string()),
+                Value::Null(_) => row_value.push("NULL".to_string()),
             }
         }
         table_rows.push(row_value);

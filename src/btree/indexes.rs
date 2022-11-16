@@ -549,7 +549,7 @@ mod tests {
         );
 
         let index3: IndexKey = vec![Value::I32(1), Value::String("a".to_string())];
-        let index4: IndexKey = vec![Value::I32(2), Value::Null];
+        let index4: IndexKey = vec![Value::I32(2), Value::Null(Column::I32)];
         assert_eq!(
             compare_indexes(&index3, &index4),
             KeyComparison::Incomparable

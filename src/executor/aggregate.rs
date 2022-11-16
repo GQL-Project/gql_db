@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::util::dbtype::Value;
+use crate::util::dbtype::{Value, Column};
 use crate::util::row::Row;
 
 use sqlparser::ast::{BinaryOperator, Expr, FunctionArgExpr, UnaryOperator};
@@ -71,14 +71,14 @@ pub fn solve_agg_predicate(
         Expr::IsNull(pred) => {
             let value = solve_aggregate(rows, pred, column_aliases, index_refs)?;
             match value {
-                Value::Null => Ok(true),
+                Value::Null(_) => Ok(true),
                 _ => Ok(false),
             }
         }
         Expr::IsNotNull(pred) => {
             let value = solve_aggregate(rows, pred, column_aliases, index_refs)?;
             match value {
-                Value::Null => Ok(false),
+                Value::Null(_) => Ok(false),
                 _ => Ok(true),
             }
         }
@@ -298,7 +298,7 @@ fn aggregate_count(
             let mut count = 0;
             for row in rows {
                 let val = solver(row)?;
-                if val != JointValues::DBValue(Value::Null) {
+                if val.is_null() {
                     count += 1;
                 }
             }
@@ -325,7 +325,7 @@ fn aggregate_sum(
     }
     match sum {
         Some(v) => v.unpack(),
-        None => Ok(Value::Null),
+        None => Ok(Value::Null(Column::I32)),
     }
 }
 
@@ -352,7 +352,7 @@ fn aggregate_min(
     }
     match min {
         Some(v) => v.unpack(),
-        None => Ok(Value::Null),
+        None => Ok(Value::Null(Column::I32)),
     }
 }
 
@@ -379,7 +379,7 @@ fn aggregate_max(
     }
     match max {
         Some(v) => v.unpack(),
-        None => Ok(Value::Null),
+        None => Ok(Value::Null(Column::I32)),
     }
 }
 

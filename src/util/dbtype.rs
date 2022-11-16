@@ -17,7 +17,7 @@ pub enum Value {
     I64(i64),
     Double(f64),
     Bool(bool),
-    Null,
+    Null(Column),
 }
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -126,7 +126,7 @@ impl Column {
                 // Check if the value is null.
                 let val: u8 = read_type(page, offset)?;
                 if val == 0 {
-                    Ok(Value::Null)
+                    Ok(Value::Null(*x.clone()))
                 } else {
                     x.read(page, offset + size_of::<u8>())
                 }
@@ -146,7 +146,7 @@ impl Column {
                 write_string(page, offset, &x, *size as usize)
             }
             // Null cases
-            (Column::Nullable(_), Value::Null) => write_type(page, offset, 0u8),
+            (Column::Nullable(_), Value::Null(_)) => write_type(page, offset, 0u8),
             (Column::Nullable(x), y) => {
                 // Attempt to write the value, and only if it succeeds, write the null byte.
                 x.write(y, page, offset + size_of::<u8>())?;
@@ -190,7 +190,7 @@ impl Column {
             // Time stamps
             (Column::Timestamp, Value::String(x)) => Ok(Value::Timestamp(parse_time(x)?)),
             // Null cases
-            (Column::Nullable(_), Value::Null) => Ok(Value::Null),
+            (Column::Nullable(x), Value::Null(_)) => Ok(Value::Null(*x.clone())),
             (Column::Nullable(x), _) => x.coerce_type(value),
             _ => Err(format!(
                 "Unexpected Type, could not promote value {:?} to type {:?}",
@@ -264,7 +264,7 @@ impl Column {
             ),
             Column::Nullable(x) => {
                 if str == "" {
-                    Value::Null
+                    Value::Null(*x.clone())
                 } else {
                     x.parse(str)?
                 }
@@ -279,7 +279,7 @@ impl Column {
             SqlValue::SingleQuotedString(x) => self.parse(&x.to_string()),
             SqlValue::DoubleQuotedString(x) => self.parse(&x.to_string()),
             SqlValue::Boolean(x) => Ok(Value::Bool(*x)),
-            SqlValue::Null => Ok(Value::Null),
+            SqlValue::Null => Ok(Value::Null(Column::I32)),
             _ => Err(format!("Unsupported value type: {:?}", parse)),
         }
     }
@@ -296,7 +296,18 @@ impl Column {
                 Value::Timestamp(parse_time(&"1970-01-01 00:00:00".to_string()).unwrap())
             }
             Column::String(_) => Value::String(String::new()),
-            Column::Nullable(_) => Value::Null,
+            Column::Nullable(x) => Value::Null(*x.clone()),
+        }
+    }
+
+    pub fn match_type(&self, other: &Column) -> bool {
+        self.coerce_type(other.get_default_value()).is_ok()
+    }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            Column::Nullable(_) => true,
+            _ => false,
         }
     }
 }
@@ -308,7 +319,7 @@ impl Value {
             SqlValue::SingleQuotedString(x) => Ok(Value::String(x.clone())),
             SqlValue::DoubleQuotedString(x) => Ok(Value::String(x.clone())),
             SqlValue::Boolean(x) => Ok(Value::Bool(*x)),
-            SqlValue::Null => Ok(Value::Null),
+            SqlValue::Null => Ok(Value::Null(Column::I32)),
             _ => Err(format!("Unsupported value type: {:?}", parse)),
         }
     }
@@ -322,7 +333,7 @@ impl Value {
             Value::Bool(_) => Column::Bool,
             Value::Timestamp(_) => Column::Timestamp,
             Value::String(_) => Column::String(0),
-            Value::Null => Column::Nullable(Box::new(Column::I32)),
+            Value::Null(x) => Column::Nullable(Box::new(x.clone())),
         }
     }
 
@@ -335,7 +346,14 @@ impl Value {
             Value::Bool(x) => format!("{}", x),
             Value::Timestamp(x) => format!("{}", x),
             Value::String(x) => format!("{}", x),
-            Value::Null => "NULL".to_string(),
+            Value::Null(_) => "NULL".to_string(),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            Value::Null(_) => true,
+            _ => false,
         }
     }
 }
@@ -365,7 +383,7 @@ impl ToString for Value {
             Value::Bool(x) => format!("Bool({})", x),
             Value::Timestamp(x) => format!("Timestamp({})", x),
             Value::String(x) => format!("String({})", x),
-            Value::Null => "Null()".to_string(),
+            Value::Null(_) => "Null()".to_string(),
         }
     }
 }
@@ -405,9 +423,9 @@ impl PartialOrd for Value {
             (Value::Double(x), Value::I64(y)) => x.partial_cmp(&(*y as f64)),
             (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)),
             // Null cases
-            (Value::Null, Value::Null) => Some(Ordering::Equal),
-            (Value::Null, _) => Some(Ordering::Less),
-            (_, Value::Null) => Some(Ordering::Greater),
+            (Value::Null(_), Value::Null(_)) => Some(Ordering::Equal),
+            (Value::Null(_), _) => Some(Ordering::Less),
+            (_, Value::Null(_)) => Some(Ordering::Greater),
             _ => None,
         }
     }
@@ -445,7 +463,7 @@ impl Hash for Value {
                 state.write_u8(6);
                 x.hash(state);
             }
-            Value::Null => {
+            Value::Null(_) => {
                 state.write_u8(7);
             }
         }
@@ -454,57 +472,9 @@ impl Hash for Value {
 
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Value::I32(x), Value::I32(y)) => x.cmp(y),
-            (Value::I64(x), Value::I64(y)) => x.cmp(y),
-            (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(Ordering::Less),
-            (Value::Double(x), Value::Double(y)) => x.partial_cmp(y).unwrap_or(Ordering::Less),
-            (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
-            (Value::Timestamp(x), Value::Timestamp(y)) => {
-                x.seconds.cmp(&y.seconds).then(x.nanos.cmp(&y.nanos))
-            }
-            (Value::String(x), Value::String(y)) => x.cmp(y),
-            // Type coercions
-            (Value::I64(x), Value::I32(y)) => x.cmp(&(*y as i64)),
-            (Value::I64(x), Value::Double(y)) => {
-                (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less)
-            }
-            (Value::I64(x), Value::Float(y)) => {
-                (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less)
-            }
-
-            (Value::I32(x), Value::I64(y)) => (*x as i64).cmp(y),
-            (Value::I32(x), Value::Float(y)) => {
-                (*x as f32).partial_cmp(y).unwrap_or(Ordering::Less)
-            }
-            (Value::I32(x), Value::Double(y)) => {
-                (*x as f64).partial_cmp(y).unwrap_or(Ordering::Less)
-            }
-
-            (Value::Float(x), Value::I32(y)) => {
-                x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less)
-            }
-            (Value::Float(x), Value::I64(y)) => {
-                x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less)
-            }
-            (Value::Float(x), Value::Double(y)) => {
-                x.partial_cmp(&(*y as f32)).unwrap_or(Ordering::Less)
-            }
-
-            (Value::Double(x), Value::I32(y)) => {
-                x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less)
-            }
-            (Value::Double(x), Value::I64(y)) => {
-                x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less)
-            }
-            (Value::Double(x), Value::Float(y)) => {
-                x.partial_cmp(&(*y as f64)).unwrap_or(Ordering::Less)
-            }
-            // Null cases
-            (Value::Null, Value::Null) => Ordering::Equal,
-            (Value::Null, _) => Ordering::Less,
-            (_, Value::Null) => Ordering::Greater,
-            _ => Ordering::Less,
+        match self.partial_cmp(other) {
+            Some(x) => x,
+            None => Ordering::Less,
         }
     }
 }
@@ -513,36 +483,7 @@ impl Eq for Value {}
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::I32(x), Value::I32(y)) => x.eq(y),
-            (Value::I64(x), Value::I64(y)) => x.eq(y),
-            (Value::Float(x), Value::Float(y)) => x.eq(y),
-            (Value::Double(x), Value::Double(y)) => x.eq(y),
-            (Value::Bool(x), Value::Bool(y)) => x.eq(y),
-            (Value::Timestamp(x), Value::Timestamp(y)) => x.eq(y),
-            (Value::String(x), Value::String(y)) => x.eq(y),
-            // Type coercions
-            (Value::I64(x), Value::I32(y)) => x.eq(&(*y as i64)),
-            (Value::I64(x), Value::Double(y)) => (*x as f64).eq(y),
-            (Value::I64(x), Value::Float(y)) => (*x as f32).eq(y),
-
-            (Value::I32(x), Value::I64(y)) => (*x as i64).eq(y),
-            (Value::I32(x), Value::Float(y)) => (*x as f32).eq(y),
-            (Value::I32(x), Value::Double(y)) => (*x as f64).eq(y),
-
-            (Value::Float(x), Value::I32(y)) => x.eq(&(*y as f32)),
-            (Value::Float(x), Value::I64(y)) => x.eq(&(*y as f32)),
-            (Value::Float(x), Value::Double(y)) => x.eq(&(*y as f32)),
-
-            (Value::Double(x), Value::I32(y)) => x.eq(&(*y as f64)),
-            (Value::Double(x), Value::I64(y)) => x.eq(&(*y as f64)),
-            (Value::Double(x), Value::Float(y)) => x.eq(&(*y as f64)),
-            // Null cases
-            (Value::Null, Value::Null) => true,
-            (Value::Null, _) => false,
-            (_, Value::Null) => false,
-            _ => false,
-        }
+        self.partial_cmp(other) == Some(Ordering::Equal)
     }
 }
 

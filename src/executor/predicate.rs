@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::util::dbtype::Value;
+use crate::util::dbtype::{Value, Column};
 use crate::util::row::Row;
 use prost_types::Timestamp;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
@@ -99,7 +99,7 @@ pub fn solve_predicate(
         Expr::IsNull(pred) => {
             let pred = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| match pred(row)? {
-                JointValues::DBValue(Value::Null) => Ok(true),
+                JointValues::DBValue(Value::Null(_)) => Ok(true),
                 JointValues::SQLValue(SqlValue::Null) => Ok(true),
                 _ => Ok(false),
             }))
@@ -107,7 +107,7 @@ pub fn solve_predicate(
         Expr::IsNotNull(pred) => {
             let pred = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| match pred(row)? {
-                JointValues::DBValue(Value::Null) => Ok(false),
+                JointValues::DBValue(Value::Null(_)) => Ok(false),
                 JointValues::SQLValue(SqlValue::Null) => Ok(false),
                 _ => Ok(true),
             }))
@@ -209,7 +209,7 @@ pub fn solve_value(
     if contains_aggregate(expr)? {
         // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
         // (i.e. when we're evaluating the groups)
-        return Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null))));
+        return Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null(Column::I32)))));
     }
     match expr {
         // This would mean that we're referencing a column name, so we just need to figure out the
@@ -427,6 +427,13 @@ impl JointValues {
         }
     }
 
+    pub fn is_null(&self) -> bool {
+        match self {
+            JointValues::DBValue(v) => v.is_null(),
+            JointValues::SQLValue(v) => v == &SqlValue::Null,
+        }
+    }
+
     pub fn add(&self, other: &Self) -> Result<JointValues, String> {
         let apply_int = |x: i64, y: i64| Ok::<i64, String>(x + y);
         let apply_float = |x: f64, y: f64| Ok::<f64, String>(x + y);
@@ -613,7 +620,7 @@ mod tests {
         executor::query::{execute_query, execute_update},
         fileio::databaseio::{delete_db_instance, get_db_instance},
         parser::parser::parse,
-        util::{bench::create_demo_db, dbtype::Value},
+        util::{bench::create_demo_db, dbtype::{Value, Column}},
     };
 
     #[test]
@@ -687,7 +694,7 @@ mod tests {
         .unwrap();
 
         for row in results {
-            assert!(row[2] == Value::Null);
+            assert!(row[2] == Value::Null(Column::Float));
         }
 
         let (_, results) = execute_query(
@@ -704,7 +711,7 @@ mod tests {
         for row in results {
             if let Value::I64(x) = row[3] {
                 assert!(x == 32);
-                assert!(row[4] != Value::Null);
+                assert!(row[4] != Value::Null(Column::Float));
             } else {
                 panic!("Invalid value type");
             }
@@ -764,7 +771,7 @@ mod tests {
                     assert!(x < y);
                     if let Value::I64(z) = row[3] {
                         assert!(
-                            z > y.into() || (row[8] == Value::Bool(true) && row[4] == Value::Null)
+                            z > y.into() || (row[8] == Value::Bool(true) && row[4] == Value::Null(Column::Float))
                         );
                         assert!(z < 32);
                     } else {

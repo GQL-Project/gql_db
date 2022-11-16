@@ -444,7 +444,7 @@ fn create_row1(id: i32, fname: &str, lname: &str, age: i64, height: f32, date: &
     row.push(Value::String(lname.to_string()));
     row.push(Value::I64(age));
     row.push(if height < 0.0 {
-        Value::Null
+        Value::Null(Column::Float)
     } else {
         Value::Float(height)
     });

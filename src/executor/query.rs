@@ -42,7 +42,7 @@ pub fn execute_query(
     for a in ast.iter() {
         match a {
             Statement::Query(q) => {
-                return func(&q.body, user, q);
+                return parse_query(&q.body, user, q);
             }
             _ => print!("Not a query\n"),
         };
@@ -50,12 +50,12 @@ pub fn execute_query(
     Err("No query found".to_string())
 }
 
-fn func(
-    setExpr: &SetExpr,
+fn parse_query(
+    set_expr: &SetExpr,
     user: &mut User,
     query: &Query,
 ) -> Result<(Vec<String>, Vec<Row>), String> {
-    match &setExpr {
+    match &set_expr {
         SetExpr::Select(s) => parse_select(&s, user, Some(query)),
         SetExpr::SetOperation {
             op,
@@ -63,8 +63,8 @@ fn func(
             left,
             right,
         } => {
-            let (left_cols, left_rows) = func(&left, user, query)?;
-            let (right_cols, right_rows) = func(&right, user, query)?;
+            let (left_cols, left_rows) = parse_query(&left, user, query)?;
+            let (right_cols, right_rows) = parse_query(&right, user, query)?;
             if left_cols.len() != right_cols.len() {
                 return Err("Incompatible types in set operation".to_string());
             }
@@ -854,8 +854,8 @@ pub fn to_ident(s: String) -> Expr {
 
 pub fn set_operations(
     op: &SetOperator,
-    left_rows: Vec<Vec<Value>>,
-    right_rows: Vec<Vec<Value>>,
+    left_rows: Vec<Row>,
+    right_rows: Vec<Row>,
 ) -> Result<Vec<Row>, String> {
     // checking if the columns match
     if left_rows.is_empty() || right_rows.is_empty() {
@@ -876,20 +876,16 @@ pub fn set_operations(
     }
 
     for left in left_rows[0].iter() {
-        // checking if the columns match
-        // I32 and I64 counts as same type
-        if !right_rows[0].iter().any(|x| {
-            x.get_coltype() == left.get_coltype()
-                || (x.get_coltype().to_string() == "I32" && left.get_coltype().to_string() == "I64")
-                || (x.get_coltype().to_string() == "I64" && left.get_coltype().to_string() == "I32")
-        }) {
+        if !right_rows[0]
+            .iter()
+            .any(|x| x.get_coltype().match_type(&left.get_coltype()))
+        {
             return Err("Incompatible types in set operation".to_string());
         }
     }
 
-    // convert all int to i64
-    let mut new_right: Vec<Vec<Value>> = Vec::new();
-    let mut new_left: Vec<Vec<Value>> = Vec::new();
+    let mut new_right: Vec<Row> = Vec::new();
+    let mut new_left: Vec<Row> = Vec::new();
 
     for row in right_rows.clone() {
         let temp_right = row
@@ -917,7 +913,7 @@ pub fn set_operations(
             Ok(new_left)
         }
         SetOperator::Except => {
-            let mut rows: Vec<Vec<Value>> = Vec::new();
+            let mut rows: Vec<Row> = Vec::new();
             for row in new_left {
                 if !new_right.contains(&row) {
                     rows.push(row);
@@ -926,7 +922,7 @@ pub fn set_operations(
             Ok(rows)
         }
         SetOperator::Intersect => {
-            let mut rows: Vec<Vec<Value>> = Vec::new();
+            let mut rows: Vec<Row> = Vec::new();
             for row in new_right {
                 if new_left.contains(&row) {
                     rows.push(row);
@@ -1957,19 +1953,19 @@ pub mod tests {
                 Value::Double(3.456),
             ],
             vec![
-                Value::Null,
+                Value::Null(Column::I32),
                 Value::String("Spiderman".to_string()),
                 Value::Double(3.43456),
             ],
             vec![
                 Value::I32(3),
                 Value::String("Doctor Strange".to_string()),
-                Value::Null,
+                Value::Null(Column::Double),
             ],
             vec![
-                Value::Null,
+                Value::Null(Column::I32),
                 Value::String("Captain America".to_string()),
-                Value::Null,
+                Value::Null(Column::Double),
             ],
         ];
         let new_rows = vec![
@@ -1979,19 +1975,19 @@ pub mod tests {
                 Value::Double(3.456),
             ],
             vec![
-                Value::Null,
+                Value::Null(Column::I32),
                 Value::String("Spiderman".to_string()),
                 Value::Double(3.43456),
             ],
             vec![
                 Value::I32(3),
                 Value::String("Doctor Strange".to_string()),
-                Value::Null,
+                Value::Null(Column::Double),
             ],
             vec![
-                Value::Null,
+                Value::Null(Column::I32),
                 Value::String("Captain America".to_string()),
-                Value::Null,
+                Value::Null(Column::Double),
             ],
         ];
 
@@ -2035,7 +2031,7 @@ pub mod tests {
         assert_eq!(result.1[0][1], Value::String("Iron Man".to_string()));
 
         // Assert that the second row is correct
-        assert_eq!(result.1[1][0], Value::Null);
+        assert_eq!(result.1[1][0], Value::Null(Column::I32));
         assert_eq!(result.1[1][1], Value::String("Spiderman".to_string()));
 
         // Assert that the third row is correct
@@ -2043,7 +2039,7 @@ pub mod tests {
         assert_eq!(result.1[2][1], Value::String("Doctor Strange".to_string()));
 
         // Assert that the fourth row is correct
-        assert_eq!(result.1[3][0], Value::Null);
+        assert_eq!(result.1[3][0], Value::Null(Column::I32));
         assert_eq!(result.1[3][1], Value::String("Captain America".to_string()));
         // Delete the test database
         new_db.delete_database().unwrap();
@@ -2051,7 +2047,7 @@ pub mod tests {
 
     #[test]
     #[serial]
-    // Ensures that insert exits if a value is not nullable and is inserted as null
+    // Ensures that insert exits if a value is of the wrong type and is inserted as null
     fn test_insert_invalid_nulls() {
         let new_db: Database = Database::new("insert_test_db".to_string()).unwrap();
         let schema: Schema = vec![
@@ -2069,7 +2065,7 @@ pub mod tests {
         create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
         let rows = vec![
             vec![
-                Value::Null, // Nulled
+                Value::Null(Column::I32), // Nulled
                 Value::String("Iron Man".to_string()),
                 Value::String("Robert Downey".to_string()),
             ],
@@ -2078,11 +2074,15 @@ pub mod tests {
                 Value::String("Spiderman".to_string()),
                 Value::String("".to_string()),
             ],
-            vec![Value::I64(3), Value::Null, Value::Float(322.456)],
+            vec![
+                Value::I64(3),
+                Value::Null(Column::String(50)),
+                Value::Float(322.456),
+            ],
             vec![
                 Value::I64(4),
                 Value::String("Captain America".to_string()),
-                Value::Null,
+                Value::Null(Column::Double),
             ],
         ];
 
@@ -2243,6 +2243,7 @@ pub mod tests {
             }
         }
     }
+
     #[test]
     #[serial]
     // Test order by command DESC
@@ -2257,6 +2258,28 @@ pub mod tests {
         let mut temp = 100;
         for row in results {
             if let Value::I32(x) = row[0] {
+                assert!(x <= temp);
+                temp = x;
+            } else {
+                panic!("Invalid value type");
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    // Test order by command DESC
+    fn test_order_by_select() {
+        let mut user = create_demo_db("personal_info");
+        let (_, results) = execute_query(
+            &parse("SELECT age, id from personal_info ORDER BY age DESC", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+        let mut temp = 200;
+        for row in results {
+            if let Value::I64(x) = row[0] {
                 assert!(x <= temp);
                 temp = x;
             } else {
@@ -2285,7 +2308,6 @@ pub mod tests {
             &"".to_string(),
         )
         .unwrap_err();
-        println!("THIS IS PRINTING {:?}", results);
         assert!(results == "Incompatible types in set operation");
         delete_db_instance().unwrap();
     }
