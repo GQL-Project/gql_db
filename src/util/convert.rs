@@ -54,7 +54,7 @@ pub fn to_value(value: Value) -> CellValue {
         Value::Bool(b) => CellValue {
             cell_type: Some(ColBool { 0: b }),
         },
-        Value::Null(x) => CellValue {
+        Value::Null(_) => CellValue {
             cell_type: Some(ColNull { 0: () }),
         },
     }

@@ -2,7 +2,6 @@ use colored::Colorize;
 use rpassword::read_password;
 use std::io::{self, Write};
 use std::string::String;
-use tokio::signal::ctrl_c;
 use tonic::transport::Channel;
 use tonic::Request;
 

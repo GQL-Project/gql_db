@@ -312,19 +312,6 @@ impl Value {
         }
     }
 
-    pub fn value_to_string(&self) -> String {
-        match self {
-            Value::I32(x) => format!("{}", x),
-            Value::I64(x) => format!("{}", x),
-            Value::Float(x) => format!("{}", x),
-            Value::Double(x) => format!("{}", x),
-            Value::Bool(x) => format!("{}", x),
-            Value::Timestamp(x) => format!("{}", x),
-            Value::String(x) => format!("{}", x),
-            Value::Null(_) => "NULL".to_string(),
-        }
-    }
-
     pub fn is_null(&self) -> bool {
         match self {
             Value::Null(_) => true,
