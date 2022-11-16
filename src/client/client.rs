@@ -2,6 +2,7 @@ use colored::Colorize;
 use rpassword::read_password;
 use std::io::{self, Write};
 use std::string::String;
+use tokio::signal::ctrl_c;
 use tonic::transport::Channel;
 use tonic::Request;
 
@@ -18,7 +19,25 @@ const DEFAULT_REGISTER: bool = false;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query for IP address and port of server
-    let (mut client, response) = attempt_connection().await?;
+    let mut connection = attempt_connection().await?;
+    let mut copy = connection.clone();
+
+    // Ctrl-C handler, using the copy of the connection
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        copy.0
+            .disconnect_db(Request::new(copy.1.clone()))
+            .await
+            .unwrap();
+        println!(
+            "{}",
+            format!("Successfully disconnected from database").green()
+        );
+        std::process::exit(0);
+    });
+
+    let client: &mut DatabaseConnectionClient<Channel> = &mut connection.0;
+    let response: &mut ConnectResult = &mut connection.1;
 
     loop {
         print!("{}", &GQL_PROMPT.to_string());
@@ -105,9 +124,12 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Wrapper, to automatically handle disconnecting from the server when the program exits
+#[derive(Clone)]
+struct Connection(DatabaseConnectionClient<Channel>, ConnectResult);
+
 // Indefinitely loops until a successful connection is made
-async fn attempt_connection(
-) -> Result<(DatabaseConnectionClient<Channel>, ConnectResult), Box<dyn std::error::Error>> {
+async fn attempt_connection() -> Result<Connection, Box<dyn std::error::Error>> {
     let mut client: DatabaseConnectionClient<Channel>;
     let mut request: LoginRequest;
 
@@ -202,7 +224,10 @@ async fn attempt_connection(
                 io::stdout().flush()?;
                 let response = client.connect_db(request).await;
                 if response.is_ok() {
-                    return Ok((client, response?.into_inner()));
+                    return Ok(Connection {
+                        0: client,
+                        1: response?.into_inner(),
+                    });
                 } else {
                     println!(
                         "{}",
