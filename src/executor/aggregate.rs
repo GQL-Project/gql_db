@@ -15,7 +15,7 @@ pub fn resolve_aggregates(
     selections: &Vec<Expr>,
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
-) -> Result<Vec<(Row, Row)>, String> {
+) -> Result<Vec<Row>, String> {
     // Filter down to functions only and their indices
     let functions = selections
         .iter()
@@ -23,23 +23,21 @@ pub fn resolve_aggregates(
         .filter(|(_, expr)| contains_aggregate(expr).map_or(false, |x| x))
         .collect::<Vec<(usize, &Expr)>>();
 
-    if functions.is_empty() {
-        return Ok(rows);
-    }
-
     let (value_rows, original_rows): (Vec<Row>, Vec<Row>) = rows.into_iter().unzip();
 
+    if functions.is_empty() {
+        return Ok(value_rows);
+    }
     if value_rows.is_empty() {
         return Ok(vec![]);
     }
 
     // Take the first row, and solve the functions for it for the entire group
     let mut new_row = value_rows[0].clone();
-    let mut old_row = original_rows[0].clone();
     for (i, expr) in functions {
         new_row[i] = solve_aggregate(&original_rows, expr, column_aliases, index_refs)?;
     }
-    Ok(vec![(new_row, old_row)])
+    Ok(vec![new_row])
 }
 
 /// Versions of the Solvers that just return the Value directly

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::aggregate::resolve_aggregates;
 use super::predicate::{
     resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
-    solve_comparison, solve_predicate, solve_value, ComparisonSolver, PredicateSolver, ValueSolver,
+    solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
@@ -505,14 +505,23 @@ pub fn select(
     let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
-    let column_exprs = resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
+    let mut column_exprs = resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
+
+    // Add order by cases to the column expressions (and track when to discard them later)
+    let order_start = column_exprs.len();
+    column_exprs.append(
+        &mut order_by
+            .iter()
+            .map(|order_exp| order_exp.expr.clone())
+            .collect(),
+    );
 
     // Instead of directly adding rows to a Vector, we add them to a HashMap from the group_by columns to the rows in that group
     let mut grouped_rows: HashMap<Row, Vec<(Row, Row)>> = HashMap::new();
 
     let column_solver = solve_row(&column_exprs, &table_aliases, &index_refs)?;
     let group_solver = solve_row(&group_by, &table_aliases, &index_refs)?;
-    let order_solver: ComparisonSolver = solve_comparison(&order_by, &table_aliases, &index_refs)?;
+    // let order_solver: ComparisonSolver = solve_comparison(&order_by, &table_aliases, &index_refs)?;
 
     // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
     for table_rows in table_iterator {
@@ -534,18 +543,21 @@ pub fn select(
     }
 
     // Solve aggregate functions and create the selected rows that are now ready to be returned
-    let mut resolved_groups: Vec<(Row, Row)> = grouped_rows
+    let mut resolved_groups: Vec<Row> = grouped_rows
         .into_values()
         .map(|rows| resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs))
         .flatten_ok()
-        .collect::<Result<Vec<(Row, Row)>, String>>()?;
+        .collect::<Result<Vec<Row>, String>>()?;
 
     // Sort the remaining rows using the order by clause
     resolved_groups
-        .sort_unstable_by(|(_, row1), (_, row2)| resolve_comparison(&order_solver, row1, row2));
+        .sort_unstable_by(|row1, row2| resolve_comparison(row1, row2, order_start, &order_by));
 
-    // Drop the original rows now
-    let selected_rows: Vec<Row> = resolved_groups.into_iter().map(|(row, _)| row).collect();
+    // Drop the order by columns now
+    let selected_rows: Vec<Row> = resolved_groups
+        .into_iter()
+        .map(|row| row[0..order_start].to_vec())
+        .collect();
 
     Ok((column_names, selected_rows))
 }

@@ -30,7 +30,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
         println!(
             "{}",
-            format!("Successfully disconnected from database").green()
+            format!("\nSuccessfully disconnected from database").green()
         );
         std::process::exit(0);
     });
