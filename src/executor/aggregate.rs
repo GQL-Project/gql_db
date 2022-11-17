@@ -414,21 +414,70 @@ mod tests {
         },
     };
 
+    impl Value {
+        pub fn force_int(&self) -> i32 {
+            match self {
+                Value::I32(x) => *x,
+                Value::I64(x) => *x as i32,
+                _ => panic!("Expected an integer"),
+            }
+        }
+    }
+
     #[test]
     #[serial]
-    fn test_group_by() {
-        let mut user = create_huge_bench_db(100, true);
-        let db = get_db_instance().unwrap();
+    fn test_group_by_simple() {
+        let mut user = create_huge_bench_db(312, true);
 
         let (_, results) = execute_query(
-            &parse(
-                "select first_name, age, height from personal_info where height is null",
-                false,
-            )
-            .unwrap(),
+            &parse("select *, count(*), sum(id2) from huge_table group by id2", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
         .unwrap();
+
+        // Assuming the table has id2 between 0 and 51 always
+        assert!(results.len() == 52);
+
+        
+        let mut count = 0;
+        for row in results {
+            // Ensure total count is 300, and each count is either 5 or 6 (300 / 52)
+            let val = row[4].force_int();
+            assert!(val == 6);
+            count += val;
+            // Ensure each sum is count * id2
+            let val = row[4].force_int();
+            let sum = row[5].force_int();
+            assert!(sum == val * row[1].force_int());
+        }
+        assert!(count == 312);
+        
+    }
+
+    #[test]
+    #[serial]
+    fn test_non_group_aggregate() {
+        let mut user = create_huge_bench_db(300, true);
+
+        let (_, results) = execute_query(
+            &parse("select count(*) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == 300);
+
+        let (_, results) = execute_query(
+            &parse("select sum(id1) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == (300 * 299) / 2);
     }
 }
