@@ -491,13 +491,13 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::{create_table, insert},
+        executor::query::*,
         fileio::{
             databaseio::{delete_db_instance, Database},
             header::Schema,
             tableio::Table,
         },
-        parser::parser::parse_vc_cmd,
+        parser::parser::{parse_vc_cmd, parse},
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
@@ -1170,7 +1170,53 @@ mod tests {
             false
         );
         delete_db_instance().unwrap();
+
+        //Deleting the revert_copy dir after test
+        std::fs::remove_dir_all(copy_dir).unwrap();
     }
+
+    // Testing the pull command when the user is up-to-date
+    #[test]
+    #[serial]
+    fn test_pull_no_changes() {
+        //Creating db instance
+        let db_name = "gql_pull_test_no_change".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table on the main
+        let table_name1: String = "table1".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user)
+            .unwrap();
+        let mut _table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user).unwrap();
+
+        // Create a commit on the main branch
+        get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+        
+        //Calling pull when there's no new changes
+        let pull_result = pull(&mut user);
+
+        assert_eq!(pull_result.is_ok(), true);
+        assert_eq!(pull_result.unwrap(), "Your branch is already up-to-date.".to_string());
+    }
+    
 
     /// Helper that compares two tables to make sure that they are identical, but in separate directories
     fn compare_tables(
