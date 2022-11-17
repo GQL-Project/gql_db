@@ -219,11 +219,6 @@ pub fn execute_update(
 
                 let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
 
-                println!(
-                    "Creating index {} on table {} with columns {:?}",
-                    index_name, table_name, column_names
-                );
-
                 let (_, idx_new_diff): (_, IndexCreateDiff) = BTree::create_btree_index(
                     &table_dir,
                     &table_name,
