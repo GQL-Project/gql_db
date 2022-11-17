@@ -1032,10 +1032,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_btree_speed_huge_two_tables() {
-        let (mut user, _, _): (User, _, _) = create_huge_bench_db_2_tables(1000, false);
+        let (mut user, _, _): (User, _, _) = create_huge_bench_db_2_tables(100, false);
         let index_name: String = String::from("test_index");
 
-        /*
         // Time the query
         let start_time_no_index: Instant = Instant::now();
 
@@ -1054,7 +1053,6 @@ mod tests {
         // Assert that the results are correct
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], Value::I32(1));
-        */
 
         let table_dir: String = get_db_instance()
             .unwrap()
@@ -1089,11 +1087,11 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], Value::I32(1));
 
-        //println!("Duration without index: {:?}", duration_no_index);
+        println!("Duration without index: {:?}", duration_no_index);
         println!("Duration with index: {:?}", duration_with_index);
 
         // Assert that the query with the index is faster
-        //assert!(duration_with_index < duration_no_index);
+        assert!(duration_with_index < duration_no_index);
 
         // Delete the db instance
         delete_db_instance().unwrap();
