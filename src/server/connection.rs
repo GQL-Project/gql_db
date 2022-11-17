@@ -270,4 +270,115 @@ mod tests {
         }
         does_contain_id
     }
+
+    #[test]
+    #[serial]
+    fn test_register_user() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_register_user");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("test".to_string(), "test".to_string(), false);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_duplicate_user_1() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_register_duplicate_user_1");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_duplicate_user_2() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_register_duplicate_user_2");
+
+        let result = connection.new_client("admin".to_string(), "admin".to_string(), true);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_login_user_incorrect() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_login_user_incorrect");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("tset".to_string(), "test".to_string(), false);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_login_password_incorrect() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_login_password_incorrect");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("test".to_string(), "tset".to_string(), false);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
 }
