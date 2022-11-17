@@ -481,6 +481,7 @@ impl JointValues {
                 (Value::I64(l), Value::I64(r)) => Value::I64(int_func(*l, *r)?),
                 (Value::Double(l), Value::Double(r)) => Value::Double(float_func(*l, *r)?),
 
+                /* Type Coercions */
                 (Value::I32(l), Value::Float(r)) => {
                     Value::Float(float_func(*l as f64, *r as f64)? as f32)
                 }
@@ -521,6 +522,14 @@ impl JointValues {
                     seconds: int_func(l.seconds, *r)?,
                     nanos: l.nanos,
                 }),
+                (Value::I32(l), Value::Timestamp(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(*l as i64, r.seconds)?,
+                    nanos: r.nanos,
+                }),
+                (Value::I64(l), Value::Timestamp(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(*l, r.seconds)?,
+                    nanos: r.nanos,
+                }),
 
                 (Value::String(l), Value::String(r)) => Value::String(string_func(l, r)?),
                 (Value::String(l), Value::I32(r)) => Value::String(string_func(l, &r.to_string())?),
@@ -531,19 +540,26 @@ impl JointValues {
                 (Value::String(l), Value::Double(r)) => {
                     Value::String(string_func(l, &r.to_string())?)
                 }
+                (Value::I32(l), Value::String(r)) => Value::String(string_func(&l.to_string(), r)?),
+                (Value::I64(l), Value::String(r)) => Value::String(string_func(&l.to_string(), r)?),
+                (Value::Float(l), Value::String(r)) => {
+                    Value::String(string_func(&l.to_string(), r)?)
+                }
+                (Value::Double(l), Value::String(r)) => {
+                    Value::String(string_func(&l.to_string(), r)?)
+                }
+
                 _ => Err(format!("Cannot apply {:?} and {:?} together", l0, r0))?,
             }),
             // Convert these into DBValues and then apply the function
-            (Self::DBValue(x), Self::SQLValue(y)) => self.apply(
-                &Self::DBValue(x.get_coltype().from_sql_value(y)?),
+            (Self::DBValue(_), Self::SQLValue(y)) => self.apply(
+                &Self::DBValue(Value::from_sql_value(y)?),
                 int_func,
                 float_func,
                 string_func,
             )?,
-            (Self::SQLValue(x), Self::DBValue(y)) => Self::DBValue(
-                y.get_coltype().from_sql_value(x)?,
-            )
-            .apply(other, int_func, float_func, string_func)?,
+            (Self::SQLValue(x), Self::DBValue(_)) => Self::DBValue(Value::from_sql_value(x)?)
+                .apply(other, int_func, float_func, string_func)?,
             (Self::SQLValue(x), Self::SQLValue(y)) => {
                 let x = Value::from_sql_value(x)?;
                 let y = x.get_coltype().from_sql_value(y)?;

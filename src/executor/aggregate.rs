@@ -406,11 +406,10 @@ mod tests {
     use serial_test::serial;
 
     use crate::{
-        executor::query::{execute_query, execute_update},
-        fileio::databaseio::{delete_db_instance, get_db_instance},
+        executor::query::execute_query,
         parser::parser::parse,
         util::{
-            bench::create_huge_bench_db,
+            bench::{create_demo_db, create_huge_bench_db},
             dbtype::{Column, Value},
         },
     };
@@ -446,7 +445,7 @@ mod tests {
 
         let mut count = 0;
         for row in results {
-            // Ensure total count is 300, and each count is either 5 or 6 (300 / 52)
+            // Ensure total count is 300, and each count is  6 (312 / 52)
             let val = row[4].force_int();
             assert!(val == 6);
             count += val;
@@ -456,6 +455,138 @@ mod tests {
             assert!(sum == val * row[1].force_int());
         }
         assert!(count == 312);
+    }
+
+    #[test]
+    #[serial]
+    fn test_group_by_with_wheres() {
+        let mut user = create_huge_bench_db(312, true);
+
+        let (_, results) = execute_query(
+            &parse(
+                "select *, count(id2), sum(id2) from huge_table where id2 > 10 group by id2",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        // Assuming the table has id2 between 11 and 51 always
+        assert!(results.len() == 41);
+
+        let mut count = 0;
+        for row in results {
+            // Ensure total count is 300, and each count is 6 (300 / 52)
+            let val = row[4].force_int();
+            assert!(val == 6);
+            count += val;
+            // Ensure each sum is count * id2
+            let val = row[4].force_int();
+            let sum = row[5].force_int();
+            assert!(sum == val * row[1].force_int());
+        }
+        assert!(count == 246);
+    }
+
+    #[test]
+    #[serial]
+    fn test_group_by_with_nested_aggregates() {
+        let mut user = create_huge_bench_db(312, true);
+
+        let (_, results) = execute_query(
+            &parse(
+                "select id2, avg(age), sum(age) / count(age), sum(id2 + 3) from huge_table group by id2",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        // Assuming the table has id2 between 0 and 51 always
+        assert!(results.len() == 52);
+
+        for row in results {
+            let id2 = row[0].force_int();
+            // avg(age) = sum(age) / count(age)
+            let avg1 = row[1].force_int();
+            let avg2 = row[2].force_int();
+            assert!(avg1 == avg2);
+            // sum(id2 + 3) = 3 * count(id2) [6] + sum(id2) [id2 * 6]
+            let sum1 = row[3].force_int();
+            let sum2 = 3 * 6 + id2 * 6;
+            assert!(sum1 == sum2);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_group_by_ordered() {
+        let mut user = create_huge_bench_db(312, true);
+
+        let (_, results) = execute_query(
+            &parse(
+                "select id2, avg(age), sum(age) / count(age), sum(id2 + 3) from huge_table group by id2 order by id2",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        // Assuming the table has id2 between 0 and 51 always
+        assert!(results.len() == 52);
+
+        let mut prev = -1;
+
+        for row in results {
+            let id2 = row[0].force_int();
+            // Assert that the results are ordered
+            assert!(id2 > prev);
+            prev = id2;
+            // avg(age) = sum(age) / count(age)
+            let avg1 = row[1].force_int();
+            let avg2 = row[2].force_int();
+            assert!(avg1 == avg2);
+            // sum(id2 + 3) = 3 * count(id2) [6] + sum(id2) [id2 * 6]
+            let sum1 = row[3].force_int();
+            let sum2 = 3 * 6 + id2 * 6;
+            assert!(sum1 == sum2);
+        }
+
+        // Order by aggregate value
+        let (_, results) = execute_query(
+            &parse(
+                "select id2, avg(age), sum(age) / count(age), sum(id2 + 3) from huge_table group by id2 order by sum(id2 + 3)",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        // Assuming the table has id2 between 0 and 51 always
+        assert!(results.len() == 52);
+
+        let mut prev = -1;
+        for row in results {
+            let id2 = row[0].force_int();
+            // avg(age) = sum(age) / count(age)
+            let avg1 = row[1].force_int();
+            let avg2 = row[2].force_int();
+            assert!(avg1 == avg2);
+            let sum1 = row[3].force_int();
+            // Assert that the results are ordered
+            assert!(sum1 > prev);
+            prev = sum1;
+            // sum(id2 + 3) = 3 * count(id2) [6] + sum(id2) [id2 * 6]
+            let sum2 = 3 * 6 + id2 * 6;
+            assert!(sum1 == sum2);
+        }
     }
 
     #[test]
@@ -482,5 +613,57 @@ mod tests {
 
         assert!(results.len() == 1);
         assert!(results[0][0].force_int() == (300 * 299) / 2);
+
+        let (_, results) = execute_query(
+            &parse("select avg(id1), avg(id2) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == 149);
+        assert!(results[0][1].force_int() == 24);
+
+        let (_, results) = execute_query(
+            &parse("select min(id1), min(id2) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == 0);
+        assert!(results[0][1].force_int() == 0);
+
+        let (_, results) = execute_query(
+            &parse("select max(id1), max(id2) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == 299);
+        assert!(results[0][1].force_int() == 51);
+    }
+
+    
+    #[test]
+    #[serial]
+    fn test_group_by_dry() {
+        let mut user = create_demo_db("group_by_work");
+        let (_, results) = execute_query(
+            &parse("select sum(id + ','), sum(first_name + ' ' + last_name + ','), age from personal_info group by age;", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        assert!(results.len() == 7);
+        assert!(results[0].len() == 3);
+        // It's harder to test the actual values, but we can test the types
+        assert!(results[0][0].get_coltype() == Column::String(0));
+        assert!(results[0][1].get_coltype() == Column::String(0));
+        assert!(results[0][2].get_coltype() == Column::I64);   
     }
 }
