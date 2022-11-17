@@ -100,77 +100,17 @@ fn parse_select(
             table_names.push((table_name[0].to_string(), "".to_string()));
         }
     }
-    /*
-    let mut index_id: Option<IndexID> = None;
-    let mut expr: Option<Expr> = None;
-    let pred: Option<PredicateSolver> = match &s.selection {
-        Some(pred) => {
-            let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
-            let column_aliases: ColumnAliases = gen_column_aliases(&tables);
-            let index_refs: IndexRefs = get_index_refs(&column_aliases);
-            index_id = Some(get_index_id_from_expr(pred, &column_aliases, &index_refs)?);
-            expr = Some(pred.clone());
-            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
-        }
-        None => None,
-    };
-    */
-
-    // Results
-    let mut res_columns: Vec<String> = Vec::new();
-    let mut res_rows: Vec<Row> = Vec::new();
-
-    /*
-    // Check if we are using an index
-    let mut using_index: bool = false;
-    if index_id.is_some() && expr.is_some() {
-        let index_id: IndexID = index_id.unwrap();
-        let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
-        // For now, lets only support using indexing on a single table.
-        if tables.len() == 1 {
-            if let Some(idx_val) = tables[0].0.indexes.get(&index_id) {
-                let btree_pagenum: u32 = idx_val.0;
-                let index_name: String = idx_val.1.clone();
-                let table: Table = tables[0].0.clone();
-                let index_key_type: IndexKeyType = index_id
-                    .iter()
-                    .map(|x| table.schema[*x as usize].1.clone())
-                    .collect();
-
-                let btree: BTree = BTree::load_btree_from_root_page(
-                    &tables[0].0,
-                    btree_pagenum,
-                    index_id,
-                    index_key_type,
-                    index_name,
-                )?;
-
-                res_rows = btree
-                    .get_rows_matching_expr(&expr.unwrap())?
-                    .into_iter()
-                    .map(|x| x.row)
-                    .collect::<Vec<Row>>();
-
-                // Get the column names
-                let table_aliases = gen_column_aliases(&tables);
-                resolve_columns(columns.clone(), &mut res_columns, &tables, &table_aliases)?;
-                using_index = true;
-            }
-        }
-    }
-    */
-
-    //if !using_index {
-        (res_columns, res_rows) = select(
-            columns.clone(),
-            s.selection.clone(),
-            s.group_by.clone(),
-            query.map_or(vec![], |q| q.order_by.clone()),
-            &table_names,
-            get_db_instance()?,
-            user,
-        )?;
-    //}
+    
+    // Execute the select statement
+    let (res_columns, mut res_rows) = select(
+        columns.clone(),
+        s.selection.clone(),
+        s.group_by.clone(),
+        query.map_or(vec![], |q| q.order_by.clone()),
+        &table_names,
+        get_db_instance()?,
+        user,
+    )?;
 
     // Limit and Offset
     if let Some(query) = query {
@@ -517,29 +457,39 @@ pub fn select(
             let expr: Expr = where_expr.clone().unwrap();
 
             // Get the index id for this specific table for this specific query
-            let index_id: IndexID = get_index_id_from_expr(&expr, &table_aliases, &index_refs, &alias)?;
-            
-            // If we can use an index, we can use the index to get the rows
-            if let Some(idx_val) = table.indexes.get(&index_id) {
-                let btree_pagenum: u32 = idx_val.0;
-                let index_name: String = idx_val.1.clone();
-                let index_key_type: IndexKeyType = index_id
-                    .iter()
-                    .map(|x| table.schema[*x as usize].1.clone())
-                    .collect();
+            let index_id: Option<IndexID> = get_index_id_from_expr(
+                &expr,
+                &table_aliases,
+                &index_refs,
+                &alias
+            )?;
 
-                let btree: BTree = BTree::load_btree_from_root_page(
-                    &table,
-                    btree_pagenum,
-                    index_id,
-                    index_key_type,
-                    index_name,
-                )?;
+            // If we can use an index (i.e. the where clause references only one table)
+            if let Some(index_id) = index_id {
+                // Check if this table has this index
+                if let Some(idx_val) = table.indexes.get(&index_id) {
+                    // We can use the index, so we can use the index to get the rows
+                    let btree_pagenum: u32 = idx_val.0;
+                    let index_name: String = idx_val.1.clone();
+                    let index_key_type: IndexKeyType = index_id
+                        .iter()
+                        .map(|x| table.schema[*x as usize].1.clone())
+                        .collect();
 
-                let res_rows: Vec<RowInfo> = btree.get_rows_matching_expr(&expr)?;
+                    let btree: BTree = BTree::load_btree_from_root_page(
+                        &table,
+                        btree_pagenum,
+                        index_id,
+                        index_key_type,
+                        index_name,
+                    )?;
 
-                table_iters.push(TableIterator::RowIter(RowIterator::new(res_rows)));
-                used_index = true;
+                    let res_rows: Vec<RowInfo> = btree.get_rows_matching_expr(&expr)?;
+
+                    // Load the result rows into a row iterator
+                    table_iters.push(TableIterator::RowIter(RowIterator::new(res_rows)));
+                    used_index = true;
+                }
             }
         }
 
@@ -548,11 +498,7 @@ pub fn select(
         }
     }
 
-    // Create an iterator of table iterators using the cartesion product of the tables :)
-    //let table_iterator: MultiProduct<Table> = tables
-    //    .into_iter()
-    //    .map(|(table, _)| table)
-    //    .multi_cartesian_product();
+    // Create an iterator of table iterators using the cartesion product of the tables
     let table_iterator: MultiProduct<TableIterator> = table_iters.into_iter().multi_cartesian_product();
 
     // Add order by cases to the column expressions (and track when to discard them later)

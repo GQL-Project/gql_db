@@ -513,6 +513,74 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
     user
 }
 
+/// Creates a huge bench database with 2 tables that each have <num_rows> rows
+pub fn create_huge_bench_db_2_tables(num_rows: usize, random_values: bool) -> (User, String, String) {
+    let mut user: User = create_huge_bench_db(num_rows, true);
+    let db: &mut Database = get_db_instance().unwrap();
+    let schema: Schema = vec![
+        ("name".to_string(), Column::String(32)),
+        ("value".to_string(), Column::Double),
+        ("id1".to_string(), Column::I32),
+        ("id2".to_string(), Column::I32),
+        ("random".to_string(), Column::String(512)),
+    ];
+
+    let (mut table, diff) =
+        create_table(&"huge_table2".to_string(), &schema, db, &mut user).unwrap();
+    user.append_diff(&Diff::TableCreate(diff));
+
+    fn gen_value() -> f64 {
+        let mut rng: ThreadRng = rand::thread_rng();
+        rng.gen_range(1..100) as f64
+    }
+
+    fn gen_random() -> String {
+        let mut rng: ThreadRng = rand::thread_rng();
+        let mut s: String = String::new();
+        for _ in 0..20 {
+            s.push(rng.gen_range('a'..='z'));
+        }
+        s
+    }
+
+    // Create <num_rows> rows
+    let mut rows: Vec<Row> = Vec::with_capacity(num_rows);
+    if random_values {
+        for i in 0..num_rows {
+            rows.push(vec![
+                Value::String(gen_random()),
+                Value::Double(gen_value()),
+                Value::I32(i as i32),
+                Value::I32((i % 52) as i32),
+                Value::String(gen_random()),
+            ]);
+        }
+    } else {
+        for i in 0..num_rows {
+            rows.push(vec![
+                Value::String("random_name".to_string()),
+                Value::Double(i as f64),
+                Value::I32(i as i32),
+                Value::I32(i as i32),
+                Value::String("random text".to_string()),
+            ]);
+        }
+    }
+
+    let diff: InsertDiff = table.insert_rows(rows).unwrap();
+    user.append_diff(&Diff::Insert(diff));
+
+    db.create_commit_and_node(
+        &"Created huge test database".to_string(),
+        &"Create huge_table and Inserted Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
+
+    (user, "huge_table".to_string(), "huge_table2".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -532,6 +600,13 @@ mod tests {
     #[serial]
     fn test_bench_huge() {
         create_huge_bench_db(100, false);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_bench_huge2() {
+        create_huge_bench_db_2_tables(100, false);
         delete_db_instance().unwrap();
     }
 }

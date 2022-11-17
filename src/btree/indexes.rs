@@ -104,7 +104,7 @@ pub fn get_index_id_from_expr(
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
     table_name: &String
-) -> Result<IndexID, String> {
+) -> Result<Option<IndexID>, String> {
     match expr {
         Expr::Identifier(x) => {
             let x: String = resolve_reference(x.value.to_string(), column_aliases)?;
@@ -112,12 +112,14 @@ pub fn get_index_id_from_expr(
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
 
+            // Check if the identifier is a column from a different table
             let split: Vec<String> = x.split(".").map(|s| s.to_string()).collect::<Vec<String>>();
             if split.len() > 1 && split[0] != *table_name {
-                return Ok(vec![])
+                // The identifier is a column from a different table
+                return Ok(None)
             }
             
-            Ok(vec![index as u8])
+            Ok(Some(vec![index as u8]))
         }
         Expr::CompoundIdentifier(list) => {
             // Join all the identifiers in the list with a dot, perform the same step as above
@@ -132,16 +134,18 @@ pub fn get_index_id_from_expr(
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
 
+            // Check if the identifier is a column from a different table
             let split: Vec<String> = x.split(".").map(|s| s.to_string()).collect::<Vec<String>>();
             if split.len() > 1 && split[0] != *table_name {
-                return Ok(vec![])
+                // The identifier is a column from a different table
+                return Ok(None)
             }
 
-            Ok(vec![index as u8])
+            Ok(Some(vec![index as u8]))
         }
         Expr::Value(_) => {
             // Discard values
-            Ok(Vec::new())
+            Ok(Some(Vec::new()))
         }
         Expr::IsFalse(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
@@ -188,17 +192,23 @@ pub fn get_index_id_from_expr(
             | BinaryOperator::LtEq
             | BinaryOperator::Eq
             | BinaryOperator::NotEq
-            | BinaryOperator::And
-            | BinaryOperator::Or
             | BinaryOperator::Plus
             | BinaryOperator::Minus
             | BinaryOperator::Divide
             | BinaryOperator::Multiply
             | BinaryOperator::Modulo => {
-                let left_index_id: IndexID =
+                let left_index_id: Option<IndexID> =
                     get_index_id_from_expr(left.as_ref(), column_aliases, index_refs, table_name)?;
-                let right_index_id: IndexID =
+                let right_index_id: Option<IndexID> =
                     get_index_id_from_expr(right.as_ref(), column_aliases, index_refs, table_name)?;
+                
+                if left_index_id.is_none() || right_index_id.is_none() {
+                    // One of the sides of the expression is not a column from the same table
+                    return Ok(None)
+                }
+
+                let left_index_id: IndexID = left_index_id.unwrap();
+                let right_index_id: IndexID = right_index_id.unwrap();
 
                 let mut combined_index_id: IndexID = left_index_id;
                 for right_id in right_index_id {
@@ -207,7 +217,41 @@ pub fn get_index_id_from_expr(
                     }
                 }
 
-                Ok(combined_index_id)
+                Ok(Some(combined_index_id))
+            }
+            BinaryOperator::And
+            | BinaryOperator::Or => {
+                let left_index_id: Option<IndexID> =
+                    get_index_id_from_expr(left.as_ref(), column_aliases, index_refs, table_name)?;
+                let right_index_id: Option<IndexID> =
+                    get_index_id_from_expr(right.as_ref(), column_aliases, index_refs, table_name)?;
+                
+                if left_index_id.is_none() && right_index_id.is_none() {
+                    // Both of the sides of the expression are not columns from ths table
+                    return Ok(None)
+                }
+
+                let mut combined_index_id: IndexID = Vec::new();
+
+                if left_index_id.is_some() && right_index_id.is_some() {
+                    let left_index_id: IndexID = left_index_id.unwrap();
+                    let right_index_id: IndexID = right_index_id.unwrap();
+
+                    combined_index_id = left_index_id;
+                    for right_id in right_index_id {
+                        if !combined_index_id.contains(&right_id) {
+                            combined_index_id.push(right_id);
+                        }
+                    }
+                }
+                else if left_index_id.is_some() {
+                    combined_index_id = left_index_id.unwrap();
+                }
+                else if right_index_id.is_some() {
+                    combined_index_id = right_index_id.unwrap();
+                }
+
+                Ok(Some(combined_index_id))
             }
             _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
         },
@@ -836,6 +880,7 @@ mod tests {
             &index_refs,
             &table_name
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![0, 1]);
 
@@ -855,6 +900,7 @@ mod tests {
             &index_refs,
             &table_name
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![1]);
 
@@ -874,6 +920,7 @@ mod tests {
             &index_refs,
             &table_name
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![1]);
 
@@ -900,7 +947,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_index_id_from_expr2() {
+    fn test_get_index_id_from_expr_two_tables() {
         let table1_name: String = "test_table1".to_string();
         let table2_name: String = "test_table2".to_string();
         let schema: Schema = vec![
@@ -945,6 +992,7 @@ mod tests {
             &index_refs,
             &table1_name
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![0]);
 
@@ -978,6 +1026,7 @@ mod tests {
             &index_refs,
             &table2_name
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![3]);
 
@@ -1011,6 +1060,7 @@ mod tests {
             &index_refs,
             &table2_name
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![2, 3]);
     }
