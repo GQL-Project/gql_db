@@ -648,7 +648,6 @@ mod tests {
         assert!(results[0][1].force_int() == 51);
     }
 
-    
     #[test]
     #[serial]
     fn test_group_by_dry() {
@@ -664,6 +663,6 @@ mod tests {
         // It's harder to test the actual values, but we can test the types
         assert!(results[0][0].get_coltype() == Column::String(0));
         assert!(results[0][1].get_coltype() == Column::String(0));
-        assert!(results[0][2].get_coltype() == Column::I64);   
+        assert!(results[0][2].get_coltype() == Column::I64);
     }
 }
