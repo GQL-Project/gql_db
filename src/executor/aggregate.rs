@@ -398,3 +398,37 @@ pub fn contains_aggregate(expr: &Expr) -> Result<bool, String> {
         _ => Err(format!("Unexpected Clause: {}", expr)),
     }
 }
+
+// Where (predicate) tests go here
+#[cfg(test)]
+mod tests {
+    use serial_test::serial;
+
+    use crate::{
+        executor::query::{execute_query, execute_update},
+        fileio::databaseio::{delete_db_instance, get_db_instance},
+        parser::parser::parse,
+        util::{
+            bench::create_huge_bench_db,
+            dbtype::{Column, Value},
+        },
+    };
+
+    #[test]
+    #[serial]
+    fn test_group_by() {
+        let mut user = create_huge_bench_db(100, true);
+        let db = get_db_instance().unwrap();
+
+        let (_, results) = execute_query(
+            &parse(
+                "select first_name, age, height from personal_info where height is null",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+    }
+}

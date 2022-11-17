@@ -64,15 +64,13 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 1 on Main Branch".to_string(),
-            &"Create Table and Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 1 on Main Branch".to_string(),
+        &"Create Table and Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -107,15 +105,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Update(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 2 on Main Branch".to_string(),
-            &"Insert Rows and Update Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 2 on Main Branch".to_string(),
+        &"Insert Rows and Update Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .remove_rows(vec![
@@ -138,15 +134,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 3 on Main Branch".to_string(),
-            &"Create Table and Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 3 on Main Branch".to_string(),
+        &"Create Table and Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table2
         .insert_rows(vec![
@@ -175,15 +169,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 4 on Main Branch".to_string(),
-            &"Insert Rows and Update Rows and Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 4 on Main Branch".to_string(),
+        &"Insert Rows and Update Rows and Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     db.create_branch(&"test_branch1".to_string(), &mut user)
         .unwrap();
@@ -241,15 +233,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 5 on Test Branch 1 1".to_string(),
-            &"Insert Rows and Update Rows and Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 5 on Test Branch 1 1".to_string(),
+        &"Insert Rows and Update Rows and Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table2
         .rewrite_rows(vec![
@@ -268,15 +258,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 6 on Test Branch 1".to_string(),
-            &"Update Rows and Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 6 on Test Branch 1".to_string(),
+        &"Update Rows and Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -306,15 +294,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 7 on Test Branch 1".to_string(),
-            &"Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 7 on Test Branch 1".to_string(),
+        &"Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .remove_rows(vec![
@@ -334,15 +320,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 8 on Test Branch 1".to_string(),
-            &"Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 8 on Test Branch 1".to_string(),
+        &"Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     db.switch_branch(&"main".to_string(), &mut user).unwrap();
     table1 = Table::from_user(&user, &db, &"personal_info".to_string(), None).unwrap();
@@ -370,15 +354,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 9 on Main Branch".to_string(),
-            &"Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 9 on Main Branch".to_string(),
+        &"Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -406,15 +388,13 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 10 on Main Branch".to_string(),
-            &"Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 10 on Main Branch".to_string(),
+        &"Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     db.create_branch(&"test_branch2".to_string(), &mut user)
         .unwrap();
@@ -425,15 +405,13 @@ pub fn create_demo_db(name: &str) -> User {
     let diff =
         delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user)).unwrap();
     user.append_diff(&Diff::TableRemove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 11 on Test Branch 2".to_string(),
-            &"Delete Table".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Create Commit 11 on Test Branch 2".to_string(),
+        &"Delete Table".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
     user
 }
 
@@ -505,7 +483,7 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
         for i in 0..num_rows {
             rows.push(vec![
                 Value::I32(i as i32),
-                Value::I32(i as i32),
+                Value::I32((i % 52) as i32),
                 Value::I32(gen_age()),
                 Value::String(gen_random()),
             ]);
@@ -524,15 +502,13 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
     let diff: InsertDiff = table.insert_rows(rows).unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Created huge test datbase".to_string(),
-            &"Create huge_table and Inserted Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_and_node(
+        &"Created huge test database".to_string(),
+        &"Create huge_table and Inserted Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     user
 }
@@ -555,7 +531,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_bench_huge() {
-        create_huge_bench_db(10, false);
+        create_huge_bench_db(100, false);
         delete_db_instance().unwrap();
     }
 }
