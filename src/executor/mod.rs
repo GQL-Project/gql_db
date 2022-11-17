@@ -1,4 +1,4 @@
 mod aggregate;
-mod table_iterator;
 pub mod predicate;
 pub mod query;
+mod table_iterator;

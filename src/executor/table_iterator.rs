@@ -1,4 +1,4 @@
-use crate::{util::row::RowInfo, fileio::tableio::Table};
+use crate::{fileio::tableio::Table, util::row::RowInfo};
 
 #[derive(Clone)]
 pub enum TableIterator {
@@ -9,15 +9,12 @@ pub enum TableIterator {
 #[derive(Clone)]
 pub struct RowIterator {
     pub rows: Vec<RowInfo>,
-    index: usize
+    index: usize,
 }
 
 impl RowIterator {
     pub fn new(rows: Vec<RowInfo>) -> Self {
-        Self {
-            rows,
-            index: 0
-        }
+        Self { rows, index: 0 }
     }
 }
 
@@ -42,12 +39,8 @@ impl Iterator for TableIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            TableIterator::TableIter(table) => {
-                table.next()
-            },
-            TableIterator::RowIter(row_iter) => {
-                row_iter.next()
-            }
+            TableIterator::TableIter(table) => table.next(),
+            TableIterator::RowIter(row_iter) => row_iter.next(),
         }
     }
 }

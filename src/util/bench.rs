@@ -514,7 +514,10 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
 }
 
 /// Creates a huge bench database with 2 tables that each have <num_rows> rows
-pub fn create_huge_bench_db_2_tables(num_rows: usize, random_values: bool) -> (User, String, String) {
+pub fn create_huge_bench_db_2_tables(
+    num_rows: usize,
+    random_values: bool,
+) -> (User, String, String) {
     let mut user: User = create_huge_bench_db(num_rows, true);
     let db: &mut Database = get_db_instance().unwrap();
     let schema: Schema = vec![

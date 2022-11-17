@@ -433,7 +433,10 @@ mod tests {
         fileio::databaseio::{delete_db_instance, get_db_instance},
         parser::parser::parse,
         user::userdata::User,
-        util::{bench::{create_huge_bench_db, create_huge_bench_db_2_tables}, dbtype::*},
+        util::{
+            bench::{create_huge_bench_db, create_huge_bench_db_2_tables},
+            dbtype::*,
+        },
         version_control::diff::*,
     };
     use serial_test::serial;

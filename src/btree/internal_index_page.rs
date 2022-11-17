@@ -4,7 +4,10 @@ use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator, Value as SqlValue};
 
 use super::{btree::BTree, indexes::*, leaf_index_page::LeafIndexPage};
 use crate::{
-    executor::{predicate::{PredicateSolver, ValueSolver, JointValues, resolve_reference}, query::*},
+    executor::{
+        predicate::{resolve_reference, JointValues, PredicateSolver, ValueSolver},
+        query::*,
+    },
     fileio::{header::*, pageio::*, rowio::*, tableio::Table},
     util::{dbtype::*, row::*},
 };
@@ -321,14 +324,13 @@ impl InternalIndexPage {
         }
         let leaf_idx_refs: IndexRefs = get_index_refs(&column_aliases);
 
-        let leaf_pred_solver: PredicateSolver =
-            Self::solve_leaf_index_predicate(
-                &expr,
-                &leaf_col_aliases,
-                &leaf_idx_refs,
-                &self.index_id
-            )?
-            .unwrap_or(Box::new(move |_| Ok(true)));
+        let leaf_pred_solver: PredicateSolver = Self::solve_leaf_index_predicate(
+            &expr,
+            &leaf_col_aliases,
+            &leaf_idx_refs,
+            &self.index_id,
+        )?
+        .unwrap_or(Box::new(move |_| Ok(true)));
 
         // Get all the row locations we need to read the rows from
         let mut row_locations: Vec<RowLocation> = Vec::new();
@@ -503,7 +505,7 @@ impl InternalIndexPage {
     ) -> Result<HashSet<u32>, String> {
         let pred_solver: PredicateSolver =
             Self::solve_internal_index_predicate(pred, column_aliases, index_refs, &self.index_id)?
-            .unwrap_or(Box::new(move |_| Ok(true)));
+                .unwrap_or(Box::new(move |_| Ok(true)));
 
         let mut lowest_internal_pages: HashSet<u32> = HashSet::new();
 
@@ -678,7 +680,7 @@ impl InternalIndexPage {
                     return Ok(None);
                 }
                 let solve_value: ValueSolver = solve_value.unwrap();
-                
+
                 Ok(Some(Box::new(move |row| {
                     // Figure out the whether the value of the column cell is a boolean or not.
                     let value = solve_value(row)?;
@@ -690,7 +692,12 @@ impl InternalIndexPage {
                 })))
             }
             Expr::IsFalse(pred) => {
-                let pred = Self::solve_internal_index_predicate(pred, column_aliases, index_refs, index_id)?;
+                let pred = Self::solve_internal_index_predicate(
+                    pred,
+                    column_aliases,
+                    index_refs,
+                    index_id,
+                )?;
                 if pred.is_none() {
                     return Ok(None);
                 }
@@ -704,7 +711,12 @@ impl InternalIndexPage {
                 Self::solve_internal_index_predicate(pred, column_aliases, index_refs, index_id)
             }
             Expr::IsNotTrue(pred) => {
-                let pred = Self::solve_internal_index_predicate(pred, column_aliases, index_refs, index_id)?;
+                let pred = Self::solve_internal_index_predicate(
+                    pred,
+                    column_aliases,
+                    index_refs,
+                    index_id,
+                )?;
                 if pred.is_none() {
                     return Ok(None);
                 }
@@ -739,8 +751,7 @@ impl InternalIndexPage {
                 // Resolve values from the two sides of the expression, and then perform
                 // the comparison on the two values
                 BinaryOperator::Gt => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -755,8 +766,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Lt => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -771,8 +781,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::GtEq => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -787,8 +796,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::LtEq => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -803,8 +811,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Eq => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -823,33 +830,57 @@ impl InternalIndexPage {
                 // combine them into a single function that returns true if both functions return true
                 // Note how this would also indirectly handle short-circuiting
                 BinaryOperator::And => {
-                    let left =
-                        Self::solve_internal_index_predicate(left, column_aliases, index_refs, index_id)?;
-                    let right =
-                        Self::solve_internal_index_predicate(right, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_internal_index_predicate(
+                        left,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
+                    let right = Self::solve_internal_index_predicate(
+                        right,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
 
                     let left_solve: PredicateSolver = left.unwrap_or(Box::new(move |_| Ok(true)));
                     let right_solve: PredicateSolver = right.unwrap_or(Box::new(move |_| Ok(true)));
-                    
-                    Ok(Some(Box::new(move |row| Ok(left_solve(row)? && right_solve(row)?))))
+
+                    Ok(Some(Box::new(move |row| {
+                        Ok(left_solve(row)? && right_solve(row)?)
+                    })))
                 }
                 BinaryOperator::Or => {
-                    let left =
-                        Self::solve_internal_index_predicate(left, column_aliases, index_refs, index_id)?;
-                    let right =
-                        Self::solve_internal_index_predicate(right, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_internal_index_predicate(
+                        left,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
+                    let right = Self::solve_internal_index_predicate(
+                        right,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
 
                     let left_solve: PredicateSolver = left.unwrap_or(Box::new(move |_| Ok(true)));
                     let right_solve: PredicateSolver = right.unwrap_or(Box::new(move |_| Ok(true)));
 
-                    Ok(Some(Box::new(move |row| Ok(left_solve(row)? || right_solve(row)?))))
+                    Ok(Some(Box::new(move |row| {
+                        Ok(left_solve(row)? || right_solve(row)?)
+                    })))
                 }
                 _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
             },
             Expr::UnaryOp { op, expr } => match op {
                 UnaryOperator::Not => {
-                    let expr =
-                        Self::solve_internal_index_predicate(expr, column_aliases, index_refs, index_id)?;
+                    let expr = Self::solve_internal_index_predicate(
+                        expr,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
                     if expr.is_none() {
                         return Ok(None);
                     }
@@ -885,7 +916,7 @@ impl InternalIndexPage {
                     return Ok(None);
                 }
                 let solve_value: ValueSolver = solve_value.unwrap();
-                
+
                 Ok(Some(Box::new(move |row| {
                     // Figure out the whether the value of the column cell is a boolean or not.
                     let value = solve_value(row)?;
@@ -897,7 +928,8 @@ impl InternalIndexPage {
                 })))
             }
             Expr::IsFalse(pred) => {
-                let pred = Self::solve_leaf_index_predicate(pred, column_aliases, index_refs, index_id)?;
+                let pred =
+                    Self::solve_leaf_index_predicate(pred, column_aliases, index_refs, index_id)?;
                 if pred.is_none() {
                     return Ok(None);
                 }
@@ -911,7 +943,8 @@ impl InternalIndexPage {
                 Self::solve_leaf_index_predicate(pred, column_aliases, index_refs, index_id)
             }
             Expr::IsNotTrue(pred) => {
-                let pred = Self::solve_leaf_index_predicate(pred, column_aliases, index_refs, index_id)?;
+                let pred =
+                    Self::solve_leaf_index_predicate(pred, column_aliases, index_refs, index_id)?;
                 if pred.is_none() {
                     return Ok(None);
                 }
@@ -946,8 +979,7 @@ impl InternalIndexPage {
                 // Resolve values from the two sides of the expression, and then perform
                 // the comparison on the two values
                 BinaryOperator::Gt => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -962,8 +994,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Lt => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -978,8 +1009,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::GtEq => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -994,8 +1024,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::LtEq => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -1010,8 +1039,7 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Eq => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
                     if left.is_none() || right.is_none() {
@@ -1030,33 +1058,57 @@ impl InternalIndexPage {
                 // combine them into a single function that returns true if both functions return true
                 // Note how this would also indirectly handle short-circuiting
                 BinaryOperator::And => {
-                    let left =
-                        Self::solve_leaf_index_predicate(left, column_aliases, index_refs, index_id)?;
-                    let right =
-                        Self::solve_leaf_index_predicate(right, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_leaf_index_predicate(
+                        left,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
+                    let right = Self::solve_leaf_index_predicate(
+                        right,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
 
                     let left_solve: PredicateSolver = left.unwrap_or(Box::new(move |_| Ok(true)));
                     let right_solve: PredicateSolver = right.unwrap_or(Box::new(move |_| Ok(true)));
-                    
-                    Ok(Some(Box::new(move |row| Ok(left_solve(row)? && right_solve(row)?))))
+
+                    Ok(Some(Box::new(move |row| {
+                        Ok(left_solve(row)? && right_solve(row)?)
+                    })))
                 }
                 BinaryOperator::Or => {
-                    let left =
-                        Self::solve_leaf_index_predicate(left, column_aliases, index_refs, index_id)?;
-                    let right =
-                        Self::solve_leaf_index_predicate(right, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_leaf_index_predicate(
+                        left,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
+                    let right = Self::solve_leaf_index_predicate(
+                        right,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
 
                     let left_solve: PredicateSolver = left.unwrap_or(Box::new(move |_| Ok(true)));
                     let right_solve: PredicateSolver = right.unwrap_or(Box::new(move |_| Ok(true)));
 
-                    Ok(Some(Box::new(move |row| Ok(left_solve(row)? || right_solve(row)?))))
+                    Ok(Some(Box::new(move |row| {
+                        Ok(left_solve(row)? || right_solve(row)?)
+                    })))
                 }
                 _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
             },
             Expr::UnaryOp { op, expr } => match op {
                 UnaryOperator::Not => {
-                    let expr =
-                        Self::solve_leaf_index_predicate(expr, column_aliases, index_refs, index_id)?;
+                    let expr = Self::solve_leaf_index_predicate(
+                        expr,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
                     if expr.is_none() {
                         return Ok(None);
                     }
@@ -1089,8 +1141,7 @@ impl InternalIndexPage {
             // in the provided row.
             Expr::Identifier(x) => {
                 let x: String = resolve_reference(x.value.to_string(), column_aliases)?;
-                let index: Option<&usize> = index_refs
-                    .get(&x);
+                let index: Option<&usize> = index_refs.get(&x);
 
                 if index.is_none() {
                     return Ok(None);
@@ -1119,8 +1170,7 @@ impl InternalIndexPage {
                         .join("."),
                     column_aliases,
                 )?;
-                let index: Option<&usize> = index_refs
-                    .get(&x);
+                let index: Option<&usize> = index_refs.get(&x);
 
                 if index.is_none() {
                     return Ok(None);
@@ -1144,15 +1194,16 @@ impl InternalIndexPage {
                 let val = x.clone();
                 // Move a reference of this value into the closure, so that we can reference
                 // it when we wish to respond with a Value.
-                Ok(Some(Box::new(move |_| Ok(JointValues::SQLValue(val.clone())))))
+                Ok(Some(Box::new(move |_| {
+                    Ok(JointValues::SQLValue(val.clone()))
+                })))
             }
             Expr::BinaryOp { left, op, right } => match op {
                 BinaryOperator::Plus => {
-                    let left = 
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
-                    
+
                     if left.is_none() || right.is_none() {
                         return Ok(None);
                     }
@@ -1167,11 +1218,10 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Minus => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
-                    
+
                     if left.is_none() || right.is_none() {
                         return Ok(None);
                     }
@@ -1186,11 +1236,10 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Multiply => {
-                    let left = 
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
-                    
+
                     if left.is_none() || right.is_none() {
                         return Ok(None);
                     }
@@ -1205,11 +1254,10 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Divide => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
-                    
+
                     if left.is_none() || right.is_none() {
                         return Ok(None);
                     }
@@ -1224,11 +1272,10 @@ impl InternalIndexPage {
                     })))
                 }
                 BinaryOperator::Modulo => {
-                    let left =
-                        Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
+                    let left = Self::solve_index_value(left, column_aliases, index_refs, index_id)?;
                     let right =
                         Self::solve_index_value(right, column_aliases, index_refs, index_id)?;
-                    
+
                     if left.is_none() || right.is_none() {
                         return Ok(None);
                     }
@@ -1242,10 +1289,13 @@ impl InternalIndexPage {
                         left.modulo(&right)
                     })))
                 }
-                BinaryOperator::And
-                | BinaryOperator::Or => {
-                    let binary =
-                        Self::solve_internal_index_predicate(expr, column_aliases, index_refs, index_id)?;
+                BinaryOperator::And | BinaryOperator::Or => {
+                    let binary = Self::solve_internal_index_predicate(
+                        expr,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
                     if binary.is_none() {
                         return Ok(None);
                     }
@@ -1261,8 +1311,12 @@ impl InternalIndexPage {
                 | BinaryOperator::GtEq
                 | BinaryOperator::Eq
                 | BinaryOperator::NotEq => {
-                    let binary =
-                        Self::solve_internal_index_predicate(expr, column_aliases, index_refs, index_id)?;
+                    let binary = Self::solve_internal_index_predicate(
+                        expr,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
                     if binary.is_none() {
                         return Ok(None);
                     }
@@ -1298,8 +1352,12 @@ impl InternalIndexPage {
                 }
                 UnaryOperator::Not => {
                     // Solve the inner value, expecting it's return type to be a boolean, and negate it.
-                    let binary =
-                        Self::solve_internal_index_predicate(expr, column_aliases, index_refs, index_id)?;
+                    let binary = Self::solve_internal_index_predicate(
+                        expr,
+                        column_aliases,
+                        index_refs,
+                        index_id,
+                    )?;
                     if binary.is_none() {
                         return Ok(None);
                     }

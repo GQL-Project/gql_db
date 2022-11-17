@@ -103,7 +103,7 @@ pub fn get_index_id_from_expr(
     expr: &Expr,
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
-    table_name: &String
+    table_name: &String,
 ) -> Result<Option<IndexID>, String> {
     match expr {
         Expr::Identifier(x) => {
@@ -116,9 +116,9 @@ pub fn get_index_id_from_expr(
             let split: Vec<String> = x.split(".").map(|s| s.to_string()).collect::<Vec<String>>();
             if split.len() > 1 && split[0] != *table_name {
                 // The identifier is a column from a different table
-                return Ok(None)
+                return Ok(None);
             }
-            
+
             Ok(Some(vec![index as u8]))
         }
         Expr::CompoundIdentifier(list) => {
@@ -138,7 +138,7 @@ pub fn get_index_id_from_expr(
             let split: Vec<String> = x.split(".").map(|s| s.to_string()).collect::<Vec<String>>();
             if split.len() > 1 && split[0] != *table_name {
                 // The identifier is a column from a different table
-                return Ok(None)
+                return Ok(None);
             }
 
             Ok(Some(vec![index as u8]))
@@ -151,37 +151,37 @@ pub fn get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         Expr::IsNotFalse(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         Expr::IsTrue(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         Expr::IsNotTrue(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         Expr::IsNull(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         Expr::IsNotNull(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         Expr::BinaryOp { left, op, right } => match op {
             // Resolve values from the two sides of the expression, and then perform
@@ -201,10 +201,10 @@ pub fn get_index_id_from_expr(
                     get_index_id_from_expr(left.as_ref(), column_aliases, index_refs, table_name)?;
                 let right_index_id: Option<IndexID> =
                     get_index_id_from_expr(right.as_ref(), column_aliases, index_refs, table_name)?;
-                
+
                 if left_index_id.is_none() || right_index_id.is_none() {
                     // One of the sides of the expression is not a column from the same table
-                    return Ok(None)
+                    return Ok(None);
                 }
 
                 let left_index_id: IndexID = left_index_id.unwrap();
@@ -219,16 +219,15 @@ pub fn get_index_id_from_expr(
 
                 Ok(Some(combined_index_id))
             }
-            BinaryOperator::And
-            | BinaryOperator::Or => {
+            BinaryOperator::And | BinaryOperator::Or => {
                 let left_index_id: Option<IndexID> =
                     get_index_id_from_expr(left.as_ref(), column_aliases, index_refs, table_name)?;
                 let right_index_id: Option<IndexID> =
                     get_index_id_from_expr(right.as_ref(), column_aliases, index_refs, table_name)?;
-                
+
                 if left_index_id.is_none() && right_index_id.is_none() {
                     // Both of the sides of the expression are not columns from ths table
-                    return Ok(None)
+                    return Ok(None);
                 }
 
                 let mut combined_index_id: IndexID = Vec::new();
@@ -243,11 +242,9 @@ pub fn get_index_id_from_expr(
                             combined_index_id.push(right_id);
                         }
                     }
-                }
-                else if left_index_id.is_some() {
+                } else if left_index_id.is_some() {
                     combined_index_id = left_index_id.unwrap();
-                }
-                else if right_index_id.is_some() {
+                } else if right_index_id.is_some() {
                     combined_index_id = right_index_id.unwrap();
                 }
 
@@ -265,7 +262,7 @@ pub fn get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
-            table_name
+            table_name,
         )?),
         _ => Err(format!("Invalid Predicate Clause: {}", expr)),
     }
@@ -878,7 +875,7 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
-            &table_name
+            &table_name,
         )
         .unwrap()
         .unwrap();
@@ -898,7 +895,7 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
-            &table_name
+            &table_name,
         )
         .unwrap()
         .unwrap();
@@ -918,7 +915,7 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
-            &table_name
+            &table_name,
         )
         .unwrap()
         .unwrap();
@@ -954,12 +951,10 @@ mod tests {
             (String::from("id"), Column::I32),
             (String::from("name"), Column::String(20)),
         ];
-        let column_aliases: ColumnAliases =
-            gen_column_aliases_from_schema(&vec![
-                (schema.clone(), table1_name.clone()),
-                (schema.clone(), table2_name.clone()),
-                ]
-            );
+        let column_aliases: ColumnAliases = gen_column_aliases_from_schema(&vec![
+            (schema.clone(), table1_name.clone()),
+            (schema.clone(), table2_name.clone()),
+        ]);
         let index_refs: IndexRefs = get_index_refs(&column_aliases);
 
         let index_id: IndexID = get_index_id_from_expr(
@@ -990,7 +985,7 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
-            &table1_name
+            &table1_name,
         )
         .unwrap()
         .unwrap();
@@ -1024,7 +1019,7 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
-            &table2_name
+            &table2_name,
         )
         .unwrap()
         .unwrap();
@@ -1058,7 +1053,7 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
-            &table2_name
+            &table2_name,
         )
         .unwrap()
         .unwrap();

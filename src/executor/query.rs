@@ -5,7 +5,7 @@ use super::predicate::{
     resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
-use super::table_iterator::{TableIterator, RowIterator};
+use super::table_iterator::{RowIterator, TableIterator};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -100,7 +100,7 @@ fn parse_select(
             table_names.push((table_name[0].to_string(), "".to_string()));
         }
     }
-    
+
     // Execute the select statement
     let (res_columns, mut res_rows) = select(
         columns.clone(),
@@ -438,13 +438,12 @@ pub fn select(
     let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
-    let mut column_exprs: Vec<Expr> = resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
+    let mut column_exprs: Vec<Expr> =
+        resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
 
     // Convert the where expression into a predicate solver
     let where_pred: Option<PredicateSolver> = match &where_expr {
-        Some(pred) => {
-            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
-        }
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
         None => None,
     };
 
@@ -457,12 +456,8 @@ pub fn select(
             let expr: Expr = where_expr.clone().unwrap();
 
             // Get the index id for this specific table for this specific query
-            let index_id: Option<IndexID> = get_index_id_from_expr(
-                &expr,
-                &table_aliases,
-                &index_refs,
-                &alias
-            )?;
+            let index_id: Option<IndexID> =
+                get_index_id_from_expr(&expr, &table_aliases, &index_refs, &alias)?;
 
             // If we can use an index (i.e. the where clause references only one table)
             if let Some(index_id) = index_id {
@@ -499,7 +494,8 @@ pub fn select(
     }
 
     // Create an iterator of table iterators using the cartesion product of the tables
-    let table_iterator: MultiProduct<TableIterator> = table_iters.into_iter().multi_cartesian_product();
+    let table_iterator: MultiProduct<TableIterator> =
+        table_iters.into_iter().multi_cartesian_product();
 
     // Add order by cases to the column expressions (and track when to discard them later)
     let order_start: usize = column_exprs.len();
