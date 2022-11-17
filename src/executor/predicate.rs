@@ -22,11 +22,6 @@ pub type PredicateSolver = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// as defined by the expression in the query.
 pub type ValueSolver = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
 
-/// A comparator between two Rows, used to sort rows in a ORDER BY clause
-/// The comparator is a function that takes two rows and returns an Ordering
-/// Ordering is an enum that can be Less, Equal, or Greater
-pub type ComparisonSolver = Box<dyn Fn(&Row, &Row) -> Result<Ordering, String>>;
-
 // We could encounter cases with two different types of values, so we need to be able to handle both
 #[derive(Debug)]
 pub enum JointValues {
@@ -48,11 +43,30 @@ pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
 }
 
 /// Given a ComparisonSolver and two rows, return an Ordering or an error
-pub fn resolve_comparison(comp: &ComparisonSolver, row1: &Row, row2: &Row) -> Ordering {
-    match comp(row1, row2) {
-        Ok(o) => o,
-        Err(_) => Ordering::Less, // If there's an error, then we can't compare, so we just say they're less
+pub fn resolve_comparison(
+    row1: &Row,
+    row2: &Row,
+    index: usize,
+    order_bys: &Vec<OrderByExpr>,
+) -> Ordering {
+    // Compare the two rows, from values at the given index onwards
+    let mut i = index;
+    while i < row1.len() {
+        let val1 = &row1[i];
+        let val2 = &row2[i];
+        match val1.cmp(val2) {
+            Ordering::Equal => i += 1,
+            other => {
+                let j = i - index;
+                return match order_bys[j].asc {
+                    Some(true) => other,
+                    None => other,
+                    Some(false) => other.reverse(),
+                };
+            }
+        }
     }
+    Ordering::Equal
 }
 
 // Resolve a pure value without a row, such as in `select 5 + 5`
@@ -338,49 +352,6 @@ pub fn solve_value(
         },
         _ => Err(format!("Unexpected Value Clause: {}", expr)),
     }
-}
-
-/// Creates a comparator between two rows, given a series of Expr's to use as the comparison
-/// between the two rows.
-pub fn solve_comparison(
-    order_bys: &Vec<OrderByExpr>,
-    column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<ComparisonSolver, String> {
-    let comparators = order_bys
-        .iter()
-        .map(|order_by| {
-            let asc = match order_by.asc {
-                Some(asc) => asc,
-                None => true, // Default to ascending
-            };
-            let expr = &order_by.expr;
-            let solver = solve_value(expr, column_aliases, index_refs)?;
-            let result: ComparisonSolver = Box::new(move |a: &Row, b: &Row| {
-                let a = solver(a)?;
-                let b = solver(b)?;
-                let ordering = a
-                    .partial_cmp(&b)
-                    .ok_or(format!("Cannot compare {:?} and {:?}", a, b))?;
-                if asc {
-                    Ok(ordering)
-                } else {
-                    Ok(ordering.reverse())
-                }
-            });
-            Ok(result)
-        })
-        .collect::<Result<Vec<ComparisonSolver>, String>>()?;
-
-    Ok(Box::new(move |a: &Row, b: &Row| {
-        for comparator in &comparators {
-            let order = comparator(a, b)?;
-            if order != Ordering::Equal {
-                return Ok(order);
-            }
-        }
-        Ok(Ordering::Equal)
-    }))
 }
 
 // Given a column name, it figures out which table it belongs to and returns the

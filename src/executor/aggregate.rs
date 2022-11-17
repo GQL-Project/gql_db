@@ -24,6 +24,7 @@ pub fn resolve_aggregates(
         .collect::<Vec<(usize, &Expr)>>();
 
     let (value_rows, original_rows): (Vec<Row>, Vec<Row>) = rows.into_iter().unzip();
+
     if functions.is_empty() {
         return Ok(value_rows);
     }
@@ -32,11 +33,11 @@ pub fn resolve_aggregates(
     }
 
     // Take the first row, and solve the functions for it for the entire group
-    let mut row = value_rows[0].clone();
+    let mut new_row = value_rows[0].clone();
     for (i, expr) in functions {
-        row[i] = solve_aggregate(&original_rows, expr, column_aliases, index_refs)?;
+        new_row[i] = solve_aggregate(&original_rows, expr, column_aliases, index_refs)?;
     }
-    Ok(vec![row])
+    Ok(vec![new_row])
 }
 
 /// Versions of the Solvers that just return the Value directly
@@ -298,7 +299,7 @@ fn aggregate_count(
             let mut count = 0;
             for row in rows {
                 let val = solver(row)?;
-                if val.is_null() {
+                if !val.is_null() {
                     count += 1;
                 }
             }
@@ -414,15 +415,24 @@ mod tests {
         },
     };
 
+    impl Value {
+        pub fn force_int(&self) -> i32 {
+            match self {
+                Value::I32(x) => *x,
+                Value::I64(x) => *x as i32,
+                _ => panic!("Expected an integer"),
+            }
+        }
+    }
+
     #[test]
     #[serial]
-    fn test_group_by() {
-        let mut user = create_huge_bench_db(100, true);
-        let db = get_db_instance().unwrap();
+    fn test_group_by_simple() {
+        let mut user = create_huge_bench_db(312, true);
 
         let (_, results) = execute_query(
             &parse(
-                "select first_name, age, height from personal_info where height is null",
+                "select *, count(*), sum(id2) from huge_table group by id2",
                 false,
             )
             .unwrap(),
@@ -430,5 +440,47 @@ mod tests {
             &"".to_string(),
         )
         .unwrap();
+
+        // Assuming the table has id2 between 0 and 51 always
+        assert!(results.len() == 52);
+
+        let mut count = 0;
+        for row in results {
+            // Ensure total count is 300, and each count is either 5 or 6 (300 / 52)
+            let val = row[4].force_int();
+            assert!(val == 6);
+            count += val;
+            // Ensure each sum is count * id2
+            let val = row[4].force_int();
+            let sum = row[5].force_int();
+            assert!(sum == val * row[1].force_int());
+        }
+        assert!(count == 312);
+    }
+
+    #[test]
+    #[serial]
+    fn test_non_group_aggregate() {
+        let mut user = create_huge_bench_db(300, true);
+
+        let (_, results) = execute_query(
+            &parse("select count(*) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == 300);
+
+        let (_, results) = execute_query(
+            &parse("select sum(id1) from huge_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results.len() == 1);
+        assert!(results[0][0].force_int() == (300 * 299) / 2);
     }
 }
