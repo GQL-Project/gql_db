@@ -213,16 +213,16 @@ async fn attempt_connection() -> Result<Connection, Box<dyn std::error::Error>> 
         match DatabaseConnectionClient::connect(conn_str.clone()).await {
             Ok(db_client) => {
                 client = db_client;
-                // Print a success msg
-                print!(
-                    "{}",
-                    format!("Successfully Connected to Database at {}\n", conn_str)
-                        .green()
-                        .to_string()
-                );
-                io::stdout().flush()?;
                 let response = client.connect_db(request).await;
                 if response.is_ok() {
+                    // Print a success msg
+                    print!(
+                        "{}",
+                        format!("Successfully Connected to Database at {}\n", conn_str)
+                            .green()
+                            .to_string()
+                    );
+                    io::stdout().flush()?;
                     return Ok(Connection {
                         0: client,
                         1: response?.into_inner(),

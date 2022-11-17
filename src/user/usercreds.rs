@@ -50,7 +50,7 @@ impl UserCREDs {
 
             let schema = vec![
                 ("username".to_string(), Column::String(32)),
-                ("password".to_string(), Column::String(32)),
+                ("password".to_string(), Column::String(225)),
             ];
             // TODO: With some more work, we could possibly add some indexes to find the user from the username index
             let header = Header {

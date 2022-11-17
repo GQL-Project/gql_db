@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use pwhash::bcrypt;
+
 use crate::fileio::databaseio::{get_db_instance, load_db_instance};
 use crate::user::usercreds::UserCred;
 use crate::user::userdata::*;
@@ -45,7 +47,7 @@ impl Connection {
         if !user_creds_instance.does_user_exist("admin".to_string())? {
             user_creds_instance.create_user(&UserCred {
                 username: "admin".to_string(),
-                password: "admin".to_string(),
+                password: bcrypt::hash("admin".to_string()).unwrap(),
             })?;
         }
         if create {
@@ -54,14 +56,14 @@ impl Connection {
             } else {
                 user_creds_instance.create_user(&UserCred {
                     username: username.clone(),
-                    password: password.clone(),
+                    password: bcrypt::hash(password.clone()).unwrap(),
                 })?;
             }
         } else {
             if !user_creds_instance.does_user_exist(username.clone())? {
                 return Err("User does not exist".to_string());
             } else {
-                if user_creds_instance.get_user(&username)?.password != password {
+                if !bcrypt::verify(password, &user_creds_instance.get_user(&username)?.password) {
                     return Err("Incorrect password".to_string());
                 }
             }
