@@ -533,18 +533,19 @@ pub fn select(
         }
     }
 
-    // Also, individually sort the rows in each group by the order_by columns
     // Solve aggregate functions and create the selected rows that are now ready to be returned
-    let selected_rows: Vec<Row> = grouped_rows
+    let mut resolved_groups: Vec<(Row, Row)> = grouped_rows
         .into_values()
-        .map(|mut rows| {
-            rows.sort_unstable_by(|(_, row1), (_, row2)| {
-                resolve_comparison(&order_solver, row1, row2)
-            });
-            resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs)
-        })
+        .map(|rows| resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs))
         .flatten_ok()
-        .collect::<Result<Vec<Row>, String>>()?;
+        .collect::<Result<Vec<(Row, Row)>, String>>()?;
+
+    // Sort the remaining rows using the order by clause
+    resolved_groups
+        .sort_unstable_by(|(_, row1), (_, row2)| resolve_comparison(&order_solver, row1, row2));
+
+    // Drop the original rows now
+    let selected_rows: Vec<Row> = resolved_groups.into_iter().map(|(row, _)| row).collect();
 
     Ok((column_names, selected_rows))
 }
