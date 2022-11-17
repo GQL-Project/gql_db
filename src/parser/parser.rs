@@ -151,9 +151,9 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
             let revert_results = command::revert(user, &commit)?;
             Ok(format!("Reverted Commit at hash: {}", revert_results.hash))
         }
-        VersionControlSubCommand::ViewBranch => {
+        VersionControlSubCommand::BranchView => {
             let results: String = command::list_all_commits()?;
-            Ok(format!("Branch View: {}", results))
+            Ok(results)
         }
         VersionControlSubCommand::SchemaTable { json } => {
             let schema_results = command::schema_table(user)?;

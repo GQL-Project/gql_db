@@ -463,6 +463,7 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 #[derive(Serialize)]
 pub struct CommitGraphNode {
     pub commit_hash: String,
+    pub branch_name: String,
     pub column: u32,
     pub row: u32,
 }
@@ -534,6 +535,20 @@ pub fn list_all_commits() -> Result<String, String> {
             }
         }
 
+        // Remove any branches from the used_cols map that are no longer in the unique_branch_nodes
+        /*
+        let mut used_cols_to_remove: Vec<String> = Vec::new();
+        for (branch_name, _) in &used_cols {
+            if !unique_branch_nodes.iter().any(|x| x.branch_name == *branch_name) {
+                used_cols_to_remove.push(branch_name.clone());
+            }
+        }
+        for branch_name in used_cols_to_remove {
+            used_cols.remove(&branch_name);
+        }
+        */
+
+        // Add the unique branch nodes to the graph
         for unique_node in unique_branch_nodes {
             let branch_name: String = unique_node.branch_name.clone();
             let commit_hash: String = unique_node.commit_hash.clone();
@@ -555,6 +570,7 @@ pub fn list_all_commits() -> Result<String, String> {
                 CommitGraphNode {
                     commit_hash: commit_hash.clone(),
                     column: used_cols[&branch_name],
+                    branch_name,
                     row: i as u32,
                 }
             );

@@ -96,7 +96,7 @@ pub enum VersionControlSubCommand {
         force: bool,
     },
     #[clap(aliases = &["view_branch"])]
-    ViewBranch,
+    BranchView,
     /// Returns all of tables in the current branch
     #[clap(aliases = &["table", "schema", "scehma_table"])]
     SchemaTable {
