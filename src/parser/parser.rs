@@ -41,7 +41,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                         return Err("No changes to commit".to_string());
                     }
 
-                    let (res_node, res_commit) = get_db_instance()?.create_commit_and_node(
+                    let (res_node, res_commit) = get_db_instance()?.create_commit_on_head(
                         &message.to_string(),
                         &user.get_commands().join(":"),
                         user,

@@ -214,12 +214,25 @@ impl Database {
 
     /// Creates a commit and a branch node in the appropriate files.
     /// It uses the diffs from the user to create the commit.
-    pub fn create_commit_and_node(
+    pub fn create_commit_on_head(
         &mut self,
         commit_msg: &String,
         command: &String,
         user: &mut User,
         new_branch_name: Option<String>, // If this is Some, then a new branch is created
+    ) -> Result<(BranchNode, Commit), String> {
+        self.create_commit_node(commit_msg, command, user, new_branch_name, None)
+    }
+
+    /// Creates a commit and a branch node in the appropriate files.
+    /// This can be also used to create a branch from a commit.
+    pub fn create_commit_node(
+        &mut self,
+        commit_msg: &String,
+        command: &String,
+        user: &mut User,
+        new_branch_name: Option<String>, // If this is Some, then a new branch is created
+        prev_node: Option<BranchNode>, // If this is Some, then a new branch is created from this commit node, otherwise it is created from the HEAD
     ) -> Result<(BranchNode, Commit), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -264,11 +277,12 @@ impl Database {
         }
         // There is a previous branch node to create a new branch node off of
         else {
-            // TODO: If we make this an argument, we can create a branch node off of any node passed in.
-            // This is what's required for the branch from commit case.
-            let prev_node = self
-                .branch_heads
-                .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?; 
+            let prev_node: BranchNode = match prev_node {
+                Some(node) => node,
+                None => self
+                    .branch_heads
+                    .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?,
+            };
             node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 Some(&prev_node),
@@ -571,15 +585,37 @@ impl Database {
         let uncommitted_changes: Vec<Diff> = user.get_diffs().clone();
         user.set_diffs(&Vec::new());
 
-        // Create a commit for the new branch
-        // TODO: The new node created is currently on the head of the branch
-        // for the commit case this actually needs to be after the specified commit
-        self.create_commit_and_node(
-            &format!("Created Branch {}", branch_name),
-            &format!("GQL branch {}", branch_name),
-            user,
-            Some(branch_name.clone()),
-        )?;
+        match branch_commit {
+            Some(commit_hash) => {
+                // If we specified a branch commit, then we need to find the node for that commit instead of using the HEAD
+                let src_node = self
+                    .branches
+                    .traverse_for_commit(&self
+                        .branch_heads
+                        .get_branch_node_from_head(&branch_name, &self.branches)?, commit_hash)?
+                    .ok_or(format!(
+                        "Could not find commit hash {} in branch {}",
+                        commit_hash, branch_name
+                    ))?;
+                // Create a new node for the branch, from the specified commit
+                self.create_commit_node(
+                    &format!("Branch {} created on commit {}", branch_name, commit_hash),
+                    &format!("gql branch {} -c {}", branch_name, commit_hash),
+                    user,
+                    Some(branch_name.clone()),
+                    Some(src_node.clone()),
+                )?;
+            }
+            None => {
+                // Create a commit for the new branch
+                self.create_commit_on_head(
+                    &format!("Created Branch {}", branch_name),
+                    &format!("GQL branch {}", branch_name),
+                    user,
+                    Some(branch_name.clone()),
+                )?;
+            }
+        }
 
         // Set the user on the new branch
         user.set_current_branch_name(&branch_name);
@@ -611,20 +647,10 @@ impl Database {
 
         // 3. Find the common ancestor between the main branch and the new branch
         // Get the node for the new branch's HEAD
-        let mut node2: BranchNode = self
+        let node2: BranchNode = self
             .branch_heads
             .get_branch_node_from_head(&branch_name, &self.branches)?;
 
-        // If we specified a branch commit, then we need to find the node for that commit instead of using the HEAD
-        if let Some(commit_hash) = branch_commit {
-            node2 = self
-                .branches
-                .traverse_for_commit(&node2, commit_hash)?
-                .ok_or(format!(
-                    "Could not find commit hash {} in branch {}",
-                    commit_hash, branch_name
-                ))?;
-        }
 
         // Get the node for the main branch's HEAD
         let node1: BranchNode = match self
@@ -951,7 +977,7 @@ impl Database {
         )?;
 
         // 7. Create a new commit on destination branch with the diffs from the merge.
-        let (_, commit) = self.create_commit_and_node(
+        let (_, commit) = self.create_commit_on_head(
             merge_cmt_msg,
             &format!("Merged {} into {}", src_branch_name, dest_branch_name),
             user,
@@ -1746,7 +1772,7 @@ mod tests {
 
         let results = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"commit_msg".to_string(),
                 &"create table; insert rows".to_string(),
                 &mut user,
@@ -2226,7 +2252,7 @@ mod tests {
 
         let first_node_results = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"test message".to_string(),
                 &"command".to_string(),
                 &mut user,
@@ -2299,7 +2325,7 @@ mod tests {
         // Create the first commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2319,7 +2345,7 @@ mod tests {
         // Create the second commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2366,7 +2392,7 @@ mod tests {
         // Create a commit on the new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Third Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2406,7 +2432,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Fourth Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2500,7 +2526,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2528,7 +2554,7 @@ mod tests {
         // Create a new commit on branch1
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2589,7 +2615,7 @@ mod tests {
         // Create a commit on branch1
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Third Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2796,7 +2822,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2824,7 +2850,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2925,7 +2951,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2953,7 +2979,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3039,7 +3065,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Branch 2 - Added Kent family".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3150,7 +3176,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -3178,7 +3204,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3266,7 +3292,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Branch 2 - Added Kent family".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3379,7 +3405,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main - Created test_table".to_string(),
                 &"Create;".to_string(),
                 &mut user,
@@ -3413,7 +3439,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3437,7 +3463,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -3457,7 +3483,7 @@ mod tests {
         // Create commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -3485,7 +3511,7 @@ mod tests {
         // Create commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,

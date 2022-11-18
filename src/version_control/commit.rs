@@ -1247,7 +1247,7 @@ mod tests {
         // Create a commit on main branch
         let (_, commit1) = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -1294,7 +1294,7 @@ mod tests {
         // Create a commit on main branch
         let (_, commit2) = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,

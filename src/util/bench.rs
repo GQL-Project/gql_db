@@ -64,7 +64,7 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 1 on Main Branch".to_string(),
         &"Create Table and Insert Rows".to_string(),
         &mut user,
@@ -105,7 +105,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Update(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 2 on Main Branch".to_string(),
         &"Insert Rows and Update Rows".to_string(),
         &mut user,
@@ -134,7 +134,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 3 on Main Branch".to_string(),
         &"Create Table and Insert Rows".to_string(),
         &mut user,
@@ -169,7 +169,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 4 on Main Branch".to_string(),
         &"Insert Rows and Update Rows and Remove Rows".to_string(),
         &mut user,
@@ -233,7 +233,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 5 on Test Branch 1 1".to_string(),
         &"Insert Rows and Update Rows and Remove Rows".to_string(),
         &mut user,
@@ -258,7 +258,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 6 on Test Branch 1".to_string(),
         &"Update Rows and Remove Rows".to_string(),
         &mut user,
@@ -294,7 +294,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 7 on Test Branch 1".to_string(),
         &"Insert Rows".to_string(),
         &mut user,
@@ -320,7 +320,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 8 on Test Branch 1".to_string(),
         &"Remove Rows".to_string(),
         &mut user,
@@ -354,7 +354,7 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 9 on Main Branch".to_string(),
         &"Insert Rows".to_string(),
         &mut user,
@@ -388,7 +388,7 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 10 on Main Branch".to_string(),
         &"Insert Rows".to_string(),
         &mut user,
@@ -405,7 +405,7 @@ pub fn create_demo_db(name: &str) -> User {
     let diff =
         delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user)).unwrap();
     user.append_diff(&Diff::TableRemove(diff));
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Create Commit 11 on Test Branch 2".to_string(),
         &"Delete Table".to_string(),
         &mut user,
@@ -502,7 +502,7 @@ pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
     let diff: InsertDiff = table.insert_rows(rows).unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Created huge test database".to_string(),
         &"Create huge_table and Inserted Rows".to_string(),
         &mut user,
@@ -573,7 +573,7 @@ pub fn create_huge_bench_db_2_tables(
     let diff: InsertDiff = table.insert_rows(rows).unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    db.create_commit_and_node(
+    db.create_commit_on_head(
         &"Created huge test database".to_string(),
         &"Create huge_table and Inserted Rows".to_string(),
         &mut user,

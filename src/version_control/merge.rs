@@ -2553,7 +2553,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2600,7 +2600,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2666,7 +2666,7 @@ mod tests {
         // Create a commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on New Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2782,7 +2782,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2841,7 +2841,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2907,7 +2907,7 @@ mod tests {
         // Create a commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on New Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -3048,7 +3048,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3119,7 +3119,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"2nd Commit".to_string(),
                 &"Created a new Table".to_string(),
                 &mut user,
@@ -3220,7 +3220,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3254,7 +3254,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3282,7 +3282,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"2nd Commit on main branch".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3361,7 +3361,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3395,7 +3395,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3435,7 +3435,7 @@ mod tests {
         user.set_diffs(&test_branch2_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch2".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3548,7 +3548,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3582,7 +3582,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3623,7 +3623,7 @@ mod tests {
         user.set_diffs(&test_branch2_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch2".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3770,7 +3770,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3809,7 +3809,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2, and removed table1".to_string(),
                 &mut user,
@@ -3854,7 +3854,7 @@ mod tests {
         user.set_diffs(&test_branch2_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch2".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -4413,7 +4413,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,

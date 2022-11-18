@@ -317,7 +317,7 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
         // Creating a revert commit
         let revert_message = format!("Reverted to commit {}", commit_hash);
         let revert_command = format!("gql revert {}", commit_hash);
-        let revert_commit_and_node = get_db_instance()?.create_commit_and_node(
+        let revert_commit_and_node = get_db_instance()?.create_commit_on_head(
             &revert_message,
             &revert_command,
             user,
@@ -515,7 +515,7 @@ mod tests {
         // Commit the changes
         let commit_result = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &mut user,
@@ -590,7 +590,7 @@ mod tests {
         // Commit the changes
         let mut commit_result = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &mut user,
@@ -601,7 +601,7 @@ mod tests {
 
         commit_result = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
                 &mut user,
@@ -993,7 +993,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table & Added Rows;".to_string(),
                 &mut user,
@@ -1063,7 +1063,7 @@ mod tests {
         // Create a commit on the main branch
         let node_commit1 = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -1105,7 +1105,7 @@ mod tests {
         // Create commit on main branch
         let _node_commit2 = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main - Added Wayne family".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
