@@ -546,7 +546,12 @@ impl Database {
     /// Creates a new branch for the database.
     /// The branch name must not exist exist already.
     /// It returns true on success, and false on failure.
-    pub fn create_branch(&mut self, branch_name: &String, user: &mut User) -> Result<(), String> {
+    pub fn create_branch(
+        &mut self,
+        branch_name: &String,
+        branch_commit: &Option<String>,
+        user: &mut User,
+    ) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         {
             let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -602,9 +607,21 @@ impl Database {
 
         // 3. Find the common ancestor between the main branch and the new branch
         // Get the node for the new branch's HEAD
-        let node2: BranchNode = self
+        let mut node2: BranchNode = self
             .branch_heads
             .get_branch_node_from_head(&branch_name, &self.branches)?;
+
+        // If we specified a branch commit, then we need to find the node for that commit instead of using the HEAD
+        if let Some(commit_hash) = branch_commit {
+            node2 = self
+                .branches
+                .traverse_for_commit(&node2, commit_hash)?
+                .ok_or(format!(
+                    "Could not find commit hash {} in branch {}",
+                    commit_hash, branch_name
+                ))?;
+        }
+
         // Get the node for the main branch's HEAD
         let node1: BranchNode = match self
             .branch_heads
@@ -2141,7 +2158,7 @@ mod tests {
 
         get_db_instance()
             .unwrap()
-            .create_branch(&"new branch".to_string(), &mut user)
+            .create_branch(&"new branch".to_string(), &None, &mut user)
             .unwrap();
         // Read the branch heads file and make sure the new branch is there
         let branch_heads_file = get_db_instance().unwrap().get_branch_heads_file_mut();
@@ -2214,7 +2231,7 @@ mod tests {
             .unwrap();
         get_db_instance()
             .unwrap()
-            .create_branch(&"new branch".to_string(), &mut user)
+            .create_branch(&"new branch".to_string(), &None, &mut user)
             .unwrap();
 
         // Read the branch heads file and make sure the new branch is there
@@ -2309,7 +2326,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Make sure the new branch has the same tables as the main branch
@@ -2425,13 +2442,13 @@ mod tests {
         // Create a new branch immediately
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Create a second branch off that branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Delete the database instance
@@ -2490,7 +2507,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on branch1
@@ -2518,7 +2535,7 @@ mod tests {
         // Create a new branch off of branch1
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Get the tables for all the branches
@@ -2786,7 +2803,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -2915,7 +2932,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_1, &mut user)
+            .create_branch(&branch_name_1, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -3001,7 +3018,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_2, &mut user)
+            .create_branch(&branch_name_2, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -3140,7 +3157,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_1, &mut user)
+            .create_branch(&branch_name_1, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -3228,7 +3245,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_2, &mut user)
+            .create_branch(&branch_name_2, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -3403,7 +3420,7 @@ mod tests {
         // Create a new branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Create a new table on the new branch

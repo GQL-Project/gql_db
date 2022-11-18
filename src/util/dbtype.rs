@@ -313,10 +313,7 @@ impl Value {
     }
 
     pub fn is_null(&self) -> bool {
-        match self {
-            Value::Null(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::Null(_)) 
     }
 }
 
