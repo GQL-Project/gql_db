@@ -2394,9 +2394,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("SELECT * from personal_info ORDER BY id desc;",
-            false)
-            .unwrap(),
+            &parse("SELECT * from personal_info ORDER BY id desc;", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2474,9 +2472,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("select * from personal_info where age > 25;",
-            false)
-            .unwrap(),
+            &parse("select * from personal_info where age > 25;", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2554,9 +2550,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("select * from personal_info where age = 28;",
-            false)
-            .unwrap(),
+            &parse("select * from personal_info where age = 28;", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2587,9 +2581,7 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("select * from personal_info where age > 25;",
-            false)
-            .unwrap(),
+            &parse("select * from personal_info where age > 25;", false).unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2622,8 +2614,10 @@ pub mod tests {
         .unwrap();
 
         let results2 = execute_query(
-            &parse("select * from personal_info where age > 28 ORDER BY id desc;",
-            false)
+            &parse(
+                "select * from personal_info where age > 28 ORDER BY id desc;",
+                false,
+            )
             .unwrap(),
             &mut user,
             &"".to_string(),
