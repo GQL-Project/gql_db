@@ -65,9 +65,6 @@ fn parse_query(
         } => {
             let (left_cols, left_rows) = parse_query(&left, user, query)?;
             let (right_cols, right_rows) = parse_query(&right, user, query)?;
-            if left_cols.len() != right_cols.len() {
-                return Err("Incompatible types in set operation".to_string());
-            }
 
             let row = set_operations(op, left_rows.clone(), right_rows.clone())?;
             if left_rows.is_empty() && !right_rows.is_empty() {
@@ -886,7 +883,7 @@ pub fn set_operations(
 
     // Checking if the columns match
     if left_columns.len() != right_columns.len() {
-        return Err("Columns don't match".to_string());
+        return Err("Incompatible types in set operation".to_string());
     }
 
     let schemas_match = left_columns
@@ -2328,7 +2325,7 @@ pub mod tests {
 
     #[test]
     #[serial]
-    fn test_set_operations_union() {
+    fn test_set_operations_union0() {
         let mut user = create_demo_db("set_op_test");
         get_db_instance()
             .unwrap()
@@ -2375,7 +2372,40 @@ pub mod tests {
 
     #[test]
     #[serial]
-    fn test_set_operations_except() {
+    fn test_set_operations_union1() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "select * from personal_info where age > 25 union select * from personal_info where age <= 25 ORDER BY id desc;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("SELECT * from personal_info ORDER BY id desc;",
+            false)
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_except0() {
         let mut user = create_demo_db("set_op_test");
         get_db_instance()
             .unwrap()
@@ -2411,6 +2441,39 @@ pub mod tests {
 
         let results2 = execute_query(
             &parse("SELECT * from personal_info", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_except1() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "select * from personal_info except select * from personal_info where age <= 25;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("select * from personal_info where age > 25;",
+            false)
+            .unwrap(),
             &mut user,
             &"".to_string(),
         )
@@ -2458,6 +2521,107 @@ pub mod tests {
 
         let results2 = execute_query(
             &parse("SELECT * from test_table", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_intersect1() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "select * from personal_info where age > 27 intersect select * from personal_info where age <= 28;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("select * from personal_info where age = 28;",
+            false)
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_nested0() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "select * from personal_info where age > 27 union select * from personal_info where age <= 28 intersect select * from personal_info where age > 25;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("select * from personal_info where age > 25;",
+            false)
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        assert!(results == results2);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_operations_nested1() {
+        let mut user = create_demo_db("set_op_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_query(
+            &parse(
+                "select * from personal_info where age > 28
+                    union select * from personal_info where age > 20 and age <= 34
+                    intersect select * from personal_info where age > 30 ORDER BY id desc;",
+                false,
+            )
+            .unwrap(),
+            &mut user,
+            &"".to_string(),
+        )
+        .unwrap();
+
+        let results2 = execute_query(
+            &parse("select * from personal_info where age > 28 ORDER BY id desc;",
+            false)
+            .unwrap(),
             &mut user,
             &"".to_string(),
         )
