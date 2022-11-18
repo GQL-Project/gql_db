@@ -74,6 +74,7 @@ fn parse_query(
             }
             Ok((left_cols, row))
         }
+        SetExpr::Query(q) => parse_query(&q.body, user, &q),
         _ => Err("Not a select\n".to_string()),
     }
 }

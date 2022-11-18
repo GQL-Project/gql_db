@@ -102,7 +102,11 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!("{}{}", error, result.unwrap_err().message());
             }
-        } else if command.to_lowercase().starts_with("select ") {
+        } else if command
+            .to_lowercase()
+            .replace("(", "") // Ignore parenthesis while checking for keywords
+            .starts_with("select ")
+        {
             let result = client.run_query(Request::new(request)).await;
             if result.is_ok() {
                 // parses through the result and prints the table
