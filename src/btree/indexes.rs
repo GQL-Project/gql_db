@@ -103,18 +103,27 @@ pub fn get_index_id_from_expr(
     expr: &Expr,
     column_aliases: &ColumnAliases,
     index_refs: &IndexRefs,
-) -> Result<IndexID, String> {
+    table_name: &String,
+) -> Result<Option<IndexID>, String> {
     match expr {
         Expr::Identifier(x) => {
             let x: String = resolve_reference(x.value.to_string(), column_aliases)?;
             let index: usize = *index_refs
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
-            Ok(vec![index as u8])
+
+            // Check if the identifier is a column from a different table
+            let split: Vec<String> = x.split(".").map(|s| s.to_string()).collect::<Vec<String>>();
+            if split.len() > 1 && split[0] != *table_name {
+                // The identifier is a column from a different table
+                return Ok(None);
+            }
+
+            Ok(Some(vec![index as u8]))
         }
         Expr::CompoundIdentifier(list) => {
             // Join all the identifiers in the list with a dot, perform the same step as above
-            let x = resolve_reference(
+            let x: String = resolve_reference(
                 list.iter()
                     .map(|x| x.value.to_string())
                     .collect::<Vec<String>>()
@@ -124,41 +133,55 @@ pub fn get_index_id_from_expr(
             let index = *index_refs
                 .get(&x)
                 .ok_or(format!("Column {} does not exist in the table", x))?;
-            Ok(vec![index as u8])
+
+            // Check if the identifier is a column from a different table
+            let split: Vec<String> = x.split(".").map(|s| s.to_string()).collect::<Vec<String>>();
+            if split.len() > 1 && split[0] != *table_name {
+                // The identifier is a column from a different table
+                return Ok(None);
+            }
+
+            Ok(Some(vec![index as u8]))
         }
         Expr::Value(_) => {
             // Discard values
-            Ok(Vec::new())
+            Ok(Some(Vec::new()))
         }
         Expr::IsFalse(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         Expr::IsNotFalse(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         Expr::IsTrue(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         Expr::IsNotTrue(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         Expr::IsNull(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         Expr::IsNotNull(pred) => Ok(get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         Expr::BinaryOp { left, op, right } => match op {
             // Resolve values from the two sides of the expression, and then perform
@@ -169,17 +192,23 @@ pub fn get_index_id_from_expr(
             | BinaryOperator::LtEq
             | BinaryOperator::Eq
             | BinaryOperator::NotEq
-            | BinaryOperator::And
-            | BinaryOperator::Or
             | BinaryOperator::Plus
             | BinaryOperator::Minus
             | BinaryOperator::Divide
             | BinaryOperator::Multiply
             | BinaryOperator::Modulo => {
-                let left_index_id: IndexID =
-                    get_index_id_from_expr(left.as_ref(), column_aliases, index_refs)?;
-                let right_index_id: IndexID =
-                    get_index_id_from_expr(right.as_ref(), column_aliases, index_refs)?;
+                let left_index_id: Option<IndexID> =
+                    get_index_id_from_expr(left.as_ref(), column_aliases, index_refs, table_name)?;
+                let right_index_id: Option<IndexID> =
+                    get_index_id_from_expr(right.as_ref(), column_aliases, index_refs, table_name)?;
+
+                if left_index_id.is_none() || right_index_id.is_none() {
+                    // One of the sides of the expression is not a column from the same table
+                    return Ok(None);
+                }
+
+                let left_index_id: IndexID = left_index_id.unwrap();
+                let right_index_id: IndexID = right_index_id.unwrap();
 
                 let mut combined_index_id: IndexID = left_index_id;
                 for right_id in right_index_id {
@@ -188,13 +217,44 @@ pub fn get_index_id_from_expr(
                     }
                 }
 
-                Ok(combined_index_id)
+                Ok(Some(combined_index_id))
+            }
+            BinaryOperator::And | BinaryOperator::Or => {
+                let left_index_id: Option<IndexID> =
+                    get_index_id_from_expr(left.as_ref(), column_aliases, index_refs, table_name)?;
+                let right_index_id: Option<IndexID> =
+                    get_index_id_from_expr(right.as_ref(), column_aliases, index_refs, table_name)?;
+
+                if left_index_id.is_none() && right_index_id.is_none() {
+                    // Both of the sides of the expression are not columns from ths table
+                    return Ok(None);
+                }
+
+                let mut combined_index_id: IndexID = Vec::new();
+
+                if left_index_id.is_some() && right_index_id.is_some() {
+                    let left_index_id: IndexID = left_index_id.unwrap();
+                    let right_index_id: IndexID = right_index_id.unwrap();
+
+                    combined_index_id = left_index_id;
+                    for right_id in right_index_id {
+                        if !combined_index_id.contains(&right_id) {
+                            combined_index_id.push(right_id);
+                        }
+                    }
+                } else if left_index_id.is_some() {
+                    combined_index_id = left_index_id.unwrap();
+                } else if right_index_id.is_some() {
+                    combined_index_id = right_index_id.unwrap();
+                }
+
+                Ok(Some(combined_index_id))
             }
             _ => Err(format!("Unsupported binary operator for Predicate: {}", op)),
         },
         Expr::UnaryOp { op, expr } => match op {
             UnaryOperator::Not | UnaryOperator::Plus | UnaryOperator::Minus => Ok(
-                get_index_id_from_expr(expr.as_ref(), column_aliases, index_refs)?,
+                get_index_id_from_expr(expr.as_ref(), column_aliases, index_refs, table_name)?,
             ),
             _ => Err(format!("Unsupported unary operator for Predicate: {}", op)),
         },
@@ -202,6 +262,7 @@ pub fn get_index_id_from_expr(
             pred.as_ref(),
             column_aliases,
             index_refs,
+            table_name,
         )?),
         _ => Err(format!("Invalid Predicate Clause: {}", expr)),
     }
@@ -783,7 +844,7 @@ mod tests {
             (String::from("name"), Column::String(20)),
         ];
         let column_aliases: ColumnAliases =
-            gen_column_aliases_from_schema(&vec![(schema, table_name)]);
+            gen_column_aliases_from_schema(&vec![(schema, table_name.clone())]);
         let index_refs: IndexRefs = get_index_refs(&column_aliases);
 
         let index_id: IndexID = get_index_id_from_expr(
@@ -814,7 +875,9 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
+            &table_name,
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![0, 1]);
 
@@ -832,8 +895,168 @@ mod tests {
             },
             &column_aliases,
             &index_refs,
+            &table_name,
         )
+        .unwrap()
         .unwrap();
         assert_eq!(index_id, vec![1]);
+
+        let index_id: IndexID = get_index_id_from_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "test_table.name".to_string(),
+                    quote_style: None,
+                })),
+                op: BinaryOperator::Lt,
+                right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                    "d".to_string(),
+                    true,
+                ))),
+            },
+            &column_aliases,
+            &index_refs,
+            &table_name,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(index_id, vec![1]);
+
+        assert_eq!(
+            get_index_id_from_expr(
+                &Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "table2.name".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Lt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "d".to_string(),
+                        true,
+                    ))),
+                },
+                &column_aliases,
+                &index_refs,
+                &table_name
+            )
+            .is_err(),
+            true
+        );
+    }
+
+    #[test]
+    fn test_get_index_id_from_expr_two_tables() {
+        let table1_name: String = "test_table1".to_string();
+        let table2_name: String = "test_table2".to_string();
+        let schema: Schema = vec![
+            (String::from("id"), Column::I32),
+            (String::from("name"), Column::String(20)),
+        ];
+        let column_aliases: ColumnAliases = gen_column_aliases_from_schema(&vec![
+            (schema.clone(), table1_name.clone()),
+            (schema.clone(), table2_name.clone()),
+        ]);
+        let index_refs: IndexRefs = get_index_refs(&column_aliases);
+
+        let index_id: IndexID = get_index_id_from_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "test_table1.id".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "1".to_string(),
+                        true,
+                    ))),
+                }),
+                op: BinaryOperator::And,
+                right: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "test_table2.name".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Lt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "d".to_string(),
+                        true,
+                    ))),
+                }),
+            },
+            &column_aliases,
+            &index_refs,
+            &table1_name,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(index_id, vec![0]);
+
+        let index_id: IndexID = get_index_id_from_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "test_table1.id".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "1".to_string(),
+                        true,
+                    ))),
+                }),
+                op: BinaryOperator::And,
+                right: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "test_table2.name".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Lt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "d".to_string(),
+                        true,
+                    ))),
+                }),
+            },
+            &column_aliases,
+            &index_refs,
+            &table2_name,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(index_id, vec![3]);
+
+        let index_id: IndexID = get_index_id_from_expr(
+            &Expr::BinaryOp {
+                left: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "test_table2.id".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "1".to_string(),
+                        true,
+                    ))),
+                }),
+                op: BinaryOperator::And,
+                right: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "test_table2.name".to_string(),
+                        quote_style: None,
+                    })),
+                    op: BinaryOperator::Lt,
+                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number(
+                        "d".to_string(),
+                        true,
+                    ))),
+                }),
+            },
+            &column_aliases,
+            &index_refs,
+            &table2_name,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(index_id, vec![2, 3]);
     }
 }

@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use super::aggregate::resolve_aggregates;
 use super::predicate::{
     resolve_comparison, resolve_predicate, resolve_pure_value, resolve_reference, resolve_value,
-    solve_comparison, solve_predicate, solve_value, ComparisonSolver, PredicateSolver, ValueSolver,
+    solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
+use super::table_iterator::{RowIterator, TableIterator};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -20,13 +21,14 @@ use crate::{
 };
 
 use crate::util::dbtype::Value;
-use itertools::Itertools;
+use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
     Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement,
 };
 
 pub type Tables = Vec<(Table, String)>;
-pub type ColumnAliases = Vec<(String, Column, String)>;
+pub type ColumnAliases = Vec<ColumnAlias>;
+pub type ColumnAlias = (String, Column, String); // Format (<table_alias>.<column_name>, <column_type>, <output_column_name>)
 pub type IndexRefs = HashMap<String, usize>;
 
 /// A parse function, that starts with a string and returns either a table for query commands
@@ -95,73 +97,17 @@ fn parse_select(
             table_names.push((table_name[0].to_string(), "".to_string()));
         }
     }
-    let mut index_id: Option<IndexID> = None;
-    let mut expr: Option<Expr> = None;
-    let pred: Option<PredicateSolver> = match &s.selection {
-        Some(pred) => {
-            let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
-            let column_aliases: ColumnAliases = gen_column_aliases(&tables);
-            let index_refs: IndexRefs = get_index_refs(&column_aliases);
-            index_id = Some(get_index_id_from_expr(pred, &column_aliases, &index_refs)?);
-            expr = Some(pred.clone());
-            Some(where_clause(pred, &table_names, get_db_instance()?, user)?)
-        }
-        None => None,
-    };
 
-    // Results
-    let mut res_columns: Vec<String> = Vec::new();
-    let mut res_rows: Vec<Row> = Vec::new();
-
-    // Check if we are using an index
-    let mut using_index: bool = false;
-    if index_id.is_some() && expr.is_some() {
-        let index_id: IndexID = index_id.unwrap();
-        let tables: Tables = load_aliased_tables(get_db_instance()?, user, &table_names)?;
-        // For now, lets only support using indexing on a single table.
-        if tables.len() == 1 {
-            if let Some(idx_val) = tables[0].0.indexes.get(&index_id) {
-                let btree_pagenum: u32 = idx_val.0;
-                let index_name: String = idx_val.1.clone();
-                let table: Table = tables[0].0.clone();
-                let index_key_type: IndexKeyType = index_id
-                    .iter()
-                    .map(|x| table.schema[*x as usize].1.clone())
-                    .collect();
-
-                let btree: BTree = BTree::load_btree_from_root_page(
-                    &tables[0].0,
-                    btree_pagenum,
-                    index_id,
-                    index_key_type,
-                    index_name,
-                )?;
-
-                res_rows = btree
-                    .get_rows_matching_expr(&expr.unwrap())?
-                    .iter()
-                    .map(|x| x.row.clone())
-                    .collect();
-
-                // Get the column names
-                let table_aliases = gen_column_aliases(&tables);
-                resolve_columns(columns.clone(), &mut res_columns, &tables, &table_aliases)?;
-                using_index = true;
-            }
-        }
-    }
-
-    if !using_index {
-        (res_columns, res_rows) = select(
-            columns.clone(),
-            pred,
-            s.group_by.clone(),
-            query.map_or(vec![], |q| q.order_by.clone()),
-            &table_names,
-            get_db_instance()?,
-            user,
-        )?;
-    }
+    // Execute the select statement
+    let (res_columns, mut res_rows) = select(
+        columns.clone(),
+        s.selection.clone(),
+        s.group_by.clone(),
+        query.map_or(vec![], |q| q.order_by.clone()),
+        &table_names,
+        get_db_instance()?,
+        user,
+    )?;
 
     // Limit and Offset
     if let Some(query) = query {
@@ -215,11 +161,6 @@ pub fn execute_update(
                 let index_name: String = name.0[0].value.clone();
 
                 let column_names: Vec<String> = columns.iter().map(|c| c.to_string()).collect();
-
-                println!(
-                    "Creating index {} on table {} with columns {:?}",
-                    index_name, table_name, column_names
-                );
 
                 let (_, idx_new_diff): (_, IndexCreateDiff) = BTree::create_btree_index(
                     &table_dir,
@@ -473,7 +414,7 @@ pub fn drop_table(
 /// It returns a tuple containing the schema and the rows of the resulting table.
 pub fn select(
     columns: Vec<SelectItem>,
-    where_pred: Option<PredicateSolver>,
+    where_expr: Option<Expr>,
     group_by: Vec<Expr>,        // Empty if no group by
     order_by: Vec<OrderByExpr>, // Empty if no order by
     table_names: &Vec<(String, String)>,
@@ -490,26 +431,84 @@ pub fn select(
     let tables: Tables = load_aliased_tables(database, user, &table_names)?;
 
     // This is where the fun begins... ;)
-    let table_aliases = gen_column_aliases(&tables);
-
-    // Create an iterator of table iterators using the cartesion product of the tables :)
-    let table_iterator = tables
-        .iter()
-        .map(|(table, _)| table)
-        .cloned()
-        .multi_cartesian_product();
-
+    let table_aliases: ColumnAliases = gen_column_aliases(&tables);
     let index_refs = get_index_refs(&table_aliases);
 
     // Pass through columns with no aliases used to provide an alias if unambiguous
-    let column_exprs = resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
+    let mut column_exprs: Vec<Expr> =
+        resolve_columns(columns, &mut column_names, &tables, &table_aliases)?;
+
+    // Convert the where expression into a predicate solver
+    let where_pred: Option<PredicateSolver> = match &where_expr {
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
+        None => None,
+    };
+
+    // Construct the iterators for each table
+    let mut table_iters: Vec<TableIterator> = Vec::new();
+    for (table, alias) in tables {
+        // If we are using a where predicate, check if we can use an index
+        let mut used_index: bool = false;
+        if where_pred.is_some() {
+            let expr: Expr = where_expr.clone().unwrap();
+
+            // Get the index id for this specific table for this specific query
+            let index_id: Option<IndexID> =
+                get_index_id_from_expr(&expr, &table_aliases, &index_refs, &alias)?;
+
+            // If we can use an index (i.e. the where clause references only one table)
+            if let Some(index_id) = index_id {
+                // Check if this table has this index
+                if let Some(idx_val) = table.indexes.get(&index_id) {
+                    // We can use the index, so we can use the index to get the rows
+                    let btree_pagenum: u32 = idx_val.0;
+                    let index_name: String = idx_val.1.clone();
+                    let index_key_type: IndexKeyType = index_id
+                        .iter()
+                        .map(|x| table.schema[*x as usize].1.clone())
+                        .collect();
+
+                    let btree: BTree = BTree::load_btree_from_root_page(
+                        &table,
+                        btree_pagenum,
+                        index_id,
+                        index_key_type,
+                        index_name,
+                    )?;
+
+                    let res_rows: Vec<RowInfo> = btree.get_rows_matching_expr(&expr)?;
+
+                    // Load the result rows into a row iterator
+                    table_iters.push(TableIterator::RowIter(RowIterator::new(res_rows)));
+                    used_index = true;
+                }
+            }
+        }
+
+        if !used_index {
+            table_iters.push(TableIterator::TableIter(table));
+        }
+    }
+
+    // Create an iterator of table iterators using the cartesion product of the tables
+    let table_iterator: MultiProduct<TableIterator> =
+        table_iters.into_iter().multi_cartesian_product();
+
+    // Add order by cases to the column expressions (and track when to discard them later)
+    let order_start: usize = column_exprs.len();
+    column_exprs.append(
+        &mut order_by
+            .iter()
+            .map(|order_exp| order_exp.expr.clone())
+            .collect(),
+    );
 
     // Instead of directly adding rows to a Vector, we add them to a HashMap from the group_by columns to the rows in that group
     let mut grouped_rows: HashMap<Row, Vec<(Row, Row)>> = HashMap::new();
 
-    let column_solver = solve_row(&column_exprs, &table_aliases, &index_refs)?;
-    let group_solver = solve_row(&group_by, &table_aliases, &index_refs)?;
-    let order_solver: ComparisonSolver = solve_comparison(&order_by, &table_aliases, &index_refs)?;
+    let column_solver: Vec<ValueSolver> = solve_row(&column_exprs, &table_aliases, &index_refs)?;
+    let group_solver: Vec<ValueSolver> = solve_row(&group_by, &table_aliases, &index_refs)?;
+    // let order_solver: ComparisonSolver = solve_comparison(&order_by, &table_aliases, &index_refs)?;
 
     // The table_iterator returns a vector of rows where each row is a vector of cells on each iteration
     for table_rows in table_iterator {
@@ -520,8 +519,8 @@ pub fn select(
         }
         if resolve_predicate(&where_pred, &output_row)? {
             // Iterate through the output row and apply the column functions to each row
-            let selected_cells = resolve_row(&column_solver, &output_row)?;
-            let group_row = resolve_row(&group_solver, &output_row)?;
+            let selected_cells: Row = resolve_row(&column_solver, &output_row)?;
+            let group_row: Row = resolve_row(&group_solver, &output_row)?;
             // Append the selected_cells row to our result
             grouped_rows
                 .entry(group_row)
@@ -530,18 +529,22 @@ pub fn select(
         }
     }
 
-    // Also, individually sort the rows in each group by the order_by columns
     // Solve aggregate functions and create the selected rows that are now ready to be returned
-    let selected_rows: Vec<Row> = grouped_rows
+    let mut resolved_groups: Vec<Row> = grouped_rows
         .into_values()
-        .map(|mut rows| {
-            rows.sort_unstable_by(|(_, row1), (_, row2)| {
-                resolve_comparison(&order_solver, row1, row2)
-            });
-            resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs)
-        })
+        .map(|rows| resolve_aggregates(rows, &column_exprs, &table_aliases, &index_refs))
         .flatten_ok()
         .collect::<Result<Vec<Row>, String>>()?;
+
+    // Sort the remaining rows using the order by clause
+    resolved_groups
+        .sort_unstable_by(|row1, row2| resolve_comparison(row1, row2, order_start, &order_by));
+
+    // Drop the order by columns now
+    let selected_rows: Vec<Row> = resolved_groups
+        .into_iter()
+        .map(|row| row[0..order_start].to_vec())
+        .collect();
 
     Ok((column_names, selected_rows))
 }
