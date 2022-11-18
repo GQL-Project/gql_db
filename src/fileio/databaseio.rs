@@ -177,13 +177,13 @@ impl Database {
 
     /// Opens an existing database at the given path.
     /// It will return an error if the database doesn't exist.
-    pub fn load_db(database_name: String) -> Result<Database, String> {
+    pub fn load_db(db_name: String) -> Result<Database, String> {
         let db_base_path = Database::get_database_base_path()?;
 
         // Create the database directory if needed './databases/<database_name>'
         let mut db_path = db_base_path.clone();
         db_path.push(std::path::MAIN_SEPARATOR);
-        db_path.push_str(database_name.as_str());
+        db_path.push_str(db_name.as_str());
         // If the database doesn't already exist, return an error
         if !Path::new(&db_path.clone()).exists() {
             return Err("Database::load_db() Error: Database does not exist".to_owned());
@@ -202,12 +202,12 @@ impl Database {
         let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), false)?;
 
         Ok(Database {
-            db_path: db_path,
-            db_name: database_name,
-            branch_heads: branch_heads,
-            branches: branches,
-            commit_file: commit_file,
-            user_creds: user_creds,
+            db_path,
+            db_name,
+            branch_heads,
+            branches,
+            commit_file,
+            user_creds,
             mutex: ReentrantMutex::new(()),
         })
     }
@@ -264,9 +264,11 @@ impl Database {
         }
         // There is a previous branch node to create a new branch node off of
         else {
+            // TODO: If we make this an argument, we can create a branch node off of any node passed in.
+            // This is what's required for the branch from commit case.
             let prev_node = self
                 .branch_heads
-                .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;
+                .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?; 
             node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 Some(&prev_node),
@@ -570,6 +572,8 @@ impl Database {
         user.set_diffs(&Vec::new());
 
         // Create a commit for the new branch
+        // TODO: The new node created is currently on the head of the branch
+        // for the commit case this actually needs to be after the specified commit
         self.create_commit_and_node(
             &format!("Created Branch {}", branch_name),
             &format!("GQL branch {}", branch_name),
