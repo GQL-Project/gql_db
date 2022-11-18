@@ -224,6 +224,14 @@ impl Database {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
+        let (_, is_behind) = user.get_status();
+        if is_behind {
+            return Err(format!(
+                "You are currently behind {}.\n\nRun `gql pull` to bring the latest changes to your instance.",
+                user.get_current_branch_name()
+            ));
+        }
+
         let commit: Commit = self.commit_file.create_commit(
             commit_msg.to_string(),
             command.to_string(),

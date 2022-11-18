@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::util::dbtype::Value;
+use crate::util::dbtype::{Column, Value};
 use crate::util::row::Row;
 use prost_types::Timestamp;
 use sqlparser::ast::{BinaryOperator, Expr, UnaryOperator};
@@ -21,11 +21,6 @@ pub type PredicateSolver = Box<dyn Fn(&Row) -> Result<bool, String>>;
 /// Think of both of these functions as a 'solver' given a row, it will reduce the row to a value,
 /// as defined by the expression in the query.
 pub type ValueSolver = Box<dyn Fn(&Row) -> Result<JointValues, String>>;
-
-/// A comparator between two Rows, used to sort rows in a ORDER BY clause
-/// The comparator is a function that takes two rows and returns an Ordering
-/// Ordering is an enum that can be Less, Equal, or Greater
-pub type ComparisonSolver = Box<dyn Fn(&Row, &Row) -> Result<Ordering, String>>;
 
 // We could encounter cases with two different types of values, so we need to be able to handle both
 #[derive(Debug)]
@@ -48,11 +43,30 @@ pub fn resolve_value(solver: &ValueSolver, row: &Row) -> Result<Value, String> {
 }
 
 /// Given a ComparisonSolver and two rows, return an Ordering or an error
-pub fn resolve_comparison(comp: &ComparisonSolver, row1: &Row, row2: &Row) -> Ordering {
-    match comp(row1, row2) {
-        Ok(o) => o,
-        Err(_) => Ordering::Less, // If there's an error, then we can't compare, so we just say they're less
+pub fn resolve_comparison(
+    row1: &Row,
+    row2: &Row,
+    index: usize,
+    order_bys: &Vec<OrderByExpr>,
+) -> Ordering {
+    // Compare the two rows, from values at the given index onwards
+    let mut i = index;
+    while i < row1.len() {
+        let val1 = &row1[i];
+        let val2 = &row2[i];
+        match val1.cmp(val2) {
+            Ordering::Equal => i += 1,
+            other => {
+                let j = i - index;
+                return match order_bys[j].asc {
+                    Some(true) => other,
+                    None => other,
+                    Some(false) => other.reverse(),
+                };
+            }
+        }
     }
+    Ordering::Equal
 }
 
 // Resolve a pure value without a row, such as in `select 5 + 5`
@@ -99,7 +113,7 @@ pub fn solve_predicate(
         Expr::IsNull(pred) => {
             let pred = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| match pred(row)? {
-                JointValues::DBValue(Value::Null) => Ok(true),
+                JointValues::DBValue(Value::Null(_)) => Ok(true),
                 JointValues::SQLValue(SqlValue::Null) => Ok(true),
                 _ => Ok(false),
             }))
@@ -107,7 +121,7 @@ pub fn solve_predicate(
         Expr::IsNotNull(pred) => {
             let pred = solve_value(pred, column_aliases, index_refs)?;
             Ok(Box::new(move |row| match pred(row)? {
-                JointValues::DBValue(Value::Null) => Ok(false),
+                JointValues::DBValue(Value::Null(_)) => Ok(false),
                 JointValues::SQLValue(SqlValue::Null) => Ok(false),
                 _ => Ok(true),
             }))
@@ -209,7 +223,9 @@ pub fn solve_value(
     if contains_aggregate(expr)? {
         // In this case, we need to just let it pass through, as we only want to evaluate the function when we need to
         // (i.e. when we're evaluating the groups)
-        return Ok(Box::new(move |_| Ok(JointValues::DBValue(Value::Null))));
+        return Ok(Box::new(move |_| {
+            Ok(JointValues::DBValue(Value::Null(Column::I32)))
+        }));
     }
     match expr {
         // This would mean that we're referencing a column name, so we just need to figure out the
@@ -338,49 +354,6 @@ pub fn solve_value(
     }
 }
 
-/// Creates a comparator between two rows, given a series of Expr's to use as the comparison
-/// between the two rows.
-pub fn solve_comparison(
-    order_bys: &Vec<OrderByExpr>,
-    column_aliases: &ColumnAliases,
-    index_refs: &IndexRefs,
-) -> Result<ComparisonSolver, String> {
-    let comparators = order_bys
-        .iter()
-        .map(|order_by| {
-            let asc = match order_by.asc {
-                Some(asc) => asc,
-                None => true, // Default to ascending
-            };
-            let expr = &order_by.expr;
-            let solver = solve_value(expr, column_aliases, index_refs)?;
-            let result: ComparisonSolver = Box::new(move |a: &Row, b: &Row| {
-                let a = solver(a)?;
-                let b = solver(b)?;
-                let ordering = a
-                    .partial_cmp(&b)
-                    .ok_or(format!("Cannot compare {:?} and {:?}", a, b))?;
-                if asc {
-                    Ok(ordering)
-                } else {
-                    Ok(ordering.reverse())
-                }
-            });
-            Ok(result)
-        })
-        .collect::<Result<Vec<ComparisonSolver>, String>>()?;
-
-    Ok(Box::new(move |a: &Row, b: &Row| {
-        for comparator in &comparators {
-            let order = comparator(a, b)?;
-            if order != Ordering::Equal {
-                return Ok(order);
-            }
-        }
-        Ok(Ordering::Equal)
-    }))
-}
-
 // Given a column name, it figures out which table it belongs to and returns the
 // unambiguous column name. For example, if we have a table called "users" with
 // a column called "id", this would return "users.id". If "users" has an alias
@@ -424,6 +397,13 @@ impl JointValues {
         match self {
             JointValues::DBValue(v) => Ok(v.clone()),
             JointValues::SQLValue(v) => Value::from_sql_value(&v),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            JointValues::DBValue(v) => v.is_null(),
+            JointValues::SQLValue(v) => v == &SqlValue::Null,
         }
     }
 
@@ -501,6 +481,7 @@ impl JointValues {
                 (Value::I64(l), Value::I64(r)) => Value::I64(int_func(*l, *r)?),
                 (Value::Double(l), Value::Double(r)) => Value::Double(float_func(*l, *r)?),
 
+                /* Type Coercions */
                 (Value::I32(l), Value::Float(r)) => {
                     Value::Float(float_func(*l as f64, *r as f64)? as f32)
                 }
@@ -541,6 +522,14 @@ impl JointValues {
                     seconds: int_func(l.seconds, *r)?,
                     nanos: l.nanos,
                 }),
+                (Value::I32(l), Value::Timestamp(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(*l as i64, r.seconds)?,
+                    nanos: r.nanos,
+                }),
+                (Value::I64(l), Value::Timestamp(r)) => Value::Timestamp(Timestamp {
+                    seconds: int_func(*l, r.seconds)?,
+                    nanos: r.nanos,
+                }),
 
                 (Value::String(l), Value::String(r)) => Value::String(string_func(l, r)?),
                 (Value::String(l), Value::I32(r)) => Value::String(string_func(l, &r.to_string())?),
@@ -551,19 +540,26 @@ impl JointValues {
                 (Value::String(l), Value::Double(r)) => {
                     Value::String(string_func(l, &r.to_string())?)
                 }
+                (Value::I32(l), Value::String(r)) => Value::String(string_func(&l.to_string(), r)?),
+                (Value::I64(l), Value::String(r)) => Value::String(string_func(&l.to_string(), r)?),
+                (Value::Float(l), Value::String(r)) => {
+                    Value::String(string_func(&l.to_string(), r)?)
+                }
+                (Value::Double(l), Value::String(r)) => {
+                    Value::String(string_func(&l.to_string(), r)?)
+                }
+
                 _ => Err(format!("Cannot apply {:?} and {:?} together", l0, r0))?,
             }),
             // Convert these into DBValues and then apply the function
-            (Self::DBValue(x), Self::SQLValue(y)) => self.apply(
-                &Self::DBValue(x.get_coltype().from_sql_value(y)?),
+            (Self::DBValue(_), Self::SQLValue(y)) => self.apply(
+                &Self::DBValue(Value::from_sql_value(y)?),
                 int_func,
                 float_func,
                 string_func,
             )?,
-            (Self::SQLValue(x), Self::DBValue(y)) => Self::DBValue(
-                y.get_coltype().from_sql_value(x)?,
-            )
-            .apply(other, int_func, float_func, string_func)?,
+            (Self::SQLValue(x), Self::DBValue(_)) => Self::DBValue(Value::from_sql_value(x)?)
+                .apply(other, int_func, float_func, string_func)?,
             (Self::SQLValue(x), Self::SQLValue(y)) => {
                 let x = Value::from_sql_value(x)?;
                 let y = x.get_coltype().from_sql_value(y)?;
@@ -613,7 +609,10 @@ mod tests {
         executor::query::{execute_query, execute_update},
         fileio::databaseio::{delete_db_instance, get_db_instance},
         parser::parser::parse,
-        util::{bench::create_demo_db, dbtype::Value},
+        util::{
+            bench::create_demo_db,
+            dbtype::{Column, Value},
+        },
     };
 
     #[test]
@@ -687,7 +686,7 @@ mod tests {
         .unwrap();
 
         for row in results {
-            assert!(row[2] == Value::Null);
+            assert!(row[2] == Value::Null(Column::Float));
         }
 
         let (_, results) = execute_query(
@@ -704,7 +703,7 @@ mod tests {
         for row in results {
             if let Value::I64(x) = row[3] {
                 assert!(x == 32);
-                assert!(row[4] != Value::Null);
+                assert!(row[4] != Value::Null(Column::Float));
             } else {
                 panic!("Invalid value type");
             }
@@ -764,7 +763,9 @@ mod tests {
                     assert!(x < y);
                     if let Value::I64(z) = row[3] {
                         assert!(
-                            z > y.into() || (row[8] == Value::Bool(true) && row[4] == Value::Null)
+                            z > y.into()
+                                || (row[8] == Value::Bool(true)
+                                    && row[4] == Value::Null(Column::Float))
                         );
                         assert!(z < 32);
                     } else {

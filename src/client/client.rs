@@ -18,9 +18,25 @@ const DEFAULT_REGISTER: bool = false;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query for IP address and port of server
-    let (mut client, request) = query_for_ip_port().await?;
+    let mut connection = attempt_connection().await?;
+    let mut copy = connection.clone();
 
-    let response: ConnectResult = client.connect_db(request).await?.into_inner();
+    // Ctrl-C handler, using the copy of the connection
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        copy.0
+            .disconnect_db(Request::new(copy.1.clone()))
+            .await
+            .unwrap();
+        println!(
+            "{}",
+            format!("\nSuccessfully disconnected from database").green()
+        );
+        std::process::exit(0);
+    });
+
+    let client: &mut DatabaseConnectionClient<Channel> = &mut connection.0;
+    let response: &mut ConnectResult = &mut connection.1;
 
     loop {
         print!("{}", &GQL_PROMPT.to_string());
@@ -107,10 +123,13 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Wrapper, to automatically handle disconnecting from the server when the program exits
+#[derive(Clone)]
+struct Connection(DatabaseConnectionClient<Channel>, ConnectResult);
+
 // Indefinitely loops until a successful connection is made
-async fn query_for_ip_port(
-) -> Result<(DatabaseConnectionClient<Channel>, LoginRequest), Box<dyn std::error::Error>> {
-    let client: DatabaseConnectionClient<Channel>;
+async fn attempt_connection() -> Result<Connection, Box<dyn std::error::Error>> {
+    let mut client: DatabaseConnectionClient<Channel>;
     let mut request: LoginRequest;
 
     // Loop until we successfully connect
@@ -184,9 +203,9 @@ async fn query_for_ip_port(
         }
 
         request = LoginRequest {
-            username: username,
-            password: password,
-            create: create,
+            username,
+            password,
+            create,
         };
 
         // Attempt to connect to server
@@ -194,15 +213,28 @@ async fn query_for_ip_port(
         match DatabaseConnectionClient::connect(conn_str.clone()).await {
             Ok(db_client) => {
                 client = db_client;
-                // Print a success msg
-                print!(
-                    "{}",
-                    format!("Successfully Connected to Database at {}\n", conn_str)
-                        .green()
-                        .to_string()
-                );
-                io::stdout().flush()?;
-                break;
+                let response = client.connect_db(request).await;
+                if response.is_ok() {
+                    // Print a success msg
+                    print!(
+                        "{}",
+                        format!("Successfully Connected to Database at {}\n", conn_str)
+                            .green()
+                            .to_string()
+                    );
+                    io::stdout().flush()?;
+                    return Ok(Connection {
+                        0: client,
+                        1: response?.into_inner(),
+                    });
+                } else {
+                    println!(
+                        "{}",
+                        format!("Error logging in: {}", response.unwrap_err().message())
+                            .red()
+                            .to_string()
+                    );
+                }
             }
             Err(_) => {
                 // Start over if connection fails
@@ -219,5 +251,4 @@ async fn query_for_ip_port(
             }
         }
     }
-    Ok((client, request))
 }
