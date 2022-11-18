@@ -177,7 +177,7 @@ pub fn create_demo_db(name: &str) -> User {
     )
     .unwrap();
 
-    db.create_branch(&"test_branch1".to_string(), &None,&mut user)
+    db.create_branch(&"test_branch1".to_string(), &None, &mut user)
         .unwrap();
     db.switch_branch(&"test_branch1".to_string(), &mut user)
         .unwrap();
@@ -396,7 +396,7 @@ pub fn create_demo_db(name: &str) -> User {
     )
     .unwrap();
 
-    db.create_branch(&"test_branch2".to_string(), &None,&mut user)
+    db.create_branch(&"test_branch2".to_string(), &None, &mut user)
         .unwrap();
     db.switch_branch(&"test_branch2".to_string(), &mut user)
         .unwrap();

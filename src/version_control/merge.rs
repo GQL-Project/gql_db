@@ -2611,7 +2611,7 @@ mod tests {
         // Create a new branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &None,&mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Get the table on the new branch
@@ -2793,7 +2793,7 @@ mod tests {
         // Create a new branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &None,&mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Switch to back to main branch
@@ -3061,7 +3061,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &None,&mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Create a second table in the database
@@ -3232,7 +3232,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &None,&mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3373,7 +3373,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &None,&mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3413,7 +3413,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &None,&mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3560,7 +3560,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &None,&mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3600,7 +3600,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &None,&mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Update the 2nd row from the first table
@@ -3782,7 +3782,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &None,&mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3827,7 +3827,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &None,&mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -4424,7 +4424,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &None,&mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Get the two branch directories

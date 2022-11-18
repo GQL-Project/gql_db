@@ -56,7 +56,7 @@ pub enum VersionControlSubCommand {
     CreateBranch {
         /// The name of the new branch
         branch_name: String,
-        /// The commit to create the branch from 
+        /// The commit to create the branch from
         /// If the commit is not specified, the new branch will be created from the current branch HEAD
         /// If the commit is specified, the new branch will be created from the given commit, if the commit exists in the current branch
         #[arg(long, short)]
