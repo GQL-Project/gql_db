@@ -232,7 +232,7 @@ impl Database {
         command: &String,
         user: &mut User,
         new_branch_name: Option<String>, // If this is Some, then a new branch is created
-        prev_node: Option<BranchNode>, // If this is Some, then a new branch is created from this commit node, otherwise it is created from the HEAD
+        prev_node: Option<String>, // If this is Some, then a new branch is created from this commit hash, otherwise it is created from the HEAD
     ) -> Result<(BranchNode, Commit), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -277,11 +277,19 @@ impl Database {
         }
         // There is a previous branch node to create a new branch node off of
         else {
+            let branch_head = self
+                .branch_heads
+                .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;
             let prev_node: BranchNode = match prev_node {
-                Some(node) => node,
-                None => self
-                    .branch_heads
-                    .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?,
+                Some(hash) => self
+                    .branches
+                    .traverse_for_commit(&branch_head, &hash)?
+                    .ok_or(format!(
+                        "Could not find the commit hash {} in branch {}",
+                        hash,
+                        user.get_current_branch_name()
+                    ))?,
+                None => branch_head,
             };
             node = self.branches.create_branch_node(
                 &mut self.branch_heads,
@@ -588,22 +596,13 @@ impl Database {
         match branch_commit {
             Some(commit_hash) => {
                 // If we specified a branch commit, then we need to find the node for that commit instead of using the HEAD
-                let src_node = self
-                    .branches
-                    .traverse_for_commit(&self
-                        .branch_heads
-                        .get_branch_node_from_head(&branch_name, &self.branches)?, commit_hash)?
-                    .ok_or(format!(
-                        "Could not find commit hash {} in branch {}",
-                        commit_hash, branch_name
-                    ))?;
                 // Create a new node for the branch, from the specified commit
                 self.create_commit_node(
                     &format!("Branch {} created on commit {}", branch_name, commit_hash),
                     &format!("gql branch {} -c {}", branch_name, commit_hash),
                     user,
                     Some(branch_name.clone()),
-                    Some(src_node.clone()),
+                    Some(commit_hash.clone()),
                 )?;
             }
             None => {
@@ -650,7 +649,6 @@ impl Database {
         let node2: BranchNode = self
             .branch_heads
             .get_branch_node_from_head(&branch_name, &self.branches)?;
-
 
         // Get the node for the main branch's HEAD
         let node1: BranchNode = match self
