@@ -1,6 +1,7 @@
 use rand::distributions::Alphanumeric;
 use rand::thread_rng;
 use rand::Rng;
+use serde::Serialize;
 
 use super::commitfile::*;
 use super::diff;

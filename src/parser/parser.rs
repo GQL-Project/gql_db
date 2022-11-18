@@ -59,7 +59,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                 Ok(log_results.0)
             }
         }
-        VersionControlSubCommand::Info { commit: hash } => command::info(&hash),
+        VersionControlSubCommand::Info { commit: hash, json } => command::info(&hash, json),
         VersionControlSubCommand::Status => Ok(user.get_status().0),
         VersionControlSubCommand::CreateBranch { branch_name } => {
             get_db_instance()?

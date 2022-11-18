@@ -31,6 +31,9 @@ pub enum VersionControlSubCommand {
     Info {
         /// The commit hash
         commit: String,
+        /// Displays the log in json format (default is false)
+        #[arg(long, short, default_value = "false")]
+        json: bool,
     },
     /// Tells if there are any uncommitted changes
     Status,

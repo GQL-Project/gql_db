@@ -12,6 +12,7 @@ use crate::{
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use serde_json::json;
 use tabled::{builder::Builder, Style};
 
 use std::collections::HashMap;
@@ -354,23 +355,33 @@ pub fn discard(user: &mut User) -> Result<(), String> {
 }
 
 /// This function is used to get the commits from a specific hash
-pub fn info(hash: &String) -> Result<String, String> {
+pub fn info(hash: &String, json: bool) -> Result<String, String> {
     let commit_file = get_db_instance()?.get_commit_file_mut();
-    let commit = commit_file.fetch_commit(hash)?;
+    let commit: Commit = commit_file.fetch_commit(hash)?;
 
-    let mut log_string: String = String::new();
-
-    log_string = format!("{}\n-----------------------", log_string);
-    log_string = format!("{}\nCommit: {}", log_string, commit.hash);
-    log_string = format!("{}\nMessage: {}", log_string, commit.message);
-    log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
-    log_string = format!("{}\nChanges Made:", log_string);
-    for diffs in commit.diffs {
-        log_string = format!("{}\n{}", log_string, diffs.to_string());
+    if json {
+        let json = json!({
+            "hash": commit.hash,
+            "message": commit.message,
+            "command": commit.command,
+        });
+        return Ok(json.to_string());
     }
-    log_string = format!("{}\n-----------------------\n", log_string);
+    else {
+        let mut log_string: String = String::new();
 
-    return Ok(log_string.to_string());
+        log_string = format!("{}\n-----------------------", log_string);
+        log_string = format!("{}\nCommit: {}", log_string, commit.hash);
+        log_string = format!("{}\nMessage: {}", log_string, commit.message);
+        log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
+        log_string = format!("{}\nChanges Made:", log_string);
+        for diffs in commit.diffs {
+            log_string = format!("{}\n{}", log_string, diffs.to_string());
+        }
+        log_string = format!("{}\n-----------------------\n", log_string);
+
+        return Ok(log_string.to_string());
+    }
 }
 
 /// This function outputs all of the possible tables and Schemas in the current branch
@@ -451,21 +462,13 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
     Ok((log_string, json))
 }
 
-/*
-{
-    column: 0,
-    row: 0,
-    src_col: 1, // The column where this is branched from, or -1
-    commit_hash: "1234567890",
-}
-*/
-
 #[derive(Serialize)]
 pub struct CommitGraphNode {
     pub commit_hash: String,
     pub branch_name: String,
     pub column: u32,
     pub row: u32,
+    pub first_branch_commit: bool,
 }
 
 #[derive(Serialize)]
@@ -554,6 +557,7 @@ pub fn list_all_commits() -> Result<String, String> {
             let commit_hash: String = unique_node.commit_hash.clone();
 
             // If this is the first time we've seen this branch, add it to the used_cols map
+            let mut is_first_branch_commit: bool = false;
             if !used_cols.contains_key(&branch_name) {
                 let mut new_col: u32 = 0;
                 loop {
@@ -563,6 +567,7 @@ pub fn list_all_commits() -> Result<String, String> {
                     new_col += 1;
                 }
                 used_cols.insert(branch_name.clone(), new_col);
+                is_first_branch_commit = true;
             }
 
             // Add the node to the graph
@@ -572,6 +577,7 @@ pub fn list_all_commits() -> Result<String, String> {
                     column: used_cols[&branch_name],
                     branch_name,
                     row: i as u32,
+                    first_branch_commit: is_first_branch_commit,
                 }
             );
 

@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use rand::seq::index;
+use serde::Serialize;
 
 use crate::{
     btree::{btree::BTree, indexes::IndexID},
