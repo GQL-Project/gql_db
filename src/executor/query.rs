@@ -369,7 +369,12 @@ pub fn execute_update(
                 name,
                 operation
             } => {
+                let instance = get_db_instance()?;
                 let table_name = name.0[0].value.to_string();
+                let all_tables = instance.get_tables(user)?;
+                if !all_tables.clone().contains(&table_name) {
+                    return Err(format!("Table {} does not exist", table_name));
+                }
                 match operation {
                     AlterTableOperation::AddColumn { column_def } => {
                         let column_name = column_def.name.value.to_string();
