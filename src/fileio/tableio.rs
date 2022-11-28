@@ -336,7 +336,7 @@ impl Table {
                     || load_page(pagenum, &self.path, page.as_mut()).is_err()
                 {
                     // Allocate a new page
-                    page = Box::new([0; 4096]);
+                    page = Box::new([0; PAGE_SIZE]);
                     self.max_pages += 1;
 
                     // Update the header
@@ -387,14 +387,14 @@ impl Table {
         // To reduce page updates, we sort the rows by page number.
         rows.sort();
         let mut pagenum: u32 = 0;
-        let mut page: Box<Page> = Box::new([0; 4096]);
+        let mut page: Box<Page> = Box::new([0; PAGE_SIZE]);
         let mut page_type: PageType = PageType::Data;
         for rowinfo in rows {
             pagenum = rowinfo.pagenum;
 
             // Allocate new pages if needed
             while rowinfo.pagenum >= self.max_pages {
-                let new_page = Box::new([0; 4096]);
+                let new_page = Box::new([0; PAGE_SIZE]);
                 self.max_pages += 1;
                 write_page(
                     self.max_pages - 1,
