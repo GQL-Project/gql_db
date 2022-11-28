@@ -51,11 +51,11 @@ pub fn execute_query(
 }
 
 fn func(
-    setExpr: &SetExpr,
+    set_expr: &SetExpr,
     user: &mut User,
     query: &Query,
 ) -> Result<(Vec<String>, Vec<Row>), String> {
-    match &setExpr {
+    match &set_expr {
         SetExpr::Select(s) => parse_select(&s, user, Some(query)),
         SetExpr::SetOperation {
             op,

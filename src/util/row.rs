@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 use super::dbtype::Value;
 
 pub type Row = Vec<Value>;

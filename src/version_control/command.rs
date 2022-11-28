@@ -20,6 +20,7 @@ use std::fs;
 
 use super::branch_heads::BranchHEADs;
 use super::diff::{reverse_diffs, revert_tables_from_diffs};
+use super::merged_branches::MergedBranch;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
@@ -469,6 +470,7 @@ pub struct CommitGraphNode {
     pub column: u32,
     pub row: u32,
     pub first_branch_commit: bool,
+    pub is_merged_branch: bool,
 }
 
 #[derive(Serialize)]
@@ -521,6 +523,11 @@ pub fn list_all_commits() -> Result<String, String> {
         }
     }
 
+    // Get all the past merged branches
+    let past_merged_branches: Vec<MergedBranch> = get_db_instance()?
+        .get_merged_branches_file_mut()
+        .get_merged_branches()?;
+
     // Turn all branch nodes into a json table thingy
     let mut graph: CommitGraph = CommitGraph {
         nodes: Vec::new(),
@@ -570,6 +577,59 @@ pub fn list_all_commits() -> Result<String, String> {
                 is_first_branch_commit = true;
             }
 
+            // If one of the past merged_branches has its source branch as this branch and it has a different branch name,
+            // then we need to add a node and edges
+            // In this case, the branch was deleted after the merge
+            if let Some(merged_branch) = past_merged_branches
+                .iter()
+                .find(|x| x.source_commit == commit_hash && x.branch_name != branch_name) {
+                let merged_branch_name: String = merged_branch.branch_name.clone();
+                let dest_branch_col: u32 = match used_cols.get(&merged_branch_name) {
+                    Some(col) => *col,
+                    None => {
+                        let mut new_col: u32 = 0;
+                        loop {
+                            if !used_cols.values().contains(&new_col) {
+                                break
+                            }
+                            new_col += 1;
+                        }
+                        used_cols.insert(merged_branch_name.clone(), new_col);
+                        new_col
+                    }
+                };
+                let branch_node_hash: String = commit_hash.to_string() + "_";
+                let dest_branch_node: CommitGraphNode = CommitGraphNode {
+                    commit_hash: branch_node_hash.clone(),
+                    branch_name: merged_branch_name.clone(),
+                    column: dest_branch_col,
+                    row: i as u32,
+                    first_branch_commit: true,
+                    is_merged_branch: true,
+                };
+                graph.nodes.push(dest_branch_node);
+
+                let edge: CommitGraphEdge = CommitGraphEdge {
+                    src_commit_hash: commit_hash.clone(),
+                    dest_commit_hash: branch_node_hash.clone(),
+                };
+                graph.edges.push(edge);
+                let edge: CommitGraphEdge = CommitGraphEdge {
+                    src_commit_hash: branch_node_hash.clone(),
+                    dest_commit_hash: merged_branch.destination_commit.clone(),
+                };
+                graph.edges.push(edge);
+            }
+            else if let Some(merged_branch) = past_merged_branches
+                .iter()
+                .find(|x| x.source_commit == commit_hash && x.branch_name == branch_name) {
+                let edge: CommitGraphEdge = CommitGraphEdge {
+                    src_commit_hash: merged_branch.source_commit.clone(),
+                    dest_commit_hash: merged_branch.destination_commit.clone(),
+                };
+                graph.edges.push(edge);
+            }
+
             // Add the node to the graph
             graph.nodes.push(
                 CommitGraphNode {
@@ -578,6 +638,7 @@ pub fn list_all_commits() -> Result<String, String> {
                     branch_name,
                     row: i as u32,
                     first_branch_commit: is_first_branch_commit,
+                    is_merged_branch: false
                 }
             );
 
