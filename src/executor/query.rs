@@ -252,7 +252,16 @@ pub fn execute_update(
                     }
                 }
 
-                results.push(delete(final_table, final_alias, selection.clone(), get_db_instance()?, user)?.0);
+                results.push(
+                    delete(
+                        final_table,
+                        final_alias,
+                        selection.clone(),
+                        get_db_instance()?,
+                        user,
+                    )?
+                    .0,
+                );
             }
             Statement::Drop {
                 object_type,
@@ -568,7 +577,8 @@ pub fn update(
     database.get_table_path(&table_name, user)?;
     let table: Table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowInfo> = Vec::new();
-    let tables: Tables = load_aliased_tables(database, user, &vec![(table_name.clone(), alias.clone())])?;
+    let tables: Tables =
+        load_aliased_tables(database, user, &vec![(table_name.clone(), alias.clone())])?;
     let column_aliases: ColumnAliases = gen_column_aliases(&tables);
     let index_refs: IndexRefs = get_index_refs(&column_aliases);
 
@@ -580,14 +590,7 @@ pub fn update(
     // Convert the where expression into a predicate solver
     let table_names: Vec<(String, String)> = vec![(table_name.clone(), alias.clone())];
     let selection: Option<PredicateSolver> = match &where_expr {
-        Some(pred) => Some(
-            where_clause(
-                pred,
-                &table_names,
-                get_db_instance()?,
-                user
-            )?
-        ),
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
         None => None,
     };
 
@@ -600,12 +603,8 @@ pub fn update(
         let expr: Expr = where_expr.clone().unwrap();
 
         // Get the index id for this specific table for this specific query
-        let index_id: Option<IndexID> = get_index_id_from_expr(
-            &expr,
-            &column_aliases,
-            &index_refs,
-            &alias
-        )?;
+        let index_id: Option<IndexID> =
+            get_index_id_from_expr(&expr, &column_aliases, &index_refs, &alias)?;
 
         // If we can use an index (i.e. the where clause references only one table)
         if let Some(index_id) = index_id {
@@ -672,21 +671,15 @@ pub fn delete(
 ) -> Result<(String, RemoveDiff), String> {
     let table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowLocation> = Vec::new();
-    let tables: Tables = load_aliased_tables(database, user, &vec![(table_name.clone(), alias.clone())])?;
+    let tables: Tables =
+        load_aliased_tables(database, user, &vec![(table_name.clone(), alias.clone())])?;
     let column_aliases: ColumnAliases = gen_column_aliases(&tables);
     let index_refs: IndexRefs = get_index_refs(&column_aliases);
-    
+
     // Convert the where expression into a predicate solver
     let table_names: Vec<(String, String)> = vec![(table_name.clone(), alias.clone())];
     let selection: Option<PredicateSolver> = match &where_expr {
-        Some(pred) => Some(
-            where_clause(
-                pred,
-                &table_names,
-                get_db_instance()?,
-                user
-            )?
-        ),
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
         None => None,
     };
 
@@ -699,12 +692,8 @@ pub fn delete(
         let expr: Expr = where_expr.clone().unwrap();
 
         // Get the index id for this specific table for this specific query
-        let index_id: Option<IndexID> = get_index_id_from_expr(
-            &expr,
-            &column_aliases,
-            &index_refs,
-            &alias
-        )?;
+        let index_id: Option<IndexID> =
+            get_index_id_from_expr(&expr, &column_aliases, &index_refs, &alias)?;
 
         // If we can use an index (i.e. the where clause references only one table)
         if let Some(index_id) = index_id {
