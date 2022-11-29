@@ -396,6 +396,7 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
     let mut schema_objects: Vec<Schema> = Vec::new();
     for page_num in page_read.clone() {
         let schema_object = read_schema(&page_num)?;
+        println!("Schema: {:?}", schema_object);
         schemas.push(
             schema_object
                 .iter()
@@ -423,6 +424,7 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
         );
         let mut builder = Builder::default();
         builder.set_columns(schemas[i].clone());
+        println!("Schema[i]: {:?}", schemas[i]);
 
         let schemaz = schema_types[i]
             .clone()

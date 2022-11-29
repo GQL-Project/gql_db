@@ -6,6 +6,7 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
+use crate::fileio::pageio::{PageType, Page, read_page};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -371,21 +372,99 @@ pub fn execute_update(
             } => {
                 let instance = get_db_instance()?;
                 let table_name = name.0[0].value.to_string();
+
                 let all_tables = instance.get_tables(user)?;
                 if !all_tables.clone().contains(&table_name) {
                     return Err(format!("Table {} does not exist", table_name));
                 }
+                
+                let table = Table::from_user(user, &instance, &table_name, None)?;
+
+                let mut schemas = table.schema.clone();
+                let mut rows = table.into_iter().collect::<Vec<RowInfo>>();
+
                 match operation {
                     AlterTableOperation::AddColumn { column_def } => {
                         let column_name = column_def.name.value.to_string();
+                        if schemas.iter().any(|x| x.0 == column_name) {
+                            return Err(format!("Column name {} already exists", column_name));
+                        }
                         let column = Column::from_col_def(&column_def)?;
+                        let column_nullable = column.clone().as_nullable();
                         // let result = alter_table_add_column(&table_name, &column_name, &column, get_db_instance()?, user)?;
-                        results.push(format!("Column added {}({:?} to Table {}", column_name, column, table_name));
+                        let added_schema = (column_name.clone(), column_nullable.clone());
+                        schemas.push(added_schema);
+                        for r in rows.iter_mut() {
+                            r.row.push(Value::Null(column.clone()));
+                        }
+
+                        // drop the old table
+                        drop_table(&table_name, instance, user)?;
+
+                        // create the new table with the new schema and insert values
+                        create_table(&table_name, &schemas, instance, user)?;
+                        for r in rows.iter() {
+                            insert(vec![r.row.clone()], table_name.clone(), instance, user)?;
+                        }
+
+                        results.push(format!("Column added {}({:?}) to Table {}", column_name, column, table_name));
                     }
                     AlterTableOperation::DropColumn { column_name, if_exists, cascade } => {
                         let column_name = column_name.to_string();
-                        // let result = alter_table_drop_column(&table_name, &column_name, get_db_instance()?, user)?;
+
+                        if !schemas.iter().any(|x| x.0 == column_name) {
+                            return Err(format!("Column name {} does not exists", column_name));
+                        }
+
+                        // find the index of the column to drop
+                        let column_index = schemas.iter().position(|(name, _)| name == &column_name).unwrap();
+
+                        // drop the index in the vector
+                        schemas.remove(column_index);
+                        for r in rows.iter_mut() {
+                            r.row.remove(column_index);
+                        }
+
+                        // drop the old table
+                        drop_table(&table_name, instance, user)?;
+
+                        // create the new table with the new schema and insert values
+                        create_table(&table_name, &schemas, instance, user)?;
+                        for r in rows.iter() {
+                            insert(vec![r.row.clone()], table_name.clone(), instance, user)?;
+                        }
+
                         results.push(format!("Column {} dropped in Table {}", column_name, table_name));
+                    }
+                    AlterTableOperation::ChangeColumn { old_name, new_name, data_type, options } => {
+                        let old_name = old_name.to_string();
+                        let new_name = new_name.to_string();
+                        let column = Column::from_datatype_def(data_type)?;
+
+                        if !schemas.iter().any(|x| x.0 == old_name) {
+                            return Err(format!("Column name {} does not exists", old_name));
+                        }
+
+                        // find the index of the column to drop
+                        let column_index = schemas.iter().position(|(name, _)| name == &old_name).unwrap();
+                        
+                        // drop the replace in the vector
+                        schemas[column_index] = (new_name, column.clone());
+
+                        for r in rows.iter_mut() {
+                            r.row[column_index] = column.clone().coerce_type(r.row[column_index].clone())?;
+                        }
+
+                        // drop the old table
+                        drop_table(&table_name, instance, user)?;
+
+                        // create the new table with the new schema and insert values
+                        create_table(&table_name, &schemas, instance, user)?;
+                        for r in rows.iter() {
+                            insert(vec![r.row.clone()], table_name.clone(), instance, user)?;
+                        }
+
+                        results.push(format!("Column {} dropped in Table {}", old_name, table_name));
                     }
                     _ => {
                         return Err("Can only add or drop columns".to_string());

@@ -60,6 +60,24 @@ impl Column {
         }
     }
 
+    pub fn from_datatype_def(data_type: &DataType) -> Result<Column, String> {
+        // No Nullable
+        let data_col = match data_type {
+            DataType::SmallInt(_) => Column::I32,
+            DataType::Int(_) => Column::I64,
+            DataType::Float(_) => Column::Float,
+            DataType::Double => Column::Double,
+            DataType::Boolean => Column::Bool,
+            DataType::Timestamp => Column::Timestamp,
+            DataType::Char(Some(size)) => Column::String(*size as u16),
+            DataType::Varchar(Some(size)) => Column::String(*size as u16),
+            DataType::Char(None) => Column::String(1),
+            DataType::Varchar(None) => Column::String(1),
+            _ => Err(format!("Unsupported data type: {}", data_type))?,
+        };
+        Ok(data_col)
+    }
+
     pub fn decode_type(val: u16) -> Column {
         if val & (1 << 15) != 0 {
             // This is a nullable type, find it's base type.
