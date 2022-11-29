@@ -33,6 +33,28 @@ pub struct Log {
     message: String,
 }
 
+#[derive(Serialize)]
+pub struct CommitGraphNode {
+    pub commit_hash: String,
+    pub branch_name: String,
+    pub column: u32,
+    pub row: u32,
+    pub first_branch_commit: bool,
+    pub is_merged_branch: bool,
+}
+
+#[derive(Serialize)]
+pub struct CommitGraphEdge {
+    pub src_commit_hash: String,
+    pub dest_commit_hash: String,
+}
+
+#[derive(Serialize)]
+pub struct CommitGraph {
+    pub nodes: Vec<CommitGraphNode>,
+    pub edges: Vec<CommitGraphEdge>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Schema {
     table_name: String,
@@ -463,28 +485,6 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
     Ok((log_string, json))
 }
 
-#[derive(Serialize)]
-pub struct CommitGraphNode {
-    pub commit_hash: String,
-    pub branch_name: String,
-    pub column: u32,
-    pub row: u32,
-    pub first_branch_commit: bool,
-    pub is_merged_branch: bool,
-}
-
-#[derive(Serialize)]
-pub struct CommitGraphEdge {
-    pub src_commit_hash: String,
-    pub dest_commit_hash: String,
-}
-
-#[derive(Serialize)]
-pub struct CommitGraph {
-    pub nodes: Vec<CommitGraphNode>,
-    pub edges: Vec<CommitGraphEdge>,
-}
-
 /// Lists all the commits for all branches
 pub fn list_all_commits() -> Result<String, String> {
     let branch_heads_file: &mut BranchHEADs = get_db_instance()?.get_branch_heads_file_mut();
@@ -544,19 +544,6 @@ pub fn list_all_commits() -> Result<String, String> {
                 unique_branch_nodes.push(branch_nodes[i].clone());
             }
         }
-
-        // Remove any branches from the used_cols map that are no longer in the unique_branch_nodes
-        /*
-        let mut used_cols_to_remove: Vec<String> = Vec::new();
-        for (branch_name, _) in &used_cols {
-            if !unique_branch_nodes.iter().any(|x| x.branch_name == *branch_name) {
-                used_cols_to_remove.push(branch_name.clone());
-            }
-        }
-        for branch_name in used_cols_to_remove {
-            used_cols.remove(&branch_name);
-        }
-        */
 
         // Add the unique branch nodes to the graph
         for unique_node in unique_branch_nodes {
