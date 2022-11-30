@@ -205,8 +205,6 @@ pub fn execute_update(
                     }
                 }
 
-                let table_names = vec![(final_table.clone(), final_alias.clone())];
-
                 // Iterate through and build vector of assignments to pass to update
                 for assignment in assignments {
                     let column_name;
@@ -216,18 +214,12 @@ pub fn execute_update(
                     all_data.push((column_name, insert_value));
                 }
 
-                // Now we have the table name and the assignments
-                let pred: Option<PredicateSolver> = match selection {
-                    Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
-                    None => None,
-                };
-
                 results.push(
                     update(
                         all_data,
                         final_table,
                         final_alias,
-                        pred,
+                        selection.clone(),
                         get_db_instance()?,
                         user,
                     )?
@@ -261,13 +253,16 @@ pub fn execute_update(
                     }
                 }
 
-                let table_names = vec![(final_table.clone(), final_alias)];
-
-                let pred: Option<PredicateSolver> = match selection {
-                    Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
-                    None => None,
-                };
-                results.push(delete(final_table, pred, get_db_instance()?, user)?.0);
+                results.push(
+                    delete(
+                        final_table,
+                        final_alias,
+                        selection.clone(),
+                        get_db_instance()?,
+                        user,
+                    )?
+                    .0,
+                );
             }
             Statement::Drop {
                 object_type,
@@ -680,23 +675,76 @@ pub fn update(
     values: Vec<(String, Expr)>,
     table_name: String,
     alias: String,
-    selection: Option<PredicateSolver>,
+    where_expr: Option<Expr>,
     database: &Database,
     user: &mut User,
 ) -> Result<(String, UpdateDiff), String> {
     database.get_table_path(&table_name, user)?;
-    let table = Table::from_user(user, database, &table_name, None)?;
+    let table: Table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowInfo> = Vec::new();
-    let tables = load_aliased_tables(database, user, &vec![(table_name.clone(), alias)])?;
-    let column_aliases = gen_column_aliases(&tables);
-    let index_refs = get_index_refs(&column_aliases);
+    let tables: Tables =
+        load_aliased_tables(database, user, &vec![(table_name.clone(), alias.clone())])?;
+    let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+    let index_refs: IndexRefs = get_index_refs(&column_aliases);
 
-    let values = values
+    let values: Vec<(String, ValueSolver)> = values
         .into_iter()
         .map(|(name, expr)| Ok((name, solve_value(&expr, &column_aliases, &index_refs)?)))
         .collect::<Result<Vec<(String, ValueSolver)>, String>>()?;
 
-    for row_info in table.clone() {
+    // Convert the where expression into a predicate solver
+    let table_names: Vec<(String, String)> = vec![(table_name.clone(), alias.clone())];
+    let selection: Option<PredicateSolver> = match &where_expr {
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
+        None => None,
+    };
+
+    let mut iterator: Option<TableIterator> = None;
+
+    // Construct the iterators for each table
+    // If we are using a where predicate, check if we can use an index
+    let mut used_index: bool = false;
+    if where_expr.is_some() {
+        let expr: Expr = where_expr.clone().unwrap();
+
+        // Get the index id for this specific table for this specific query
+        let index_id: Option<IndexID> =
+            get_index_id_from_expr(&expr, &column_aliases, &index_refs, &alias)?;
+
+        // If we can use an index (i.e. the where clause references only one table)
+        if let Some(index_id) = index_id {
+            // Check if this table has this index
+            if let Some(idx_val) = table.indexes.get(&index_id) {
+                // We can use the index, so we can use the index to get the rows
+                let btree_pagenum: u32 = idx_val.0;
+                let index_name: String = idx_val.1.clone();
+                let index_key_type: IndexKeyType = index_id
+                    .iter()
+                    .map(|x| table.schema[*x as usize].1.clone())
+                    .collect();
+
+                let btree: BTree = BTree::load_btree_from_root_page(
+                    &table,
+                    btree_pagenum,
+                    index_id,
+                    index_key_type,
+                    index_name,
+                )?;
+
+                let res_rows: Vec<RowInfo> = btree.get_rows_matching_expr(&expr)?;
+
+                // Load the result rows into a row iterator
+                iterator = Some(TableIterator::RowIter(RowIterator::new(res_rows)));
+                used_index = true;
+            }
+        }
+    }
+
+    if !used_index {
+        iterator = Some(TableIterator::TableIter(table.clone()));
+    }
+
+    for row_info in iterator.unwrap() {
         if resolve_predicate(&selection, &row_info.row)? {
             // Append the selected_cells row to our result
             let mut row_info = row_info.clone();
@@ -721,14 +769,71 @@ pub fn update(
 
 pub fn delete(
     table_name: String,
-    selection: Option<PredicateSolver>,
+    alias: String,
+    where_expr: Option<Expr>,
     database: &Database,
     user: &mut User,
 ) -> Result<(String, RemoveDiff), String> {
     let table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowLocation> = Vec::new();
+    let tables: Tables =
+        load_aliased_tables(database, user, &vec![(table_name.clone(), alias.clone())])?;
+    let column_aliases: ColumnAliases = gen_column_aliases(&tables);
+    let index_refs: IndexRefs = get_index_refs(&column_aliases);
 
-    for row_info in table.clone() {
+    // Convert the where expression into a predicate solver
+    let table_names: Vec<(String, String)> = vec![(table_name.clone(), alias.clone())];
+    let selection: Option<PredicateSolver> = match &where_expr {
+        Some(pred) => Some(where_clause(pred, &table_names, get_db_instance()?, user)?),
+        None => None,
+    };
+
+    let mut iterator: Option<TableIterator> = None;
+
+    // Construct the iterators for each table
+    // If we are using a where predicate, check if we can use an index
+    let mut used_index: bool = false;
+    if where_expr.is_some() {
+        let expr: Expr = where_expr.clone().unwrap();
+
+        // Get the index id for this specific table for this specific query
+        let index_id: Option<IndexID> =
+            get_index_id_from_expr(&expr, &column_aliases, &index_refs, &alias)?;
+
+        // If we can use an index (i.e. the where clause references only one table)
+        if let Some(index_id) = index_id {
+            // Check if this table has this index
+            if let Some(idx_val) = table.indexes.get(&index_id) {
+                // We can use the index, so we can use the index to get the rows
+                let btree_pagenum: u32 = idx_val.0;
+                let index_name: String = idx_val.1.clone();
+                let index_key_type: IndexKeyType = index_id
+                    .iter()
+                    .map(|x| table.schema[*x as usize].1.clone())
+                    .collect();
+
+                let btree: BTree = BTree::load_btree_from_root_page(
+                    &table,
+                    btree_pagenum,
+                    index_id,
+                    index_key_type,
+                    index_name,
+                )?;
+
+                let res_rows: Vec<RowInfo> = btree.get_rows_matching_expr(&expr)?;
+
+                // Load the result rows into a row iterator
+                iterator = Some(TableIterator::RowIter(RowIterator::new(res_rows)));
+                used_index = true;
+            }
+        }
+    }
+
+    if !used_index {
+        iterator = Some(TableIterator::TableIter(table.clone()));
+    }
+
+    for row_info in iterator.unwrap() {
         if resolve_predicate(&selection, &row_info.row)? {
             // Append the selected_cells row to our result
             selected_rows.push(row_info.get_row_location());
