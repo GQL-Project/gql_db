@@ -391,7 +391,6 @@ pub fn execute_update(
                         }
                         let column = Column::from_col_def(&column_def)?;
                         let column_nullable = column.clone().as_nullable();
-                        // let result = alter_table_add_column(&table_name, &column_name, &column, get_db_instance()?, user)?;
                         let added_schema = (column_name.clone(), column_nullable.clone());
                         schemas.push(added_schema);
                         for r in rows.iter_mut() {
@@ -413,7 +412,7 @@ pub fn execute_update(
                         let column_name = column_name.to_string();
 
                         if !schemas.iter().any(|x| x.0 == column_name) {
-                            return Err(format!("Column name {} does not exists", column_name));
+                            return Err(format!("Column name {} does not exist", column_name));
                         }
 
                         // find the index of the column to drop
@@ -442,7 +441,7 @@ pub fn execute_update(
                         let column = Column::from_datatype_def(data_type)?;
 
                         if !schemas.iter().any(|x| x.0 == old_name) {
-                            return Err(format!("Column name {} does not exists", old_name));
+                            return Err(format!("Column name {} does not exist", old_name));
                         }
 
                         // find the index of the column to drop
@@ -1061,7 +1060,7 @@ pub mod tests {
         parser::parser::parse,
         util::{
             bench::create_demo_db,
-            dbtype::{Column, Value},
+            dbtype::{Column, Value}, self,
         },
     };
     use serial_test::serial;
@@ -2734,4 +2733,249 @@ pub mod tests {
         assert!(results == results2);
         delete_db_instance().unwrap();
     }
+
+    #[test]
+    #[serial]
+    fn test_alter_no_table() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let results = execute_update(
+            &parse("alter table missing add test_column int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap_err();
+
+        assert!(results == "Table missing does not exist".to_string());
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_add() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_schemas = old_table.schema.clone();
+
+        execute_update(
+            &parse("alter table personal_info add test_column int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+
+        let schemas = table.schema.clone();
+        assert!(old_schemas.len() + 1 == schemas.len());
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_add1() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_schemas = old_table.schema.clone();
+
+        execute_update(
+            &parse("alter table personal_info add test_column int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+
+        let rows = table.into_iter().collect::<Vec<RowInfo>>();
+        assert!(rows[0].row[old_schemas.len()] == util::dbtype::Value::Null(util::dbtype::Column::I64));
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_add2() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let result = execute_update(
+            &parse("alter table personal_info add id int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap_err();
+
+        assert!(result == "Column name id already exists");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_drop() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_schemas = old_table.schema.clone();
+
+        execute_update(
+            &parse("alter table personal_info drop id", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+
+        let schemas = table.schema.clone();
+        assert!(old_schemas.len() - 1 == schemas.len());
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_drop1() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_rows = old_table.into_iter().collect::<Vec<RowInfo>>();
+
+        execute_update(
+            &parse("alter table personal_info drop id", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+
+        let rows = table.into_iter().collect::<Vec<RowInfo>>();
+        assert!(rows[0].row[0] == old_rows[0].row[1]);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_drop2() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let result = execute_update(
+            &parse("alter table personal_info drop missing", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap_err();
+
+        assert!(result == "Column name missing does not exist");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_change() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let result = execute_update(
+            &parse("alter table personal_info change missing something int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap_err();
+
+        assert!(result == "Column name missing does not exist");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_change1() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_rows = old_table.into_iter().collect::<Vec<RowInfo>>();
+
+       execute_update(
+            &parse("alter table personal_info change id missing int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let rows = table.into_iter().collect::<Vec<RowInfo>>();
+
+        assert!(rows[0].row[0] == old_rows[0].row[0]);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_change2() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_schemas = old_table.schema.clone();
+
+        execute_update(
+            &parse("alter table personal_info change id missing int", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap();
+
+        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let schemas = table.schema.clone();
+        assert!(old_schemas[0] != schemas[0] && schemas[0].0 == "missing");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_alter_change3() {
+        let mut user = create_demo_db("alter_test");
+        get_db_instance()
+            .unwrap()
+            .switch_branch(&"main".to_string(), &mut user)
+            .unwrap();
+
+        let result = execute_update(
+            &parse("alter table personal_info change id missing varchar(50)", false).unwrap(),
+            &mut user,
+            &"".to_string(),
+        ).unwrap_err();
+
+        assert!(result.starts_with(&"Unexpected Type".to_string()));
+        delete_db_instance().unwrap();
+    }
+
 }
