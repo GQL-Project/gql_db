@@ -6,7 +6,7 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
-use crate::fileio::pageio::{PageType, Page, read_page};
+use crate::fileio::pageio::{read_page, Page, PageType};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -24,7 +24,8 @@ use crate::{
 use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
-    Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, Statement, AlterTableOperation,
+    AlterTableOperation, Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
+    Statement,
 };
 
 pub type Tables = Vec<(Table, String)>;
@@ -361,10 +362,7 @@ pub fn execute_update(
                 }
                 results.push(insert(all_data, table_name, get_db_instance()?, user)?.0);
             }
-            Statement::AlterTable {
-                name,
-                operation
-            } => {
+            Statement::AlterTable { name, operation } => {
                 let instance = get_db_instance()?;
                 let table_name = name.0[0].value.to_string();
 
@@ -372,7 +370,7 @@ pub fn execute_update(
                 if !all_tables.clone().contains(&table_name) {
                     return Err(format!("Table {} does not exist", table_name));
                 }
-                
+
                 let table = Table::from_user(user, &instance, &table_name, None)?;
 
                 let mut schemas = table.schema.clone();
@@ -401,9 +399,16 @@ pub fn execute_update(
                             insert(vec![r.row.clone()], table_name.clone(), instance, user)?;
                         }
 
-                        results.push(format!("Column added {}({:?}) to Table {}", column_name, column, table_name));
+                        results.push(format!(
+                            "Column added {}({:?}) to Table {}",
+                            column_name, column, table_name
+                        ));
                     }
-                    AlterTableOperation::DropColumn { column_name, if_exists, cascade } => {
+                    AlterTableOperation::DropColumn {
+                        column_name,
+                        if_exists,
+                        cascade,
+                    } => {
                         let column_name = column_name.to_string();
 
                         if !schemas.iter().any(|x| x.0 == column_name) {
@@ -411,7 +416,10 @@ pub fn execute_update(
                         }
 
                         // find the index of the column to drop
-                        let column_index = schemas.iter().position(|(name, _)| name == &column_name).unwrap();
+                        let column_index = schemas
+                            .iter()
+                            .position(|(name, _)| name == &column_name)
+                            .unwrap();
 
                         // drop the index in the vector
                         schemas.remove(column_index);
@@ -428,9 +436,17 @@ pub fn execute_update(
                             insert(vec![r.row.clone()], table_name.clone(), instance, user)?;
                         }
 
-                        results.push(format!("Column {} dropped in Table {}", column_name, table_name));
+                        results.push(format!(
+                            "Column {} dropped in Table {}",
+                            column_name, table_name
+                        ));
                     }
-                    AlterTableOperation::ChangeColumn { old_name, new_name, data_type, options } => {
+                    AlterTableOperation::ChangeColumn {
+                        old_name,
+                        new_name,
+                        data_type,
+                        options,
+                    } => {
                         let old_name = old_name.to_string();
                         let new_name = new_name.to_string();
                         let column = Column::from_datatype_def(data_type)?;
@@ -440,13 +456,17 @@ pub fn execute_update(
                         }
 
                         // find the index of the column to drop
-                        let column_index = schemas.iter().position(|(name, _)| name == &old_name).unwrap();
-                        
+                        let column_index = schemas
+                            .iter()
+                            .position(|(name, _)| name == &old_name)
+                            .unwrap();
+
                         // drop the replace in the vector
                         schemas[column_index] = (new_name, column.clone());
 
                         for r in rows.iter_mut() {
-                            r.row[column_index] = column.clone().coerce_type(r.row[column_index].clone())?;
+                            r.row[column_index] =
+                                column.clone().coerce_type(r.row[column_index].clone())?;
                         }
 
                         // drop the old table
@@ -458,7 +478,10 @@ pub fn execute_update(
                             insert(vec![r.row.clone()], table_name.clone(), instance, user)?;
                         }
 
-                        results.push(format!("Column {} dropped in Table {}", old_name, table_name));
+                        results.push(format!(
+                            "Column {} dropped in Table {}",
+                            old_name, table_name
+                        ));
                     }
                     _ => {
                         return Err("Can only add or drop columns".to_string());
@@ -1164,8 +1187,9 @@ pub mod tests {
     use crate::{
         parser::parser::parse,
         util::{
+            self,
             bench::create_demo_db,
-            dbtype::{Column, Value}, self,
+            dbtype::{Column, Value},
         },
     };
     use serial_test::serial;
@@ -2852,7 +2876,8 @@ pub mod tests {
             &parse("alter table missing add test_column int", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap_err();
+        )
+        .unwrap_err();
 
         assert!(results == "Table missing does not exist".to_string());
         delete_db_instance().unwrap();
@@ -2867,16 +2892,29 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let old_schemas = old_table.schema.clone();
 
         execute_update(
             &parse("alter table personal_info add test_column int", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
 
         let schemas = table.schema.clone();
         assert!(old_schemas.len() + 1 == schemas.len());
@@ -2892,19 +2930,34 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let old_schemas = old_table.schema.clone();
 
         execute_update(
             &parse("alter table personal_info add test_column int", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
 
         let rows = table.into_iter().collect::<Vec<RowInfo>>();
-        assert!(rows[0].row[old_schemas.len()] == util::dbtype::Value::Null(util::dbtype::Column::I64));
+        assert!(
+            rows[0].row[old_schemas.len()] == util::dbtype::Value::Null(util::dbtype::Column::I64)
+        );
         delete_db_instance().unwrap();
     }
 
@@ -2921,7 +2974,8 @@ pub mod tests {
             &parse("alter table personal_info add id int", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap_err();
+        )
+        .unwrap_err();
 
         assert!(result == "Column name id already exists");
         delete_db_instance().unwrap();
@@ -2936,16 +2990,29 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let old_schemas = old_table.schema.clone();
 
         execute_update(
             &parse("alter table personal_info drop id", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
 
         let schemas = table.schema.clone();
         assert!(old_schemas.len() - 1 == schemas.len());
@@ -2961,16 +3028,29 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let old_rows = old_table.into_iter().collect::<Vec<RowInfo>>();
 
         execute_update(
             &parse("alter table personal_info drop id", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
 
         let rows = table.into_iter().collect::<Vec<RowInfo>>();
         assert!(rows[0].row[0] == old_rows[0].row[1]);
@@ -2990,7 +3070,8 @@ pub mod tests {
             &parse("alter table personal_info drop missing", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap_err();
+        )
+        .unwrap_err();
 
         assert!(result == "Column name missing does not exist");
         delete_db_instance().unwrap();
@@ -3006,10 +3087,15 @@ pub mod tests {
             .unwrap();
 
         let result = execute_update(
-            &parse("alter table personal_info change missing something int", false).unwrap(),
+            &parse(
+                "alter table personal_info change missing something int",
+                false,
+            )
+            .unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap_err();
+        )
+        .unwrap_err();
 
         assert!(result == "Column name missing does not exist");
         delete_db_instance().unwrap();
@@ -3024,16 +3110,29 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let old_rows = old_table.into_iter().collect::<Vec<RowInfo>>();
 
-       execute_update(
+        execute_update(
             &parse("alter table personal_info change id missing int", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let rows = table.into_iter().collect::<Vec<RowInfo>>();
 
         assert!(rows[0].row[0] == old_rows[0].row[0]);
@@ -3049,16 +3148,29 @@ pub mod tests {
             .switch_branch(&"main".to_string(), &mut user)
             .unwrap();
 
-        let old_table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let old_table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let old_schemas = old_table.schema.clone();
 
         execute_update(
             &parse("alter table personal_info change id missing int", false).unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let table = Table::from_user(&user, get_db_instance().unwrap(), &"personal_info".to_string(), None).unwrap();
+        let table = Table::from_user(
+            &user,
+            get_db_instance().unwrap(),
+            &"personal_info".to_string(),
+            None,
+        )
+        .unwrap();
         let schemas = table.schema.clone();
         assert!(old_schemas[0] != schemas[0] && schemas[0].0 == "missing");
         delete_db_instance().unwrap();
@@ -3074,13 +3186,17 @@ pub mod tests {
             .unwrap();
 
         let result = execute_update(
-            &parse("alter table personal_info change id missing varchar(50)", false).unwrap(),
+            &parse(
+                "alter table personal_info change id missing varchar(50)",
+                false,
+            )
+            .unwrap(),
             &mut user,
             &"".to_string(),
-        ).unwrap_err();
+        )
+        .unwrap_err();
 
         assert!(result.starts_with(&"Unexpected Type".to_string()));
         delete_db_instance().unwrap();
     }
-
 }
