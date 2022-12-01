@@ -287,6 +287,9 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     // If the commit hash is not in the current branch, return an error
     let mut match_node = None;
     //Looking for the commit hash in the branch nodes
+
+    //TODO Modify this to work with an abbreviated hash - this does not look too hard to implement
+
     for node in branch_nodes {
         if node.commit_hash == *commit_hash {
             if match_node.is_some() {
