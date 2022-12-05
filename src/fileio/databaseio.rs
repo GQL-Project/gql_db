@@ -246,6 +246,7 @@ impl Database {
         }
 
         let commit: Commit = self.commit_file.create_commit(
+            user.get_user_id(),
             commit_msg.to_string(),
             command.to_string(),
             user.get_diffs(),
@@ -925,7 +926,7 @@ impl Database {
             let src_diffs: Vec<Diff>;
             if src_commits.len() > 0 {
                 let src_squashed_cmt: Commit =
-                    self.commit_file.squash_commits(&src_commits, false)?;
+                    self.commit_file.squash_commits(user.get_user_id(), &src_commits, false)?;
                 src_diffs = src_squashed_cmt.diffs;
             } else {
                 return Err(
@@ -943,7 +944,7 @@ impl Database {
             let mut dest_diffs: Vec<Diff> = Vec::new();
             if dest_commits.len() > 0 {
                 let dest_squashed_cmt: Commit =
-                    self.commit_file.squash_commits(&dest_commits, false)?;
+                    self.commit_file.squash_commits(user.get_user_id(), &dest_commits, false)?;
                 dest_diffs = dest_squashed_cmt.diffs;
             }
 
@@ -958,6 +959,7 @@ impl Database {
             // If we aren't committing the merge, we can just return here
             if !do_commit_merge {
                 return Ok(Commit::new(
+                    user.get_user_id(),
                     Commit::create_hash(),
                     src_commits.last().unwrap().timestamp.clone(),
                     merge_cmt_msg.clone(),

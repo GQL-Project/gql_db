@@ -30,6 +30,7 @@ pub struct CommitHeader {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Commit {
+    pub user_id: String,
     pub hash: String,
     pub timestamp: String, // TODO: Change to a DateTime object
     pub message: String,
@@ -40,6 +41,7 @@ pub struct Commit {
 impl Commit {
     /// Creates a new Commit object.
     pub fn new(
+        user_id: String,
         commit_hash: String,
         timestamp: String,
         message: String,
@@ -47,6 +49,7 @@ impl Commit {
         diffs: Vec<Diff>,
     ) -> Self {
         Self {
+            user_id,
             hash: commit_hash,
             timestamp,
             message,
@@ -163,6 +166,7 @@ impl CommitFile {
 
     pub fn create_commit(
         &mut self,
+        user_id: String,
         message: String,
         command: String,
         diffs: Vec<Diff>,
@@ -174,7 +178,7 @@ impl CommitFile {
             .as_millis()
             .to_string();
         let hash = Commit::create_hash();
-        let commit = Commit::new(hash, timestamp, message, command, diffs);
+        let commit = Commit::new(user_id, hash, timestamp, message, command, diffs);
         if write_to_file {
             self.store_commit(&commit)?;
         }
@@ -230,6 +234,7 @@ impl CommitFile {
         if byte != 1 {
             return Err("Invalid commit".to_string());
         }
+        let user_id = self.sread_string(page, pagenum, offset, 32)?;
         let commit_hash = self.sread_string(page, pagenum, offset, 32)?;
         let timestamp = self.sread_string(page, pagenum, offset, 128)?;
         let message = self.sdread_string(page, pagenum, offset)?;
@@ -361,7 +366,7 @@ impl CommitFile {
             };
             diffs.push(diff);
         }
-        Ok(Commit::new(commit_hash, timestamp, message, command, diffs))
+        Ok(Commit::new(user_id, commit_hash, timestamp, message, command, diffs))
     }
 
     fn write_commit(&self, commit: &Commit, mut pagenum: u32) -> Result<(), String> {
@@ -369,6 +374,7 @@ impl CommitFile {
         let pagenum = &mut pagenum;
         let offset = &mut 0;
         self.swrite_type(page, pagenum, offset, 1u8)?;
+        self.swrite_string(page, pagenum, offset, &commit.user_id, 32)?;
         self.swrite_string(page, pagenum, offset, &commit.hash, 32)?;
         self.swrite_string(page, pagenum, offset, &commit.timestamp, 128)?;
         self.sdwrite_string(page, pagenum, offset, &commit.message)?;
@@ -463,6 +469,7 @@ impl CommitFile {
 
     pub fn squash_commits(
         &mut self,
+        user_id: String,
         commits: &Vec<Commit>,
         write_commit_to_file: bool,
     ) -> Result<Commit, String> {
@@ -819,7 +826,7 @@ impl CommitFile {
             .flatten()
             .filter(|x| !x.is_empty())
             .collect();
-        self.create_commit(msg, cmd, diffs, write_commit_to_file)
+        self.create_commit(user_id, msg, cmd, diffs, write_commit_to_file)
     }
 }
 
@@ -875,6 +882,7 @@ mod tests {
             ("t2".to_string(), Column::String(32)),
         ];
         let commit = Commit::new(
+            "test_user".to_string(),
             "test_hash".to_string(),
             "test_timestamp".to_string(),
             "test_message".to_string(),
@@ -902,6 +910,7 @@ mod tests {
             ("t45".to_string(), Column::String(32)),
         ];
         let commit = Commit::new(
+            "test_user".to_string(),
             "test_hash".to_string(),
             "test_timestamp".to_string(),
             "test_message".to_string(),
@@ -920,6 +929,7 @@ mod tests {
         );
 
         let commit2 = Commit::new(
+            "test_user".to_string(),
             "hasher2".to_string(),
             "test_timestamp".to_string(),
             "test_message".to_string(),
@@ -997,6 +1007,7 @@ mod tests {
         let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
+            "test_user".to_string(),
             "hash1".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
@@ -1007,6 +1018,7 @@ mod tests {
             })],
         );
         let commit2 = Commit::new(
+            "test_user".to_string(),
             "hash2".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
@@ -1014,6 +1026,7 @@ mod tests {
             vec![Diff::Insert(diff1)],
         );
         let commit3 = Commit::new(
+            "test_user".to_string(),
             "hash3".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
@@ -1087,6 +1100,7 @@ mod tests {
         let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
+            "test_user".to_string(),
             "hash1".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
@@ -1097,6 +1111,7 @@ mod tests {
             })],
         );
         let commit2 = Commit::new(
+            "test_user".to_string(),
             "hash2".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
@@ -1104,6 +1119,7 @@ mod tests {
             vec![Diff::Insert(diff1)],
         );
         let commit3 = Commit::new(
+            "test_user".to_string(),
             "hash3".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
@@ -1175,6 +1191,7 @@ mod tests {
         let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
+            "test_user".to_string(),
             "hash1".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
@@ -1185,6 +1202,7 @@ mod tests {
             })],
         );
         let commit2 = Commit::new(
+            "test_user".to_string(),
             "hash2".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
@@ -1192,6 +1210,7 @@ mod tests {
             vec![Diff::Insert(diff1)],
         );
         let commit3 = Commit::new(
+            "test_user".to_string(),
             "hash3".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
@@ -1305,7 +1324,7 @@ mod tests {
         let squash: Commit = get_db_instance()
             .unwrap()
             .get_commit_file_mut()
-            .squash_commits(&vec![commit1, commit2], true)
+            .squash_commits("squash_user".to_string(), &vec![commit1, commit2], true)
             .unwrap();
 
         let diffs: Vec<Diff> = squash.diffs;
@@ -1395,5 +1414,96 @@ mod tests {
 
         // Delete the database
         delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_commit_user() {
+        let new_db: Database = Database::new("commit_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(225)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+        let mut rows = vec![
+            vec![
+                Value::I64(1),
+                Value::String("Nick Fury".to_string()),
+                Value::I64(40),
+            ],
+            vec![
+                Value::I64(2),
+                Value::String("Spiderman".to_string()),
+                Value::I64(20),
+            ],
+            vec![
+                Value::I64(3),
+                Value::String("Doctor Strange".to_string()),
+                Value::I64(35),
+            ],
+            vec![
+                Value::I64(4),
+                Value::String("Captain America".to_string()),
+                Value::I64(100),
+            ],
+            vec![
+                Value::I64(5),
+                Value::String("Thor".to_string()),
+                Value::I64(1000),
+            ],
+        ];
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        rows.extend_from_within(0..);
+        let (x, y) = rows.split_at(21); // 40 rows
+        let (_, diff1) = insert(x.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
+        let commit1 = Commit::new(
+            "test_user".to_string(),
+            "hash1".to_string(),
+            "timestamp1".to_string(),
+            "message1".to_string(),
+            "cmd1".to_string(),
+            vec![Diff::TableCreate(TableCreateDiff {
+                table_name: "test_table".to_string(),
+                schema: schema.clone(),
+            })],
+        );
+        let commit2 = Commit::new(
+            "test_user".to_string(),
+            "hash2".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff1)],
+        );
+        let commit3 = Commit::new(
+            "test_user".to_string(),
+            "hash3".to_string(),
+            "timestamp2".to_string(),
+            "message2".to_string(),
+            "cmd2".to_string(),
+            vec![Diff::Insert(diff2)],
+        );
+        new_db.delete_database().unwrap();
+        let mut delta = CommitFile::new(&"".to_string(), true).unwrap();
+        delta.store_commit(&commit1).unwrap();
+        delta.store_commit(&commit2).unwrap();
+        delta.store_commit(&commit3).unwrap();
+        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        assert_eq!(commit3.user_id, commit13.user_id);
+        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        assert_eq!(commit1.user_id, commit11.user_id);
+        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        assert_eq!(commit2.user_id, commit12.user_id);
+
+        // Delete the test database
+        std::fs::remove_file(delta.delta_path).unwrap();
+        std::fs::remove_file(delta.header_path).unwrap();
     }
 }
