@@ -1,4 +1,5 @@
 use chrono::NaiveDateTime;
+use serde::Serialize;
 use core::mem::size_of;
 use prost_types::Timestamp;
 use sqlparser::ast::Value as SqlValue;
@@ -20,7 +21,7 @@ pub enum Value {
     Null(Column),
 }
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Column {
     // Strings have a given length value (in bytes).
     String(u16),

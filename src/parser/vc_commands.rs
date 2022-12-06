@@ -31,6 +31,9 @@ pub enum VersionControlSubCommand {
     Info {
         /// The commit hash
         commit: String,
+        /// Displays the log in json format (default is false)
+        #[arg(long, short, default_value = "false")]
+        json: bool,
     },
     /// Tells if there are any uncommitted changes
     Status,
@@ -100,6 +103,8 @@ pub enum VersionControlSubCommand {
         #[arg(long, short, default_value = "false")]
         force: bool,
     },
+    #[clap(aliases = &["view_branch"])]
+    BranchView,
     /// Returns all of tables in the current branch
     #[clap(aliases = &["table", "schema", "scehma_table"])]
     SchemaTable {

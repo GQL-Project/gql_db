@@ -6,7 +6,7 @@ use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
 use crate::version_control::command::del_branch;
 use crate::version_control::diff::*;
-use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
+use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff, merged_branches::*};
 use crate::version_control::{commit::Commit, merge::*};
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
@@ -33,6 +33,10 @@ pub const BRANCHES_FILE_EXTENSION: &str = ".gql";
 pub const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
 pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
+// Merged Branches File Constants
+pub const MERGED_BRANCHES_FILE_NAME: &str = "merged_branches";
+pub const MERGED_BRANCHES_FILE_EXTENSION: &str = ".gql";
+
 // User CREDs File Constants
 pub const USER_CREDS_FILE_NAME: &str = "user_creds";
 pub const USER_CREDS_FILE_EXTENSION: &str = ".gql";
@@ -45,6 +49,7 @@ pub struct Database {
     branches: Branches, // The Branches file object for this database
     commit_file: CommitFile, // The CommitFile object for this database
     user_creds: UserCREDs, // The UserCreds object for this database
+    merged_branches: MergedBranchesFile, // The MergedBranches object for this database
     mutex: ReentrantMutex<()>, // This is the mutex that is used to lock the database
                      // TODO: maybe add permissions here
 }
@@ -150,6 +155,9 @@ impl Database {
         // Create the commit file object
         let commit_file: CommitFile = CommitFile::new(&db_path.clone(), true)?;
 
+        // Create the merged branches file object
+        let merged_branches: MergedBranchesFile = MergedBranchesFile::new(&db_path.clone(), true)?;
+
         // Create the user credentials file object
         let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), true)?;
 
@@ -170,6 +178,7 @@ impl Database {
             branch_heads: branch_heads,
             branches: branches,
             commit_file: commit_file,
+            merged_branches: merged_branches,
             user_creds: user_creds,
             mutex: ReentrantMutex::new(()),
         })
@@ -198,6 +207,9 @@ impl Database {
         // Create the commit file object
         let commit_file: CommitFile = CommitFile::new(&db_path.clone(), false)?;
 
+        // Create the merged branches file object
+        let merged_branches: MergedBranchesFile = MergedBranchesFile::new(&db_path.clone(), false)?;
+
         // Create the user credentials file object
         let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), false)?;
 
@@ -207,6 +219,7 @@ impl Database {
             branch_heads,
             branches,
             commit_file,
+            merged_branches,
             user_creds,
             mutex: ReentrantMutex::new(()),
         })
@@ -467,6 +480,14 @@ impl Database {
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         &mut self.commit_file
+    }
+
+    /// Returns the database's merged_branches file
+    pub fn get_merged_branches_file_mut(&mut self) -> &mut MergedBranchesFile {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &mut self.merged_branches
     }
 
     /// Returns the file path to the table if it exists on the current working branch
@@ -873,6 +894,7 @@ impl Database {
     ) -> Result<Commit, String> {
         let dest_branch_name: String = user.get_current_branch_name();
         let merged_diffs: Vec<Diff>;
+        let branched_commit: String;
 
         {
             // Make sure to lock the database before doing anything
@@ -929,6 +951,15 @@ impl Database {
                     self.commit_file
                         .squash_commits(user.get_user_id(), &src_commits, false)?;
                 src_diffs = src_squashed_cmt.diffs;
+
+                // If we're deleting the branch, we need the branching_commit to be the common_ancestor's hash,
+                // otherwise it's the last src_commits's hash
+                branched_commit = if do_delete_src_branch {
+                    common_ancestor.commit_hash.clone()
+                } else {
+                    src_commits.clone().last().unwrap().hash.clone()
+                };
+            
             } else {
                 return Err(
                     "Merge Branches Error: Must have at least one source commit to merge."
@@ -990,6 +1021,13 @@ impl Database {
         if do_delete_src_branch {
             del_branch(user, &src_branch_name, false, vec![user.clone()])?;
         }
+        
+        // We need to store the last commit in the source branch and the merged commit as a link
+        self.merged_branches.insert_merged_branch(
+            &src_branch_name,
+            &branched_commit,
+            &commit.hash
+        )?;
 
         Ok(commit)
     }
