@@ -141,6 +141,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                         command::del_branch(user, &branch_name.clone(), force, all_users)?;
                     Ok(del_results)
                 }
+                VersionControlSubCommand::BranchView => {
+                    let results: String = command::list_all_commits()?;
+                    Ok(results)
+                }
                 VersionControlSubCommand::SquashCommit {
                     src_commit,
                     dest_commit,

@@ -7,3 +7,4 @@ pub mod commit;
 pub mod commitfile;
 pub mod diff;
 pub mod merge;
+pub mod merged_branches;

@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use core::mem::size_of;
 use prost_types::Timestamp;
+use serde::Serialize;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 use std::cmp::Ordering;
@@ -20,7 +21,7 @@ pub enum Value {
     Null(Column),
 }
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Column {
     // Strings have a given length value (in bytes).
     String(u16),
