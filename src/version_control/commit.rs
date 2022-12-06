@@ -206,6 +206,7 @@ impl CommitFile {
     }
 
     fn find_header(&self, commit_hash: String) -> Result<Option<CommitHeader>, String> {
+        let commit_hash = self.resolve_commit(&commit_hash)?;
         let hash = Value::String(commit_hash);
         for RowInfo { row, .. } in self.header_table.clone() {
             if row[0] == hash {
@@ -214,6 +215,29 @@ impl CommitFile {
             }
         }
         Ok(None)
+    }
+
+    pub fn resolve_commit(&self, commit_hash: &String) -> Result<String, String> {
+        let mut hash = None;
+        if commit_hash.len() < 6 {
+            return Err("Commit hash too short".to_string());
+        }
+        for RowInfo { row, .. } in self.header_table.clone() {
+            if let Value::String(row_hash) = &row[0] {
+                if row_hash.starts_with(commit_hash) {
+                    if hash.is_none() {
+                        hash = Some(row_hash.clone());
+                    } else {
+                        return Err("Ambiguous commit hash".to_string());
+                    }
+                }
+            }
+        }
+        if let Some(hash) = hash {
+            Ok(hash)
+        } else {
+            Err("Commit not found".to_string())
+        }
     }
 
     fn insert_header(&mut self, header: CommitHeader) -> Result<(), String> {
