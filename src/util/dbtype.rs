@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
-use serde::Serialize;
 use core::mem::size_of;
 use prost_types::Timestamp;
+use serde::Serialize;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 use std::cmp::Ordering;

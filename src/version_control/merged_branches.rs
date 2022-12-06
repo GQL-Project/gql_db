@@ -7,7 +7,7 @@ use crate::util::{dbtype::*, row::*};
 #[derive(Clone, Debug)]
 pub struct MergedBranch {
     pub branch_name: String,        // The name of the branch that was merged.
-    pub source_commit: String,      // The commit hash that this branch was originally branched from.
+    pub source_commit: String, // The commit hash that this branch was originally branched from.
     pub destination_commit: String, // The commit hash that this branch was merged into.
 }
 
@@ -22,10 +22,7 @@ impl MergedBranchesFile {
     /// Creates a new MergedBranchesFile object to store the merged branches for the database.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
-    pub fn new(
-        dir_path: &String,
-        create_file: bool
-    ) -> Result<MergedBranchesFile, String> {
+    pub fn new(dir_path: &String, create_file: bool) -> Result<MergedBranchesFile, String> {
         // Get filepath info
         let branch_filename: String = format!(
             "{}{}",
@@ -91,9 +88,7 @@ impl MergedBranchesFile {
     }
 
     /// Returns a list of all merged branches.
-    pub fn get_merged_branches(
-        &self
-    ) -> Result<Vec<MergedBranch>, String> {
+    pub fn get_merged_branches(&self) -> Result<Vec<MergedBranch>, String> {
         let mut merged_branches: Vec<MergedBranch> = Vec::new();
         let rows: Vec<RowInfo> = self.merged_branches_table.clone().into_iter().collect();
         for rowinfo in rows {
@@ -109,18 +104,15 @@ impl MergedBranchesFile {
                 Some(Value::String(val)) => val.clone(),
                 _ => return Err("get_merged_branches: Could not get index 2".to_string()),
             };
-            merged_branches.push(
-                MergedBranch {
-                    branch_name,
-                    source_commit,
-                    destination_commit,
-                }
-            );
+            merged_branches.push(MergedBranch {
+                branch_name,
+                source_commit,
+                destination_commit,
+            });
         }
         Ok(merged_branches)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -131,10 +123,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_creating_branch_heads() {
-        let mut merged_branches_file: MergedBranchesFile = MergedBranchesFile::new(
-            &"".to_string(),
-            true
-        ).unwrap();
+        let mut merged_branches_file: MergedBranchesFile =
+            MergedBranchesFile::new(&"".to_string(), true).unwrap();
 
         let merged_branch: MergedBranch = MergedBranch {
             branch_name: "main".to_string(),
@@ -142,13 +132,16 @@ mod tests {
             destination_commit: "def".to_string(),
         };
 
-        merged_branches_file.insert_merged_branch(
-            &merged_branch.branch_name,
-            &merged_branch.source_commit,
-            &merged_branch.destination_commit,
-        ).unwrap();
+        merged_branches_file
+            .insert_merged_branch(
+                &merged_branch.branch_name,
+                &merged_branch.source_commit,
+                &merged_branch.destination_commit,
+            )
+            .unwrap();
 
-        let merged_branches: Vec<MergedBranch> = merged_branches_file.get_merged_branches().unwrap();
+        let merged_branches: Vec<MergedBranch> =
+            merged_branches_file.get_merged_branches().unwrap();
 
         assert_eq!(merged_branches.len(), 1);
         assert_eq!(merged_branches[0].branch_name, "main");

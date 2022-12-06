@@ -6,7 +6,9 @@ use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
 use crate::version_control::command::del_branch;
 use crate::version_control::diff::*;
-use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff, merged_branches::*};
+use crate::version_control::{
+    branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff, merged_branches::*,
+};
 use crate::version_control::{commit::Commit, merge::*};
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
@@ -959,7 +961,6 @@ impl Database {
                 } else {
                     src_commits.clone().last().unwrap().hash.clone()
                 };
-            
             } else {
                 return Err(
                     "Merge Branches Error: Must have at least one source commit to merge."
@@ -1021,12 +1022,12 @@ impl Database {
         if do_delete_src_branch {
             del_branch(user, &src_branch_name, false, vec![user.clone()])?;
         }
-        
+
         // We need to store the last commit in the source branch and the merged commit as a link
         self.merged_branches.insert_merged_branch(
             &src_branch_name,
             &branched_commit,
-            &commit.hash
+            &commit.hash,
         )?;
 
         Ok(commit)

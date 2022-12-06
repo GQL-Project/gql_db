@@ -500,7 +500,8 @@ pub fn list_all_commits() -> Result<String, String> {
     // Get all the branch nodes for each branch HEAD
     let mut branch_head_nodes: Vec<BranchNode> = Vec::new();
     for branch_name in branch_names {
-        let branch_head_node: BranchNode = branch_heads_file.get_branch_node_from_head(&branch_name, branches_file)?;
+        let branch_head_node: BranchNode =
+            branch_heads_file.get_branch_node_from_head(&branch_name, branches_file)?;
         branch_head_nodes.push(branch_head_node);
     }
 
@@ -562,7 +563,7 @@ pub fn list_all_commits() -> Result<String, String> {
                 let mut new_col: u32 = 0;
                 loop {
                     if !used_cols.values().contains(&new_col) {
-                        break
+                        break;
                     }
                     new_col += 1;
                 }
@@ -575,7 +576,8 @@ pub fn list_all_commits() -> Result<String, String> {
             // In this case, the branch was deleted after the merge
             if let Some(merged_branch) = past_merged_branches
                 .iter()
-                .find(|x| x.source_commit == commit_hash && x.branch_name != branch_name) {
+                .find(|x| x.source_commit == commit_hash && x.branch_name != branch_name)
+            {
                 let merged_branch_name: String = merged_branch.branch_name.clone();
                 let dest_branch_col: u32 = match used_cols.get(&merged_branch_name) {
                     Some(col) => *col,
@@ -583,7 +585,7 @@ pub fn list_all_commits() -> Result<String, String> {
                         let mut new_col: u32 = 0;
                         loop {
                             if !used_cols.values().contains(&new_col) {
-                                break
+                                break;
                             }
                             new_col += 1;
                         }
@@ -612,10 +614,10 @@ pub fn list_all_commits() -> Result<String, String> {
                     dest_commit_hash: merged_branch.destination_commit.clone(),
                 };
                 graph.edges.push(edge);
-            }
-            else if let Some(merged_branch) = past_merged_branches
+            } else if let Some(merged_branch) = past_merged_branches
                 .iter()
-                .find(|x| x.source_commit == commit_hash && x.branch_name == branch_name) {
+                .find(|x| x.source_commit == commit_hash && x.branch_name == branch_name)
+            {
                 let edge: CommitGraphEdge = CommitGraphEdge {
                     src_commit_hash: merged_branch.source_commit.clone(),
                     dest_commit_hash: merged_branch.destination_commit.clone(),
@@ -624,16 +626,14 @@ pub fn list_all_commits() -> Result<String, String> {
             }
 
             // Add the node to the graph
-            graph.nodes.push(
-                CommitGraphNode {
-                    commit_hash: commit_hash.clone(),
-                    column: used_cols[&branch_name],
-                    branch_name,
-                    row: i as u32,
-                    first_branch_commit: is_first_branch_commit,
-                    is_merged_branch: false
-                }
-            );
+            graph.nodes.push(CommitGraphNode {
+                commit_hash: commit_hash.clone(),
+                column: used_cols[&branch_name],
+                branch_name,
+                row: i as u32,
+                first_branch_commit: is_first_branch_commit,
+                is_merged_branch: false,
+            });
 
             // Add the edge to the graph if it exists
             if let Some(prev_node) = branches_file.get_prev_branch_node(&unique_node)? {
