@@ -68,13 +68,21 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
 
         let commit_clone = commit.clone();
 
-        log_string = format!("{}\n---------- {}'s Commit ----------", log_string, commit.user_id);
+        log_string = format!(
+            "{}\n---------- {}'s Commit ----------",
+            log_string, commit.user_id
+        );
         log_string = format!("{}\nCommit: {}", log_string, commit.hash);
         log_string = format!("{}\nMessage: {}", log_string, commit.message);
         log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
         log_string = format!("{}\n", log_string);
 
-        let printed_vals: Vec<String> = vec![commit.user_id, commit.hash, commit.timestamp, commit.message];
+        let printed_vals: Vec<String> = vec![
+            commit.user_id,
+            commit.hash,
+            commit.timestamp,
+            commit.message,
+        ];
 
         let log_object = Log {
             user_id: commit_clone.user_id,
@@ -234,9 +242,11 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
         .rev()
         .collect::<Result<Vec<Commit>, String>>()?;
 
-    let squash_commit = get_db_instance()?
-        .get_commit_file_mut()
-        .squash_commits(user.get_user_id(), &commits, true)?;
+    let squash_commit = get_db_instance()?.get_commit_file_mut().squash_commits(
+        user.get_user_id(),
+        &commits,
+        true,
+    )?;
 
     // Use the new commit hash, and make the current hash2 point to the commit before hash1.
     let squash_node = BranchNode {
@@ -360,7 +370,10 @@ pub fn info(hash: &String) -> Result<String, String> {
 
     let mut log_string: String = String::new();
 
-    log_string = format!("{}\n---------- {}'s Commit ----------", log_string, commit.user_id);
+    log_string = format!(
+        "{}\n---------- {}'s Commit ----------",
+        log_string, commit.user_id
+    );
     log_string = format!("{}\nCommit: {}", log_string, commit.hash);
     log_string = format!("{}\nMessage: {}", log_string, commit.message);
     log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
@@ -900,9 +913,18 @@ mod tests {
 
         let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
         assert!(result.is_ok());
-        assert!(result.clone().unwrap().contains(&"--------- test_user's Commit ---------".to_string()));
-        assert!(result.clone().unwrap().contains(&commit.clone().unwrap().hash));
-        assert!(result.clone().unwrap().contains(&commit.clone().unwrap().message));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&"--------- test_user's Commit ---------".to_string()));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&commit.clone().unwrap().hash));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&commit.clone().unwrap().message));
         assert!(result.clone().unwrap().contains(&commit.unwrap().timestamp));
         delete_db_instance().unwrap();
     }

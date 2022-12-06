@@ -366,7 +366,14 @@ impl CommitFile {
             };
             diffs.push(diff);
         }
-        Ok(Commit::new(user_id, commit_hash, timestamp, message, command, diffs))
+        Ok(Commit::new(
+            user_id,
+            commit_hash,
+            timestamp,
+            message,
+            command,
+            diffs,
+        ))
     }
 
     fn write_commit(&self, commit: &Commit, mut pagenum: u32) -> Result<(), String> {

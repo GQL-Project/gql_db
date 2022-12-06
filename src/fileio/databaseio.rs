@@ -926,7 +926,8 @@ impl Database {
             let src_diffs: Vec<Diff>;
             if src_commits.len() > 0 {
                 let src_squashed_cmt: Commit =
-                    self.commit_file.squash_commits(user.get_user_id(), &src_commits, false)?;
+                    self.commit_file
+                        .squash_commits(user.get_user_id(), &src_commits, false)?;
                 src_diffs = src_squashed_cmt.diffs;
             } else {
                 return Err(
@@ -944,7 +945,8 @@ impl Database {
             let mut dest_diffs: Vec<Diff> = Vec::new();
             if dest_commits.len() > 0 {
                 let dest_squashed_cmt: Commit =
-                    self.commit_file.squash_commits(user.get_user_id(), &dest_commits, false)?;
+                    self.commit_file
+                        .squash_commits(user.get_user_id(), &dest_commits, false)?;
                 dest_diffs = dest_squashed_cmt.diffs;
             }
 
