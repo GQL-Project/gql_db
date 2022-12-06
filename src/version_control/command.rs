@@ -303,6 +303,28 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
 
     //TODO Modify this to work with an abbreviated hash - this does not look too hard to implement
 
+    if commit_hash.len() < 3 {
+        return Err("Commit hash must be at least 2 characters long".to_string());
+    }
+    else {
+        for node in branch_nodes {
+            let to_check = &node.commit_hash[..commit_hash.len()];
+            println!("Hash iteration: {}", to_check);
+            println!("Input Hash: {}", commit_hash);
+            println!("{}", commit_hash.eq(to_check));
+            if commit_hash.eq(to_check) {
+                if match_node.is_some() {
+                    return Err(
+                        "Commit exists multiple times in branch! Something is seriously wrong!"
+                            .to_string(),
+                    );
+                }
+                //Storing the matched commit's information
+                match_node = Some(node);
+            }
+        }
+    }
+    /* 
     for node in branch_nodes {
         if node.commit_hash == *commit_hash {
             if match_node.is_some() {
@@ -315,7 +337,7 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
             match_node = Some(node);
         }
     }
-
+    */
     // If the commit hash is not in the current branch, return an error
     if let Some(node) = match_node {
         let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&node), &branch_node)?;
@@ -331,8 +353,9 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
             user.append_diff(&curr_diff);
         }
         // Creating a revert commit
-        let revert_message = format!("Reverted to commit {}", commit_hash);
-        let revert_command = format!("gql revert {}", commit_hash);
+        // not sure what is going wrong here
+        let revert_message = format!("Reverted to commit {}", node.commit_hash.clone());
+        let revert_command = format!("gql revert {}", node.commit_hash.clone());
         let revert_commit_and_node = get_db_instance()?.create_commit_on_head(
             &revert_message,
             &revert_command,
