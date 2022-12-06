@@ -23,6 +23,7 @@ use super::{
 
 #[derive(Serialize, Deserialize)]
 pub struct Log {
+    user_id: String,
     hash: String,
     timestamp: String,
     message: String,
@@ -67,14 +68,24 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
 
         let commit_clone = commit.clone();
 
+        log_string = format!(
+            "{}\n---------- {}'s Commit ----------",
+            log_string, commit.user_id
+        );
         log_string = format!("{}\nCommit: {}", log_string, commit.hash);
         log_string = format!("{}\nMessage: {}", log_string, commit.message);
         log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
-        log_string = format!("{}\n-----------------------\n", log_string);
+        log_string = format!("{}\n", log_string);
 
-        let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
+        let printed_vals: Vec<String> = vec![
+            commit.user_id,
+            commit.hash,
+            commit.timestamp,
+            commit.message,
+        ];
 
         let log_object = Log {
+            user_id: commit_clone.user_id,
             hash: commit_clone.hash,
             timestamp: commit_clone.timestamp,
             message: commit_clone.message,
@@ -231,9 +242,11 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
         .rev()
         .collect::<Result<Vec<Commit>, String>>()?;
 
-    let squash_commit = get_db_instance()?
-        .get_commit_file_mut()
-        .squash_commits(&commits, true)?;
+    let squash_commit = get_db_instance()?.get_commit_file_mut().squash_commits(
+        user.get_user_id(),
+        &commits,
+        true,
+    )?;
 
     // Use the new commit hash, and make the current hash2 point to the commit before hash1.
     let squash_node = BranchNode {
@@ -360,7 +373,10 @@ pub fn info(hash: &String) -> Result<String, String> {
 
     let mut log_string: String = String::new();
 
-    log_string = format!("{}\n-----------------------", log_string);
+    log_string = format!(
+        "{}\n---------- {}'s Commit ----------",
+        log_string, commit.user_id
+    );
     log_string = format!("{}\nCommit: {}", log_string, commit.hash);
     log_string = format!("{}\nMessage: {}", log_string, commit.message);
     log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
@@ -368,7 +384,7 @@ pub fn info(hash: &String) -> Result<String, String> {
     for diffs in commit.diffs {
         log_string = format!("{}\n{}", log_string, diffs.to_string());
     }
-    log_string = format!("{}\n-----------------------\n", log_string);
+    log_string = format!("{}\n----------------------------------------\n", log_string);
 
     return Ok(log_string.to_string());
 }
@@ -530,11 +546,14 @@ mod tests {
         // Log the commits
         let result: Vec<Vec<String>> = log(&user).unwrap().1;
 
+        println!("result {:?}", result);
+
         // Assert that the result is correct
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0][0], commit.hash);
-        assert_eq!(result[0][1], commit.timestamp);
-        assert_eq!(result[0][2], commit.message);
+        assert_eq!(result[0][0], commit.user_id);
+        assert_eq!(result[0][1], commit.hash);
+        assert_eq!(result[0][2], commit.timestamp);
+        assert_eq!(result[0][3], commit.message);
 
         // Delete the database
         delete_db_instance().unwrap();
@@ -618,12 +637,14 @@ mod tests {
 
         // Assert that the result is correct
         assert_eq!(result.len(), 2);
-        assert_eq!(result[1][0], commit.hash);
-        assert_eq!(result[1][1], commit.timestamp);
-        assert_eq!(result[1][2], commit.message);
-        assert_eq!(result[0][0], second_commit.hash);
-        assert_eq!(result[0][1], second_commit.timestamp);
-        assert_eq!(result[0][2], second_commit.message);
+        assert_eq!(result[1][0], commit.user_id);
+        assert_eq!(result[1][1], commit.hash);
+        assert_eq!(result[1][2], commit.timestamp);
+        assert_eq!(result[1][3], commit.message);
+        assert_eq!(result[0][0], second_commit.user_id);
+        assert_eq!(result[0][1], second_commit.hash);
+        assert_eq!(result[0][2], second_commit.timestamp);
+        assert_eq!(result[0][3], second_commit.message);
 
         // Delete the database
         delete_db_instance().unwrap();
@@ -891,12 +912,24 @@ mod tests {
 
         let commit_file = load_db.get_commit_file_mut();
         let commit = commit_file.read_commit(1);
-        let query1 = format!("GQL info {}", commit.unwrap().hash);
+        let query1 = format!("GQL info {}", commit.clone().unwrap().hash);
 
         let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
-
-        delete_db_instance().unwrap();
         assert!(result.is_ok());
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&"--------- test_user's Commit ---------".to_string()));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&commit.clone().unwrap().hash));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&commit.clone().unwrap().message));
+        assert!(result.clone().unwrap().contains(&commit.unwrap().timestamp));
+        delete_db_instance().unwrap();
     }
 
     // Checks that discard deletes the -temp dir
