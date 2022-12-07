@@ -8,11 +8,7 @@ pub fn to_connect_result(id: String) -> ConnectResult {
     ConnectResult { id }
 }
 
-pub fn to_query_result(
-    schema: Vec<String>,
-    row_values: Vec<Row>,
-    time_taken: f32
-) -> QueryResult {
+pub fn to_query_result(schema: Vec<String>, row_values: Vec<Row>, time_taken: f32) -> QueryResult {
     QueryResult {
         column_names: schema.into_iter().map(|x| x).collect(),
         row_values: row_values.into_iter().map(to_row_value).collect(),
@@ -20,11 +16,8 @@ pub fn to_query_result(
     }
 }
 
-pub fn to_update_result(
-    message: String,
-    time_taken: f32
-) -> UpdateResult {
-    UpdateResult { 
+pub fn to_update_result(message: String, time_taken: f32) -> UpdateResult {
+    UpdateResult {
         message,
         time_taken,
     }

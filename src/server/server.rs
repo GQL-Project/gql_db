@@ -1,4 +1,4 @@
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use db_connection::database_connection_server::DatabaseConnection;
 use db_connection::*;
@@ -82,16 +82,12 @@ impl DatabaseConnection for Connection {
 
                 // Record the time that the query finished running.
                 let duration: Duration = Instant::now() - start_time;
-                
-                Ok(
-                    Response::new(
-                        to_query_result(
-                            data.0, 
-                            data.1, 
-                            duration.as_secs_f64() as f32
-                        )
-                    )
-                )
+
+                Ok(Response::new(to_query_result(
+                    data.0,
+                    data.1,
+                    duration.as_secs_f64() as f32,
+                )))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
@@ -128,14 +124,10 @@ impl DatabaseConnection for Connection {
                 // Record the time that the query finished running.
                 let duration: Duration = Instant::now() - start_time;
 
-                Ok(
-                    Response::new(
-                        to_update_result(
-                            resp, 
-                            duration.as_secs_f64() as f32
-                        )
-                    )
-                )
+                Ok(Response::new(to_update_result(
+                    resp,
+                    duration.as_secs_f64() as f32,
+                )))
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
