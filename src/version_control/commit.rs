@@ -1039,7 +1039,7 @@ mod tests {
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
             "test_user".to_string(),
-            "hash1".to_string(),
+            "hash123".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
             "cmd1".to_string(),
@@ -1050,7 +1050,7 @@ mod tests {
         );
         let commit2 = Commit::new(
             "test_user".to_string(),
-            "hash2".to_string(),
+            "hash234".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1058,7 +1058,7 @@ mod tests {
         );
         let commit3 = Commit::new(
             "test_user".to_string(),
-            "hash3".to_string(),
+            "hash345".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1071,11 +1071,11 @@ mod tests {
         delta.store_commit(&commit1).unwrap();
         delta.store_commit(&commit2).unwrap();
         delta.store_commit(&commit3).unwrap();
-        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        let commit13 = delta.fetch_commit(&"hash345".to_string()).unwrap();
         assert_eq!(commit3, commit13);
-        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        let commit11 = delta.fetch_commit(&"hash123".to_string()).unwrap();
         assert_eq!(commit1, commit11);
-        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        let commit12 = delta.fetch_commit(&"hash234".to_string()).unwrap();
         assert_eq!(commit2, commit12);
 
         // Delete the test database
@@ -1132,7 +1132,7 @@ mod tests {
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
             "test_user".to_string(),
-            "hash1".to_string(),
+            "hash123".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
             "cmd1".to_string(),
@@ -1143,7 +1143,7 @@ mod tests {
         );
         let commit2 = Commit::new(
             "test_user".to_string(),
-            "hash2".to_string(),
+            "hash234".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1151,7 +1151,7 @@ mod tests {
         );
         let commit3 = Commit::new(
             "test_user".to_string(),
-            "hash3".to_string(),
+            "hash345".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1162,11 +1162,11 @@ mod tests {
         delta.store_commit(&commit1).unwrap();
         delta.store_commit(&commit2).unwrap();
         delta.store_commit(&commit3).unwrap();
-        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        let commit13 = delta.fetch_commit(&"hash345".to_string()).unwrap();
         assert_eq!(commit3.command, commit13.command);
-        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        let commit11 = delta.fetch_commit(&"hash123".to_string()).unwrap();
         assert_eq!(commit1.command, commit11.command);
-        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        let commit12 = delta.fetch_commit(&"hash234".to_string()).unwrap();
         assert_eq!(commit2.command, commit12.command);
 
         // Delete the test database
@@ -1223,7 +1223,7 @@ mod tests {
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
             "test_user".to_string(),
-            "hash1".to_string(),
+            "hash123".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
             "cmd1".to_string(),
@@ -1234,7 +1234,7 @@ mod tests {
         );
         let commit2 = Commit::new(
             "test_user".to_string(),
-            "hash2".to_string(),
+            "hash234".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1242,7 +1242,7 @@ mod tests {
         );
         let commit3 = Commit::new(
             "test_user".to_string(),
-            "hash3".to_string(),
+            "hash345".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1253,11 +1253,11 @@ mod tests {
         delta.store_commit(&commit1).unwrap();
         delta.store_commit(&commit2).unwrap();
         delta.store_commit(&commit3).unwrap();
-        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        let commit13 = delta.fetch_commit(&"hash345".to_string()).unwrap();
         assert_eq!(commit3.message, commit13.message);
-        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        let commit11 = delta.fetch_commit(&"hash123".to_string()).unwrap();
         assert_eq!(commit1.message, commit11.message);
-        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        let commit12 = delta.fetch_commit(&"hash234".to_string()).unwrap();
         assert_eq!(commit2.message, commit12.message);
 
         // Delete the test database
@@ -1496,7 +1496,7 @@ mod tests {
         let (_, diff2) = insert(y.to_vec(), "test_table1".to_string(), &new_db, &mut user).unwrap();
         let commit1 = Commit::new(
             "test_user".to_string(),
-            "hash1".to_string(),
+            "hash123".to_string(),
             "timestamp1".to_string(),
             "message1".to_string(),
             "cmd1".to_string(),
@@ -1507,7 +1507,7 @@ mod tests {
         );
         let commit2 = Commit::new(
             "test_user".to_string(),
-            "hash2".to_string(),
+            "hash234".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1515,7 +1515,7 @@ mod tests {
         );
         let commit3 = Commit::new(
             "test_user".to_string(),
-            "hash3".to_string(),
+            "hash345".to_string(),
             "timestamp2".to_string(),
             "message2".to_string(),
             "cmd2".to_string(),
@@ -1526,11 +1526,11 @@ mod tests {
         delta.store_commit(&commit1).unwrap();
         delta.store_commit(&commit2).unwrap();
         delta.store_commit(&commit3).unwrap();
-        let commit13 = delta.fetch_commit(&"hash3".to_string()).unwrap();
+        let commit13 = delta.fetch_commit(&"hash345".to_string()).unwrap();
         assert_eq!(commit3.user_id, commit13.user_id);
-        let commit11 = delta.fetch_commit(&"hash1".to_string()).unwrap();
+        let commit11 = delta.fetch_commit(&"hash123".to_string()).unwrap();
         assert_eq!(commit1.user_id, commit11.user_id);
-        let commit12 = delta.fetch_commit(&"hash2".to_string()).unwrap();
+        let commit12 = delta.fetch_commit(&"hash234".to_string()).unwrap();
         assert_eq!(commit2.user_id, commit12.user_id);
 
         // Delete the test database
