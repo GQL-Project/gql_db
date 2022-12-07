@@ -219,9 +219,12 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
     let branch_name: String = user.get_current_branch_name();
     let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
     let head_mngr = get_db_instance()?.get_branch_heads_file_mut();
-    let hash1 = get_db_instance()?.get_commit_file_mut().resolve_commit(hash1)?;
-    let hash2 = get_db_instance()?.get_commit_file_mut().resolve_commit(hash2)?;
-
+    let hash1 = get_db_instance()?
+        .get_commit_file_mut()
+        .resolve_commit(hash1)?;
+    let hash2 = get_db_instance()?
+        .get_commit_file_mut()
+        .resolve_commit(hash2)?;
 
     if head_mngr.get_all_branch_heads()?.len() == 0 {
         return Err("No Commits in Current Branch!".to_string());
@@ -333,10 +336,10 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
 
     //TODO Modify this to work with an abbreviated hash - this does not look too hard to implement
 
+    let commit_hash = get_db_instance()?
+        .get_commit_file_mut()
+        .resolve_commit(commit_hash)?;
 
-    let commit_hash = get_db_instance()?.get_commit_file_mut().resolve_commit(commit_hash)?;
-
-    
     for node in branch_nodes {
         if node.commit_hash == *commit_hash {
             if match_node.is_some() {
@@ -349,7 +352,7 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
             match_node = Some(node);
         }
     }
-    
+
     // If the commit hash is not in the current branch, return an error
     if let Some(node) = match_node {
         let diffs = get_db_instance()?.get_diffs_between_nodes(Some(&node), &branch_node)?;
