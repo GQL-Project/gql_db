@@ -1,3 +1,5 @@
+use std::time::{Instant, Duration};
+
 use db_connection::database_connection_server::DatabaseConnection;
 use db_connection::*;
 use tonic::{Request, Response, Status};
@@ -71,11 +73,25 @@ impl DatabaseConnection for Connection {
                 let user: &mut User = self
                     .get_client(&request.id)
                     .map_err(|e| Status::internal(e))?;
+                // Record the current time that the query was run.
+                let start_time: Instant = Instant::now();
 
                 // Execute the query represented by the AST.
                 let data = query::execute_query(&tree, user, &request.query)
                     .map_err(|e| Status::internal(e))?;
-                Ok(Response::new(to_query_result(data.0, data.1)))
+
+                // Record the time that the query finished running.
+                let duration: Duration = Instant::now() - start_time;
+                
+                Ok(
+                    Response::new(
+                        to_query_result(
+                            data.0, 
+                            data.1, 
+                            duration.as_secs_f64() as f32
+                        )
+                    )
+                )
             }
             Err(err) => Err(Status::cancelled(&err)),
         }
@@ -103,9 +119,23 @@ impl DatabaseConnection for Connection {
                         .create_temp_branch_directory(user)
                         .map_err(|e| Status::internal(e))?;
                 }
+                // Record the current time that the query was run.
+                let start_time: Instant = Instant::now();
+
                 let resp = query::execute_update(&tree, user, &request.query)
                     .map_err(|e| Status::internal(e))?;
-                Ok(Response::new(to_update_result(resp)))
+
+                // Record the time that the query finished running.
+                let duration: Duration = Instant::now() - start_time;
+
+                Ok(
+                    Response::new(
+                        to_update_result(
+                            resp, 
+                            duration.as_secs_f64() as f32
+                        )
+                    )
+                )
             }
             Err(err) => Err(Status::cancelled(&err)),
         }

@@ -37,11 +37,13 @@ message ConnectResult {
 message QueryResult {
     repeated string column_names = 3;
     repeated RowValue row_values = 4;
+    float time_taken = 5;
 }
 
 // Result from executing an SQL Update Command 
 message UpdateResult {
     string message = 1;
+    float time_taken = 2;
 }
 
 // Result from executing a Version Control Command

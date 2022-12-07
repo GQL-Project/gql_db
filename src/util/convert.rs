@@ -8,15 +8,26 @@ pub fn to_connect_result(id: String) -> ConnectResult {
     ConnectResult { id }
 }
 
-pub fn to_query_result(schema: Vec<String>, row_values: Vec<Row>) -> QueryResult {
+pub fn to_query_result(
+    schema: Vec<String>,
+    row_values: Vec<Row>,
+    time_taken: f32
+) -> QueryResult {
     QueryResult {
         column_names: schema.into_iter().map(|x| x).collect(),
         row_values: row_values.into_iter().map(to_row_value).collect(),
+        time_taken,
     }
 }
 
-pub fn to_update_result(message: String) -> UpdateResult {
-    UpdateResult { message }
+pub fn to_update_result(
+    message: String,
+    time_taken: f32
+) -> UpdateResult {
+    UpdateResult { 
+        message,
+        time_taken,
+    }
 }
 
 /// Converts the parameters into a VersionControlResult that is suitable to be
@@ -105,7 +116,7 @@ mod tests {
                 Value::String("d".to_string()),
             ],
         ];
-        let result = to_query_result(column_names.clone(), row_values.clone());
+        let result = to_query_result(column_names.clone(), row_values.clone(), 5.6 as f32);
         assert_eq!(result.column_names[0], "a");
         assert_eq!(result.column_names[1], "b");
         assert_eq!(
@@ -115,13 +126,15 @@ mod tests {
                 to_row_value(row_values[1].clone())
             ]
         );
+        assert_eq!(result.time_taken, 5.6 as f32)
     }
 
     #[test]
     fn test_to_update_result() {
         let message = "12345".to_string();
-        let result = to_update_result(message.clone());
+        let result = to_update_result(message.clone(), 3.1 as f32);
         assert_eq!(result.message, message);
+        assert_eq!(result.time_taken, 3.1 as f32);
     }
 
     #[test]

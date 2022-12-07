@@ -135,6 +135,7 @@ mod tests {
                     Value::String("Cleveland".to_string()),
                 ]),
             ],
+            time_taken: 0 as f32,
         };
 
         result_parse(result).unwrap();
@@ -145,6 +146,7 @@ mod tests {
         let result = QueryResult {
             column_names: vec![],
             row_values: vec![],
+            time_taken: 0 as f32,
         };
 
         assert_eq!(result_parse(result).unwrap(), ());
@@ -155,6 +157,7 @@ mod tests {
         let result = QueryResult {
             column_names: vec!["Name".to_string()],
             row_values: vec![to_row_value(vec![Value::String("John Adams".to_string())])],
+            time_taken: 0 as f32,
         };
 
         result_parse(result).unwrap();
@@ -165,6 +168,7 @@ mod tests {
         let result = QueryResult {
             column_names: vec!["Name".to_string()],
             row_values: vec![],
+            time_taken: 0 as f32,
         };
 
         result_parse(result).unwrap();
