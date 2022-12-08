@@ -111,6 +111,13 @@ impl Column {
         }
     }
 
+    pub fn is_nullable(&self) -> bool {
+        match self {
+            Column::Nullable(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn read(&self, page: &Page, offset: usize) -> Result<Value, String> {
         match self {
             Column::I32 => {

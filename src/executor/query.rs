@@ -25,7 +25,7 @@ use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
     AlterTableOperation, Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
-    Statement,
+    Statement, ColumnOptionDef, ColumnOption,
 };
 
 pub type Tables = Vec<(Table, String)>;
@@ -449,10 +449,24 @@ pub fn execute_update(
                     } => {
                         let old_name = old_name.to_string();
                         let new_name = new_name.to_string();
-                        let column = Column::from_datatype_def(data_type)?;
+                        let mut column = Column::from_datatype_def(data_type)?;
+
+                        if options.len() > 0 {
+                            match options[0] {
+                                ColumnOption::Null => {
+                                    column = Column::Nullable(Box::new(column.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
+                        println!("colummn {:?}", column.is_nullable());
 
                         if !schemas.iter().any(|x| x.0 == old_name) {
                             return Err(format!("Column name {} does not exist", old_name));
+                        }
+
+                        if schemas.iter().any(|x| x.0 == old_name && x.1.is_nullable() && !column.is_nullable()) {
+                            return Err(format!("Cannot change Nullable to not Nullable"));
                         }
 
                         // find the index of the column to drop
@@ -462,7 +476,7 @@ pub fn execute_update(
                             .unwrap();
 
                         // drop the replace in the vector
-                        schemas[column_index] = (new_name, column.clone());
+                        schemas[column_index] = (new_name.clone(), column.clone());
 
                         for r in rows.iter_mut() {
                             r.row[column_index] =
@@ -479,12 +493,12 @@ pub fn execute_update(
                         }
 
                         results.push(format!(
-                            "Column {} dropped in Table {}",
-                            old_name, table_name
+                            "Column {} changed to {}({:?}) in Table {}",
+                            old_name, new_name, column, table_name
                         ));
                     }
                     _ => {
-                        return Err("Can only add or drop columns".to_string());
+                        return Err("Can only add, drop, or change columns".to_string());
                     }
                 }
             }
