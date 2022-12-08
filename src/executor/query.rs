@@ -24,8 +24,8 @@ use crate::{
 use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
-    AlterTableOperation, Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
-    Statement, ColumnOptionDef, ColumnOption,
+    AlterTableOperation, ColumnOption, ColumnOptionDef, Expr, Ident, OrderByExpr, Query, Select,
+    SelectItem, SetExpr, SetOperator, Statement,
 };
 
 pub type Tables = Vec<(Table, String)>;
@@ -465,7 +465,10 @@ pub fn execute_update(
                             return Err(format!("Column name {} does not exist", old_name));
                         }
 
-                        if schemas.iter().any(|x| x.0 == old_name && x.1.is_nullable() && !column.is_nullable()) {
+                        if schemas
+                            .iter()
+                            .any(|x| x.0 == old_name && x.1.is_nullable() && !column.is_nullable())
+                        {
                             return Err(format!("Cannot change Nullable to not Nullable"));
                         }
 
