@@ -105,5 +105,9 @@ pub enum VersionControlSubCommand {
     /// Updates the user's copy of the database
     /// (i.e. fetches the latest changes from the remote)
     #[clap(aliases = &["pull", "fetch"])]
-    PullChanges,
+    PullChanges {
+        /// The algorithm to use for resolving merge conflicts (options: "ours", "theirs", "clean")
+        #[arg(long, short, default_value = "clean")]
+        merge_strat: String,
+    },
 }

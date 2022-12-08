@@ -165,8 +165,20 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     command::discard(user)?;
                     Ok("Discarded changes".to_string())
                 }
-                VersionControlSubCommand::PullChanges => {
-                    command::pull(user)?;
+                VersionControlSubCommand::PullChanges {
+                    merge_strat
+                } => {
+                    let merge_strategy = match merge_strat.as_str() {
+                        "ours" => MergeConflictResolutionAlgo::UseSource,
+                        "theirs" => MergeConflictResolutionAlgo::UseTarget,
+                        "clean" => MergeConflictResolutionAlgo::NoConflicts,
+                        _ => Err(
+                            "Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'"
+                                .to_string(),
+                        )?,
+                    };
+                    
+                    command::pull(user, merge_strategy.clone())?;
                     Ok("Pull changes".to_string())
                 }
             }

@@ -16,6 +16,7 @@ use super::diff::*;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
+    merge::*,
 };
 use std::fs;
 
@@ -445,7 +446,8 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 /// This function is used to update the user's copy of the db
 /// to the latest commit if the user is behind
 /// Takes in user object and Returns Success or Error
-pub fn pull(user: &mut User) -> Result<String, String> {
+pub fn pull(user: &mut User,
+            merge_conflict_algo: MergeConflictResolutionAlgo) -> Result<String, String> {
     
     // Checking the branch's status to ensure if the user is up-to-date
     let behind_check = user.get_status();
@@ -478,6 +480,40 @@ pub fn pull(user: &mut User) -> Result<String, String> {
     let diffs_to_pull =
         get_db_instance()?.get_diffs_between_nodes(Some(&user_curr_node), &current_node)?;
 
+    if user.get_diffs().len() != 0 {
+
+        // Target Diffs are changes user has made
+        let target_diffs = user.get_diffs();
+
+        // Source Diffs are the changes that the user
+        // missed out on while making their own changes
+        let source_commits: Vec<Commit> =
+        get_db_instance()?.get_commits_between_nodes(Some(&user_curr_node), &current_node)?;
+        // Only need to squash the commits if there are some
+        let mut source_diffs: Vec<Diff> = Vec::new();
+        if source_commits.len() > 0 {
+            let source_squashed_cmt: Commit =
+                get_db_instance()?.get_commit_file_mut().squash_commits(&source_commits, false)?;
+            source_diffs = source_squashed_cmt.diffs;
+        }
+
+        // Getting the diffs for the merge operation
+        let merged_diffs = create_merge_diffs(
+            &source_diffs,
+            &target_diffs,
+            &get_db_instance()?.get_current_working_branch_path(user),
+            merge_conflict_algo,
+        )?;
+
+        // Apply the merged diffs
+        construct_tables_from_diffs(
+            &get_db_instance()?.get_current_working_branch_path(user),
+            &merged_diffs,
+        )?;
+        return Ok(("Your branch is now up-to-date. The changes you missed".to_owned() +
+        "were merged with your uncommitted changes").to_string())
+    }
+
     // Applying diffs to user's branch
     construct_tables_from_diffs(&user_branch_path, &diffs_to_pull)?;
     // Updating user's branch head
@@ -497,7 +533,7 @@ mod tests {
             header::Schema,
             tableio::Table,
         },
-        parser::parser::{parse_vc_cmd, parse},
+        parser::parser::*,
         util::{
             bench::{create_demo_db, fcreate_db_instance},
             dbtype::*,
@@ -1079,13 +1115,12 @@ mod tests {
         //Creating a new user
         let mut user: User = User::new("test_user".to_string());
 
-        let table_name1: String = "table1".to_string();
-
         // Copying main dir to store state of database
         let copy_dir: String = "test_revert_copy_dir".to_string();
         std::fs::create_dir_all(copy_dir.clone()).unwrap();
 
         // Create a new table on the main
+        let table_name1: String = "table1".to_string();
         let schema: Schema = vec![
             ("id".to_string(), Column::I32),
             ("name".to_string(), Column::String(50)),
@@ -1211,12 +1246,735 @@ mod tests {
             .unwrap();
         
         //Calling pull when there's no new changes
-        let pull_result = pull(&mut user);
+        let pull_result = pull(&mut user, 
+                MergeConflictResolutionAlgo::NoConflicts);
 
         assert_eq!(pull_result.is_ok(), true);
         assert_eq!(pull_result.unwrap(), "Your branch is already up-to-date.".to_string());
+        assert_eq!(user.get_status().1, false);
+
+        delete_db_instance().unwrap();
     }
     
+    #[test]
+    #[serial]
+    fn test_pull_w_one_change() {
+        //Creating db instance
+        let db_name = "gql_pull_test_w_one_change".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user1: User = User::new("test_user1".to_string());
+        let mut user2: User = User::new("test_user2".to_string());
+
+        // Main Dir path
+        let main_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Copying main dir to store state of database
+        let user2_dir: String = "test_pull_user2_dir".to_string();
+        std::fs::create_dir_all(user2_dir.clone()).unwrap();
+
+        // Creating a dir to compare to
+        let compare_dir: String = "test_pull_compare_dir".to_string();
+        std::fs::create_dir_all(compare_dir.clone()).unwrap();
+
+        // Create a new table on the main
+        let table_name1: String = "table1".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let mut _table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user1).unwrap();
+
+        // Create a commit on the main branch
+        let node_commit1 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        let table1 = Table::new(
+            &main_dir,
+            &table_name1,
+            None,
+        ).unwrap();
+
+        // Copying node_commit1 state to user2 dir to emulate user being behind       
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+        
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+
+        // User1 makes some more changes that User2 misses out on
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user1,
+        )
+        .unwrap();
+
+        // User1 creates commit on main branch
+        let _node_commit2 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main - Added Wayne family".to_string(),
+                &"Insert;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Copying main dir to compare dir to verify pull worked
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                compare_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+
+        // Copying user2 state to main dir to emulate user being behind
+        std::fs::copy(
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+            table1.path,
+        ).unwrap();
+
+        // Setting the user's branch head to the first commit
+        user2.set_user_branch_head(&node_commit1.0);
+
+        // Calling pull
+        let pull_result = pull(&mut user2, 
+                MergeConflictResolutionAlgo::NoConflicts);
+
+        assert_eq!(pull_result.is_ok(), true);
+        assert_eq!(pull_result.unwrap(), "Your branch is now up-to-date!".to_string());
+
+        // Get the directories for all the branches
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Read in all the tables from the branch directories before we compare them
+        let table_user2_main: Table =
+            Table::new(&main_branch_table_dir, &"table1".to_string(), None).unwrap();
+        let table_compare_copy: Table = Table::new(&compare_dir, &"table1".to_string(), None).unwrap();
+
+        let table_old_state: Table = Table::new(&user2_dir, &"table1".to_string(), None).unwrap();
+
+        // Make sure that the main branch table isn't the same as the table copy in the user2 dir
+        assert_eq!(
+            compare_tables(&table_user2_main, &table_old_state, &main_branch_table_dir, &user2_dir),
+            false
+        );
+
+        // Make sure that the main branch table is the same as the table copy in the compare dir
+        assert_eq!(
+            compare_tables(&table_user2_main, &table_compare_copy, &main_branch_table_dir, &compare_dir),
+            true
+        );
+        delete_db_instance().unwrap();
+
+        //Deleting the revert_copy dir after test
+        std::fs::remove_dir_all(user2_dir).unwrap();
+        std::fs::remove_dir_all(compare_dir).unwrap();        
+    }
+
+    #[test]
+    #[serial]
+    fn test_pull_multiple_changes_1_table() {
+        //Creating db instance
+        let db_name = "gql_pull_test_multi_changes".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user1: User = User::new("test_user1".to_string());
+        let mut user2: User = User::new("test_user2".to_string());
+
+        // Main Dir path
+        let main_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Creating user2_dir to store user2 state
+        let user2_dir: String = "test_pull_user2_dir".to_string();
+        std::fs::create_dir_all(user2_dir.clone()).unwrap();
+
+        // Creating compare_dir to store final state of branch to compare against
+        // and verify pull_changes works
+        let compare_dir: String = "test_pull_compare_dir".to_string();
+        std::fs::create_dir_all(compare_dir.clone()).unwrap();
+
+        /* === USER 1 CHANGES === */
+        // User1: Table Create -> Table1
+        let table_name1: String = "table1".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let mut _table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user1).unwrap();
+
+        // User1: Commit
+        let node_commit1 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Storing table1 as an object for future reference
+        let table1 = Table::new(
+            &main_dir,
+            &table_name1,
+            None,
+        ).unwrap();
+
+        // Copying node_commit1 state to user2 dir to store state       
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+        
+        // User1: Insert -> Rows
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user1,
+        )
+        .unwrap();
+
+        // User1: Commit
+        let _node_commit2 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main - Added Wayne family".to_string(),
+                &"Insert;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // User1: Insert -> Rows2
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let rows2: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Clark Kent".to_string())],
+            vec![Value::I32(2), Value::String("Lois Lane".to_string())],
+            vec![Value::I32(3), Value::String("Jon Kent".to_string())],
+        ];
+        let _res2 = insert(
+            rows2,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user1,
+        )
+        .unwrap();
+
+        // User1: Commit
+        let _node_commit3 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Third Commit on Main - Added Kent family".to_string(),
+                &"Insert;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // User1: TableCreate -> Table2
+        let table_name2: String = "table2".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+            ("alias".to_string(), Column::String(50)),
+        ];
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let mut _table2_info =
+            create_table(&table_name2, &schema, get_db_instance().unwrap(), &mut user1).unwrap();
+
+        // User1: Insert -> Rows3
+        let rows3: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Clark Kent".to_string()), Value::I32(34), Value::String("Superman".to_string())],
+            vec![Value::I32(2), Value::String("Lois Lane".to_string()), Value::I32(34), Value::String("N/A".to_string())],
+            vec![Value::I32(3), Value::String("Jon Kent".to_string()), Value::I32(9), Value::String("Superboy".to_string())],
+        ];
+        let _res2 = insert(
+            rows3,
+            table_name2.clone(),
+            get_db_instance().unwrap(),
+            &mut user1,
+        )
+        .unwrap();
+
+        // User1: Commit
+        let _node_commit4 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Fourth Commit on Main - Added new table w/ Kent family".to_string(),
+                &"TableCreate; Insert;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Storing Table2 object for future reference
+        let table2 = Table::new(
+            &main_dir,
+            &table_name2,
+            None,
+        ).unwrap();
+
+        /* === LOADING USER2 STATE INTO MAIN & SAVING USER1 STATE === */
+        // Copying files from main to compare_dir to store branch's final state
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                compare_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        ).unwrap();
+        std::fs::copy(
+            &table2.path,
+            format!(
+                "{}{}{}.db",
+                compare_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name2
+            ),
+        ).unwrap();
+
+        // Copying files from user2_dir to load user2 state into main dir
+        std::fs::copy(
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+            table1.path,
+        ).unwrap();
+        std::fs::remove_file(&table2.path).unwrap(); // Removing table2 from main as user2 missed it
+
+        // Setting the user's branch head to the first commit
+        user2.set_user_branch_head(&node_commit1.0);
+        
+        // Calling pull
+        let pull_result = pull(&mut user2, 
+                MergeConflictResolutionAlgo::NoConflicts);
+
+        /* === ASSERTS === */
+        assert_eq!(pull_result.is_ok(), true);
+        assert_eq!(pull_result.unwrap(), "Your branch is now up-to-date!".to_string());
+
+        // Get the directories for all the branches
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Read in all the table 1s from the branch directories before we compare them
+        let table_user2_main: Table =
+            Table::new(&main_branch_table_dir, &"table1".to_string(), None).unwrap();
+        let table_compare_copy: Table = Table::new(&compare_dir, &"table1".to_string(), None).unwrap();
+
+        let table_old_state: Table = Table::new(&user2_dir, &"table1".to_string(), None).unwrap();
+
+        // Make sure that the main branch table isn't the same as the table copy in the user2 dir
+        assert_eq!(
+            compare_tables(&table_user2_main, &table_old_state, &main_branch_table_dir, &user2_dir),
+            false
+        );
+
+        // Make sure that the main branch table is the same as the table copy in the compare dir
+        assert_eq!(
+            compare_tables(&table_user2_main, &table_compare_copy, &main_branch_table_dir, &compare_dir),
+            true
+        );
+        // Asserting that the table2 file was created
+        assert_eq!(std::path::Path::new(&table2.path).exists(), true);
+
+        //Deleting the revert_copy dir after test
+        delete_db_instance().unwrap();
+        std::fs::remove_dir_all(user2_dir).unwrap();
+        std::fs::remove_dir_all(compare_dir).unwrap(); 
+    }
+
+    /*
+    #[test]
+    #[serial]
+    fn test_pull_multiple_changes_multi_tables() {
+
+    }
+
+    #[test]
+    #[serial]
+    fn test_pull_merge_conflict_target() {
+        //Creating db instance
+        let db_name = "gql_pull_test_merge_conflict_target".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user1: User = User::new("test_user1".to_string());
+        let mut user2: User = User::new("test_user2".to_string());
+
+        // Main Dir path
+        let main_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Creating user2_dir to store user2 state
+        let user2_dir: String = "test_pull_user2_dir".to_string();
+        std::fs::create_dir_all(user2_dir.clone()).unwrap();
+    
+        // Creating user1_dir to store user1 state
+        let user1_dir: String = "test_pull_user1_dir".to_string();
+        std::fs::create_dir_all(user1_dir.clone()).unwrap();
+
+        /* === USER 1 CHANGES === */
+        // User1: Table Create -> Table1
+        let table_name1: String = "table1".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let mut _table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user1).unwrap();
+
+        // User1: Commit
+        let node_commit1 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Storing table1 as an object for future reference
+        let table1 = Table::new(
+            &main_dir,
+            &table_name1,
+            None,
+        ).unwrap();
+
+        // Copying node_commit1 state to user2 dir to store state       
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        ).unwrap();
+
+        // User1: Insert -> Rows
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user1,
+        )
+        .unwrap();
+
+        // User1: Commit
+        let _node_commit2 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main - Added Wayne family".to_string(),
+                &"Insert;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Copying main dir to user1 dir to verify pull didn't pull from here
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                user1_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+
+        // Copying user2 state to main dir to emulate user being behind
+        std::fs::copy(
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+            &table1.path,
+        ).unwrap();
+
+        // Setting the user's branch head to the first commit
+        user2.set_user_branch_head(&node_commit1.0);
+
+        //User2: RemoveTable
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user2)
+            .unwrap();
+        let _res = drop_table(&table_name1, get_db_instance().unwrap(), &mut user2);
+        
+        //Calling Pull
+        let pull_result = pull(&mut user2, MergeConflictResolutionAlgo::UseTarget);
+
+        assert_eq!(pull_result.is_ok(), true);
+        assert_eq!(pull_result.unwrap(), ("Your branch is now up-to-date. The changes you missed ".to_owned() +
+        "were merged with your uncommitted changes").to_string());
+
+        assert_eq!(std::path::Path::new(&table1.path).exists(), false);
+
+        delete_db_instance().unwrap();
+        std::fs::remove_dir_all(user2_dir).unwrap();
+        std::fs::remove_dir_all(user1_dir).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_pull_merge_conflict_source() {
+        //Creating db instance
+        let db_name = "gql_pull_test_merge_conflict_source".to_string();
+        fcreate_db_instance(&db_name);
+
+        //Creating a new user
+        let mut user1: User = User::new("test_user1".to_string());
+        let mut user2: User = User::new("test_user2".to_string());
+
+        // Main Dir path
+        let main_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+
+        // Creating user2_dir to store user2 state
+        let user2_dir: String = "test_pull_user2_dir".to_string();
+        std::fs::create_dir_all(user2_dir.clone()).unwrap();
+    
+        // Creating user1_dir to store user1 state
+        let user1_dir: String = "test_pull_user1_dir".to_string();
+        std::fs::create_dir_all(user1_dir.clone()).unwrap();
+
+        /* === USER 1 CHANGES === */
+        // User1: Table Create -> Table1
+        let table_name1: String = "table1".to_string();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let mut _table1_info =
+            create_table(&table_name1, &schema, get_db_instance().unwrap(), &mut user1).unwrap();
+
+        // User1: Commit
+        let node_commit1 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Storing table1 as an object for future reference
+        let table1 = Table::new(
+            &main_dir,
+            &table_name1,
+            None,
+        ).unwrap();
+
+        // Copying node_commit1 state to user2 dir to store state       
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        ).unwrap();
+
+        // User1: Insert -> Rows
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user1)
+            .unwrap();
+        let rows: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Bruce Wayne".to_string())],
+            vec![Value::I32(2), Value::String("Selina Kyle".to_string())],
+            vec![Value::I32(3), Value::String("Damian Wayne".to_string())],
+        ];
+        let _res = insert(
+            rows,
+            table_name1.clone(),
+            get_db_instance().unwrap(),
+            &mut user1,
+        )
+        .unwrap();
+
+        // User1: Commit
+        let _node_commit2 = get_db_instance()
+            .unwrap()
+            .create_commit_and_node(
+                &"Second Commit on Main - Added Wayne family".to_string(),
+                &"Insert;".to_string(),
+                &mut user1,
+                None,
+            )
+            .unwrap();
+
+        // Copying main dir to user1 dir to verify pull didn't pull from here
+        std::fs::copy(
+            &table1.path,
+            format!(
+                "{}{}{}.db",
+                user1_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+        )
+        .unwrap();
+
+        // Copying user2 state to main dir to emulate user being behind
+        std::fs::copy(
+            format!(
+                "{}{}{}.db",
+                user2_dir,
+                std::path::MAIN_SEPARATOR,
+                &table_name1
+            ),
+            &table1.path,
+        ).unwrap();
+
+        // Setting the user's branch head to the first commit
+        user2.set_user_branch_head(&node_commit1.0);
+
+        //User2: RemoveTable
+        get_db_instance()
+            .unwrap()
+            .create_temp_branch_directory(&mut user2)
+            .unwrap();
+        let _res = drop_table(&table_name1, get_db_instance().unwrap(), &mut user2);
+        
+        //Calling Pull
+        let pull_result = pull(&mut user2, MergeConflictResolutionAlgo::UseSource);
+
+        assert_eq!(pull_result.is_ok(), true);
+        assert_eq!(pull_result.unwrap(), ("Your branch is now up-to-date. The changes you missed ".to_owned() +
+        "were merged with your uncommitted changes").to_string());
+
+        // Verifying table exists as source still had Table1
+        assert_eq!(std::path::Path::new(&(main_dir.clone() + "/table1.db")).exists(), true);
+    
+        // Verifying that the table is the same as the one in user1 dir
+        let table1_main: Table = Table::new(&main_dir, &"table1".to_string(), None).unwrap();
+        let table1_user1: Table = Table::new(&user1_dir, &"table1".to_string(), None).unwrap();
+
+        let table_temp = table1_main.clone();
+        let table_temp2 = table1_user1.clone();
+
+        for row in table_temp2 {
+            println!("========== {:?} ===========", row);
+        }
+
+        for row in table_temp {
+            println!("========== {:?} ===========", row);
+        }
+
+        assert_eq!(compare_tables(&table1_main, &table1_user1, &main_dir, &user1_dir), true);
+
+        delete_db_instance().unwrap();
+        std::fs::remove_dir_all(user2_dir).unwrap();
+        std::fs::remove_dir_all(user1_dir).unwrap();
+    } */
 
     /// Helper that compares two tables to make sure that they are identical, but in separate directories
     fn compare_tables(
