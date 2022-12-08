@@ -1,5 +1,10 @@
+use std::collections::HashMap;
+
+use itertools::Itertools;
+
 use super::{databaseio::Database, header::*, pageio::*, rowio::*};
 use crate::{
+    btree::{btree::BTree, indexes::*},
     user::userdata::User,
     util::{dbtype::Value, row::*},
     version_control::diff::*,
@@ -17,6 +22,7 @@ pub struct Table {
     pub row_num: u16,
     pub max_pages: u32,
     pub schema_size: usize,
+    pub indexes: HashMap<IndexID, (u32, String)>, // Hashmap of index id to (page_num, index_name)
 }
 
 impl Table {
@@ -41,22 +47,28 @@ impl Table {
             table_extension.unwrap_or(&TABLE_FILE_EXTENSION.to_string())
         );
 
+        Self::new_from_path(path, table_name.clone())
+    }
+
+    /// Construct a new table from an already existing file.
+    pub fn new_from_path(path: String, table_name: String) -> Result<Table, String> {
         // If the file doesn't exist, return an error.
         if !std::path::Path::new(&path).exists() {
-            return Err(format!("Table file {} does not exist.", table_name));
+            return Err(format!("Table file {} does not exist.", path));
         }
 
-        let header = read_header(&path)?;
-        let page = Box::new([0u8; PAGE_SIZE]);
+        let header: Header = read_header(&path)?;
+        let page: Box<Page> = Box::new([0u8; PAGE_SIZE]);
         Ok(Table {
-            name: table_name.to_string(),
+            name: table_name,
             schema_size: schema_size(&header.schema),
             schema: header.schema,
             page,
-            path,
+            path: path,
             page_num: 0,
             row_num: 0,
             max_pages: header.num_pages,
+            indexes: header.index_top_level_pages,
         })
     }
 
@@ -90,8 +102,15 @@ impl Iterator for Table {
     fn next(&mut self) -> Option<Self::Item> {
         // Load the first page, only when iteration begins.
         if self.page_num == 0 {
-            load_page(1, &self.path, self.page.as_mut()).ok()?;
-            self.page_num = 1;
+            // Find the first data page in the file
+            loop {
+                self.page_num += 1;
+                let page_type: PageType =
+                    load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
+                if page_type == PageType::Data {
+                    break;
+                }
+            }
         }
         let mut rowinfo = None;
         // Keep reading rows until we find one that isn't empty, or we run out of rows.
@@ -99,10 +118,21 @@ impl Iterator for Table {
             if self.page_num >= self.max_pages {
                 return None;
             }
+            // If the row is out of the page bounds, load the next data page.
             if check_bounds(self.get_offset(), self.schema_size).is_err() {
-                load_page(self.page_num + 1, &self.path, self.page.as_mut()).ok()?;
-                self.page_num += 1;
-                self.row_num = 0;
+                // Find the next data page in the file
+                loop {
+                    if self.page_num >= self.max_pages {
+                        return None;
+                    }
+                    self.page_num += 1;
+                    let page_type: PageType =
+                        load_page(self.page_num, &self.path, self.page.as_mut()).ok()?;
+                    if page_type == PageType::Data {
+                        self.row_num = 0;
+                        break;
+                    }
+                }
             }
             if let Some(row) = read_row(&self.schema, self.page.as_ref(), self.row_num) {
                 rowinfo = Some(RowInfo {
@@ -160,12 +190,13 @@ pub fn create_table_in_dir(
     let header = Header {
         num_pages: 2,
         schema: schema.clone(),
+        index_top_level_pages: HashMap::new(),
     };
     write_header(&table_path, &header)?;
 
     // Write a blank page to the table
     let page = [0u8; PAGE_SIZE];
-    write_page(1, &table_path, &page)?;
+    write_page(1, &table_path, &page, PageType::Data)?;
 
     // Return the table and the diff
     Ok((
@@ -229,10 +260,10 @@ impl Table {
         // To reduce page updates, we sort the rows by page number.
         rows.sort();
         let mut pagenum = rows[0].pagenum;
-        let mut page = read_page(pagenum, &self.path)?;
+        let (mut page, page_type) = read_page(pagenum, &self.path)?;
         for row in rows {
             if pagenum != row.pagenum {
-                write_page(pagenum, &self.path, page.as_ref())?;
+                write_page(pagenum, &self.path, page.as_ref(), page_type.clone())?;
                 pagenum = row.pagenum;
                 load_page(row.pagenum, &self.path, page.as_mut())?;
             }
@@ -266,7 +297,14 @@ impl Table {
             diff.rows.push(row);
         }
         // Write the last page
-        write_page(pagenum, &self.path, page.as_ref())?;
+        write_page(pagenum, &self.path, page.as_ref(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            self.load_btree(index_id)?
+                .update_rows(&diff.old_rows, &diff.rows)?;
+        }
+
         Ok(diff)
     }
 
@@ -287,24 +325,25 @@ impl Table {
         }
 
         let mut pagenum = 1;
-        let mut page = read_page(pagenum, &self.path)?;
+        let (mut page, page_type) = read_page(pagenum, &self.path)?;
         for row in rows {
             // Keep track of the rownum that we insert the row into
             let mut rownum_inserted: Option<u16> = insert_row(&self.schema, page.as_mut(), &row)?;
             while rownum_inserted.is_none() {
-                write_page(pagenum, &self.path, page.as_ref())?;
+                write_page(pagenum, &self.path, page.as_ref(), page_type.clone())?;
                 pagenum += 1;
                 if pagenum > self.max_pages
                     || load_page(pagenum, &self.path, page.as_mut()).is_err()
                 {
                     // Allocate a new page
-                    page = Box::new([0; 4096]);
+                    page = Box::new([0; PAGE_SIZE]);
                     self.max_pages += 1;
 
                     // Update the header
                     let new_header: Header = Header {
                         num_pages: self.max_pages,
                         schema: self.schema.clone(),
+                        index_top_level_pages: self.indexes.clone(),
                     };
                     write_header(&self.path, &new_header)?;
                 }
@@ -318,7 +357,13 @@ impl Table {
             });
         }
         // Write the last page
-        write_page(pagenum, &self.path, page.as_mut())?;
+        write_page(pagenum, &self.path, page.as_mut(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            self.load_btree(index_id)?.insert_rows(&diff.rows)?;
+        }
+
         Ok(diff)
     }
 
@@ -332,6 +377,7 @@ impl Table {
             schema: self.schema.clone(),
             rows: Vec::new(),
         };
+        let mut old_rows: Vec<RowInfo> = Vec::new();
 
         // Just return right away if we aren't inserting any rows
         if rows.len() == 0 {
@@ -341,29 +387,51 @@ impl Table {
         // To reduce page updates, we sort the rows by page number.
         rows.sort();
         let mut pagenum: u32 = 0;
-        let mut page: Box<Page> = Box::new([0; 4096]);
+        let mut page: Box<Page> = Box::new([0; PAGE_SIZE]);
+        let mut page_type: PageType = PageType::Data;
         for rowinfo in rows {
             pagenum = rowinfo.pagenum;
 
             // Allocate new pages if needed
             while rowinfo.pagenum >= self.max_pages {
-                let new_page = Box::new([0; 4096]);
+                let new_page = Box::new([0; PAGE_SIZE]);
                 self.max_pages += 1;
-                write_page(self.max_pages - 1, &self.path, new_page.as_ref())?;
+                write_page(
+                    self.max_pages - 1,
+                    &self.path,
+                    new_page.as_ref(),
+                    PageType::Data,
+                )?;
 
                 // Update the header
                 let new_header: Header = Header {
                     num_pages: self.max_pages,
                     schema: self.schema.clone(),
+                    index_top_level_pages: self.indexes.clone(),
                 };
                 write_header(&self.path, &new_header)?;
             }
             // Read in the page
-            page = read_page(rowinfo.pagenum, &self.path)?;
+            (page, page_type) = read_page(rowinfo.pagenum, &self.path)?;
+
+            // Read in the old row if there is one
+            let row_read_opt: Option<Row> = read_row(&self.schema, &page, rowinfo.rownum);
+            if let Some(row_read) = row_read_opt {
+                old_rows.push(RowInfo {
+                    pagenum: rowinfo.pagenum,
+                    rownum: rowinfo.rownum,
+                    row: row_read,
+                });
+            }
 
             // Write the row to the page at the row number
             write_row(&self.schema, page.as_mut(), &rowinfo.row, rowinfo.rownum)?;
-            write_page(rowinfo.pagenum, &self.path, page.as_ref())?;
+            write_page(
+                rowinfo.pagenum,
+                &self.path,
+                page.as_ref(),
+                page_type.clone(),
+            )?;
 
             // Add the information to the diff
             diff.rows.push(RowInfo {
@@ -373,7 +441,42 @@ impl Table {
             });
         }
         // Write the last page
-        write_page(pagenum, &self.path, page.as_mut())?;
+        write_page(pagenum, &self.path, page.as_mut(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            let new_rows: Vec<RowInfo> = diff
+                .rows
+                .iter()
+                // Filter out the rows that didn't change
+                .filter(|rowinfo| {
+                    old_rows
+                        .iter()
+                        .map(|ri| RowLocation {
+                            pagenum: ri.pagenum,
+                            rownum: ri.rownum,
+                        })
+                        .contains(&RowLocation {
+                            pagenum: rowinfo.pagenum,
+                            rownum: rowinfo.rownum,
+                        })
+                })
+                .cloned()
+                .collect();
+
+            let insert_rows: Vec<RowInfo> = diff
+                .rows
+                .iter()
+                // Filter out the rows that did change
+                .filter(|rowinfo| !new_rows.contains(rowinfo))
+                .cloned()
+                .collect();
+
+            self.load_btree(index_id)?.insert_rows(&insert_rows)?;
+
+            self.load_btree(index_id)?
+                .update_rows(&old_rows, &new_rows)?;
+        }
         Ok(diff)
     }
 
@@ -396,12 +499,12 @@ impl Table {
 
         // Keep track of the row number we are removing
         let mut curr_page = 1;
-        let mut page = read_page(curr_page, &self.path)?;
+        let (mut page, page_type) = read_page(curr_page, &self.path)?;
         for row_location in rows {
             let pagenum: u32 = row_location.pagenum;
             let rownum: u16 = row_location.rownum;
             if curr_page != pagenum {
-                write_page(curr_page, &self.path, page.as_ref())?;
+                write_page(curr_page, &self.path, page.as_ref(), page_type.clone())?;
                 curr_page = pagenum;
                 load_page(pagenum, &self.path, page.as_mut())?;
             }
@@ -427,14 +530,19 @@ impl Table {
             }
         }
         // Write the last page
-        write_page(curr_page, &self.path, page.as_ref())?;
+        write_page(curr_page, &self.path, page.as_ref(), page_type)?;
+
+        // If this table has an index, update it
+        for index_id in self.indexes.keys() {
+            self.load_btree(index_id)?.remove_rows(&diff.rows)?;
+        }
         Ok(diff)
     }
 
     /// Get the row from the table specified by the tuple (pagenum, rownum)
     pub fn get_row(&self, row_location: &RowLocation) -> Result<Row, String> {
         // Read the page from the table file
-        let page: Page = *read_page(row_location.pagenum, &self.path)?;
+        let page: Page = *read_page(row_location.pagenum, &self.path)?.0;
 
         // Get the row from the page based on the schema size
         match read_row(&self.schema, &page, row_location.rownum) {
@@ -461,7 +569,7 @@ impl Table {
                 num_rows_empty: 0,
             };
 
-            let page: Page = *read_page(pagenum, &self.path)?;
+            let page: Page = *read_page(pagenum, &self.path)?.0;
             let mut rownum: u16 = 0;
             loop {
                 match is_row_present(&self.schema, &page, rownum) {
@@ -511,7 +619,23 @@ impl Table {
             rownum: (index % rows_per_page) as u16,
         }
     }
+
+    /// Loads a btree from the table for the specified index id
+    fn load_btree(&self, index_id: &IndexID) -> Result<BTree, String> {
+        if let Some((pagenum, index_name)) = self.indexes.get(index_id) {
+            BTree::load_btree_from_root_page(
+                &self,
+                *pagenum,
+                index_id.clone(),
+                cols_id_to_index_key_type(&index_id, &self.schema),
+                index_name.clone(),
+            )
+        } else {
+            Err(format!("Index {:?} does not exist", index_id))
+        }
+    }
 }
+
 #[cfg(test)]
 mod tests {
 
@@ -597,6 +721,44 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_small_replaces() {
+        let path = "test_replacerator".to_string();
+        let table = create_table(&path);
+        let row = vec![
+            Value::I32(3),
+            Value::String("Alexander Hamilton".to_string()),
+            Value::I32(60),
+        ];
+        let rows: Vec<Vec<Value>> = repeat(row).take(2).collect();
+        // We're essentially inserting 56 rows into the table, right in the middle of two pages
+        let mut rowinfos: Vec<RowInfo> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| RowInfo {
+                row: row.clone(),
+                pagenum: if i == 0 { 1 } else { 2 },
+                rownum: if i == 0 { 47 } else { 48 },
+            })
+            .collect();
+
+        rowinfos.shuffle(&mut rand::thread_rng());
+        table.rewrite_rows(rowinfos).unwrap();
+
+        let mut count = 0;
+        for rowinfo in table.clone() {
+            if rowinfo.row[0] == Value::I32(3) {
+                count += 1;
+            }
+        }
+
+        // Assert that we have 56 rows with the value 3 (the value we inserted)
+        assert_eq!(count, 2);
+        // Clean up by removing file
+        clean_table(&path);
+    }
+
+    #[test]
+    #[serial]
     fn test_removes() {
         let path = "test_removerator".to_string();
         let filepath: String = path.clone() + &TABLE_FILE_EXTENSION.to_string();
@@ -609,10 +771,11 @@ mod tests {
         let header = Header {
             num_pages: 3,
             schema: schema.clone(),
+            index_top_level_pages: HashMap::new(),
         };
         write_header(&filepath, &header).unwrap();
         let page = [0u8; PAGE_SIZE];
-        write_page(1, &filepath, &page).unwrap();
+        write_page(1, &filepath, &page, PageType::Data).unwrap();
         let mut table = Table::new(&"".to_string(), &path.to_string(), None).unwrap();
         //Adding in 1st entry
         let row1 = vec![
@@ -1048,6 +1211,7 @@ mod tests {
         let header = Header {
             num_pages: 3,
             schema: schema.clone(),
+            index_top_level_pages: HashMap::new(),
         };
         write_header(&filepath, &header).unwrap();
         let row = vec![
@@ -1057,7 +1221,7 @@ mod tests {
         ];
         let mut page = [0u8; PAGE_SIZE];
         while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
-        write_page(1, &filepath, &page).unwrap();
+        write_page(1, &filepath, &page, PageType::Data).unwrap();
 
         let row = vec![
             Value::I32(2),
@@ -1066,7 +1230,7 @@ mod tests {
         ];
         let mut page = [0u8; PAGE_SIZE];
         while insert_row(&schema, &mut page, &row).unwrap().is_some() {}
-        write_page(2, &filepath, &page).unwrap();
+        write_page(2, &filepath, &page, PageType::Data).unwrap();
         // Clean up by removing file
         Table::new(&"".to_string(), &path.to_string(), None).unwrap()
     }

@@ -507,6 +507,82 @@ pub fn create_merge_diffs(
                         .table_remove_diff = Some(table_remove_source_diff.clone());
                 }
             }
+            Diff::IndexCreate(mut index_create_source_diff) => {
+                // Get the index_create diff from target_diffs_on_the_table if it exists
+                let index_create_diff_target_option =
+                    target_diffs_on_the_table
+                        .iter()
+                        .find_map(|diff| match diff {
+                            Diff::IndexCreate(index_create_diff) => Some(index_create_diff),
+                            _ => None,
+                        });
+
+                // If there is a index_create diff in the target, we need to remove any duplicate index creations.
+                // If there is an insert diff in the target, we need to remove any duplicate row insertions.
+                if let Some(index_create_diff_target) = index_create_diff_target_option {
+                    index_create_source_diff
+                        .indexes
+                        .retain(|(x_idx_name, x_idx_id)| {
+                            !index_create_diff_target.indexes.iter().any(
+                                |(y_idx_name, y_idx_id)| {
+                                    x_idx_name == y_idx_name && x_idx_id == y_idx_id
+                                },
+                            )
+                        });
+                }
+
+                // Add the new index creation to the result_diffs
+                result_diffs
+                    .table_diffs
+                    .entry(index_create_source_diff.table_name.clone())
+                    .or_insert_with(|| {
+                        TableSquashDiff::new(
+                            &index_create_source_diff.table_name,
+                            &index_create_source_diff.schema,
+                        )
+                    })
+                    .index_create_diff
+                    .indexes
+                    .extend(index_create_source_diff.indexes);
+            }
+            Diff::IndexRemove(mut index_remove_source_diff) => {
+                // Get the index_remove diff from target_diffs_on_the_table if it exists
+                let index_remove_diff_target_option =
+                    target_diffs_on_the_table
+                        .iter()
+                        .find_map(|diff| match diff {
+                            Diff::IndexRemove(index_remove_diff) => Some(index_remove_diff),
+                            _ => None,
+                        });
+
+                // If there is a index_remove diff in the target, we need to remove any duplicate index creations.
+                // If there is an insert diff in the target, we need to remove any duplicate row insertions.
+                if let Some(index_remove_diff_target) = index_remove_diff_target_option {
+                    index_remove_source_diff
+                        .indexes
+                        .retain(|(x_idx_name, x_idx_id)| {
+                            !index_remove_diff_target.indexes.iter().any(
+                                |(y_idx_name, y_idx_id)| {
+                                    x_idx_name == y_idx_name && x_idx_id == y_idx_id
+                                },
+                            )
+                        });
+                }
+
+                // Add the new index creation to the result_diffs
+                result_diffs
+                    .table_diffs
+                    .entry(index_remove_source_diff.table_name.clone())
+                    .or_insert_with(|| {
+                        TableSquashDiff::new(
+                            &index_remove_source_diff.table_name,
+                            &index_remove_source_diff.schema,
+                        )
+                    })
+                    .index_remove_diff
+                    .indexes
+                    .extend(index_remove_source_diff.indexes);
+            }
         }
     }
 
@@ -1146,6 +1222,8 @@ fn verify_only_one_type_of_diff_per_table(diffs: &Vec<Diff>) -> Result<(), Strin
             let mut contains_insert: bool = false;
             let mut contains_remove: bool = false;
             let mut contains_update: bool = false;
+            let mut contains_index_create: bool = false;
+            let mut contains_index_remove: bool = false;
             for diff in diffs_of_same_table {
                 match diff {
                     Diff::TableCreate(_) => {
@@ -1192,6 +1270,24 @@ fn verify_only_one_type_of_diff_per_table(diffs: &Vec<Diff>) -> Result<(), Strin
                             ));
                         }
                         contains_update = true;
+                    }
+                    Diff::IndexCreate(_) => {
+                        if contains_index_create {
+                            return Err(format!(
+                                "Multiple index create diffs for table {}",
+                                diff.get_table_name()
+                            ));
+                        }
+                        contains_index_create = true;
+                    }
+                    Diff::IndexRemove(_) => {
+                        if contains_index_remove {
+                            return Err(format!(
+                                "Multiple index remove diffs for table {}",
+                                diff.get_table_name()
+                            ));
+                        }
+                        contains_index_remove = true;
                     }
                 }
             }
@@ -2457,7 +2553,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2504,7 +2600,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2515,7 +2611,7 @@ mod tests {
         // Create a new branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Get the table on the new branch
@@ -2570,7 +2666,7 @@ mod tests {
         // Create a commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on New Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2686,7 +2782,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2697,7 +2793,7 @@ mod tests {
         // Create a new branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Switch to back to main branch
@@ -2745,7 +2841,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2811,7 +2907,7 @@ mod tests {
         // Create a commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on New Branch".to_string(),
                 &"Insert, Update, and Remove Rows;".to_string(),
                 &mut user,
@@ -2952,7 +3048,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -2965,7 +3061,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Create a second table in the database
@@ -3023,7 +3119,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"2nd Commit".to_string(),
                 &"Created a new Table".to_string(),
                 &mut user,
@@ -3124,7 +3220,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3136,7 +3232,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3158,7 +3254,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3186,7 +3282,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"2nd Commit on main branch".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3265,7 +3361,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3277,7 +3373,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3299,7 +3395,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3317,7 +3413,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3339,7 +3435,7 @@ mod tests {
         user.set_diffs(&test_branch2_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch2".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3452,7 +3548,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3464,7 +3560,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3486,7 +3582,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3504,7 +3600,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Update the 2nd row from the first table
@@ -3527,7 +3623,7 @@ mod tests {
         user.set_diffs(&test_branch2_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch2".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -3674,7 +3770,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -3686,7 +3782,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3713,7 +3809,7 @@ mod tests {
         user.set_diffs(&test_branch1_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch1".to_string(),
                 &"Removed row 2, and removed table1".to_string(),
                 &mut user,
@@ -3731,7 +3827,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Remove the 2nd row from the first table
@@ -3758,7 +3854,7 @@ mod tests {
         user.set_diffs(&test_branch2_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on test_branch2".to_string(),
                 &"Removed row 2".to_string(),
                 &mut user,
@@ -4018,7 +4114,7 @@ mod tests {
                     Value::String("Chris".to_string()),
                     Value::String("Hemsworth".to_string()),
                     Value::I64(28),
-                    Value::Null,
+                    Value::Null(Column::Float),
                     Value::Timestamp(parse_time(&"2020-01-09 12:00:23".to_string()).unwrap()),
                 ],
                 vec![
@@ -4317,7 +4413,7 @@ mod tests {
         user.set_diffs(&main_branch_diffs);
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create 2 Tables".to_string(),
                 &mut user,
@@ -4328,7 +4424,7 @@ mod tests {
         // Create a branch off of the first commit
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Get the two branch directories

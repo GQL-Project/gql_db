@@ -1,11 +1,14 @@
 use super::header::schema_size;
 use super::pageio::PAGE_SIZE;
 use super::tableio::*;
+use crate::user::usercreds::UserCREDs;
 use crate::user::userdata::*;
 use crate::util::row::{EmptyRowLocation, RowLocation};
 use crate::version_control::command::del_branch;
 use crate::version_control::diff::*;
-use crate::version_control::{branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff};
+use crate::version_control::{
+    branch_heads::*, branches::*, commitfile::CommitFile, diff::Diff, merged_branches::*,
+};
 use crate::version_control::{commit::Commit, merge::*};
 use glob::glob;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
@@ -32,6 +35,14 @@ pub const BRANCHES_FILE_EXTENSION: &str = ".gql";
 pub const BRANCH_HEADS_FILE_NAME: &str = "branch_heads";
 pub const BRANCH_HEADS_FILE_EXTENSION: &str = ".gql";
 
+// Merged Branches File Constants
+pub const MERGED_BRANCHES_FILE_NAME: &str = "merged_branches";
+pub const MERGED_BRANCHES_FILE_EXTENSION: &str = ".gql";
+
+// User CREDs File Constants
+pub const USER_CREDS_FILE_NAME: &str = "user_creds";
+pub const USER_CREDS_FILE_EXTENSION: &str = ".gql";
+
 // #[derive(Clone)] I'm keeping this commented. We do NOT want the database to be cloneable.
 pub struct Database {
     db_path: String, // This is the full patch to the database directory: <path>/<db_name>
@@ -39,6 +50,8 @@ pub struct Database {
     branch_heads: BranchHEADs, // The BranchHEADs file object for this database
     branches: Branches, // The Branches file object for this database
     commit_file: CommitFile, // The CommitFile object for this database
+    user_creds: UserCREDs, // The UserCreds object for this database
+    merged_branches: MergedBranchesFile, // The MergedBranches object for this database
     mutex: ReentrantMutex<()>, // This is the mutex that is used to lock the database
                      // TODO: maybe add permissions here
 }
@@ -128,6 +141,12 @@ impl Database {
         std::fs::File::create(&branches_file_path)
             .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
 
+        // Create the user credentials file, which holds all the user credentials for the database
+        // './databases/<database_name>/user_creds.gql'
+        let user_creds = Database::append_user_creds_file_path(db_path.clone());
+        std::fs::File::create(&user_creds)
+            .map_err(|e| "Database::new() Error: ".to_owned() + &e.to_string())?;
+
         // Create the branch_heads file, which holds all the branch HEADs for the database
         // './databases/<database_name>/branch_heads.gql'
         let branch_heads: BranchHEADs = BranchHEADs::new(&db_path.clone(), true)?;
@@ -137,6 +156,12 @@ impl Database {
 
         // Create the commit file object
         let commit_file: CommitFile = CommitFile::new(&db_path.clone(), true)?;
+
+        // Create the merged branches file object
+        let merged_branches: MergedBranchesFile = MergedBranchesFile::new(&db_path.clone(), true)?;
+
+        // Create the user credentials file object
+        let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), true)?;
 
         // Now create the directory for the main branch
         // './databases/<database_name>/<database_name>-<branch_name>/'
@@ -155,19 +180,21 @@ impl Database {
             branch_heads: branch_heads,
             branches: branches,
             commit_file: commit_file,
+            merged_branches: merged_branches,
+            user_creds: user_creds,
             mutex: ReentrantMutex::new(()),
         })
     }
 
     /// Opens an existing database at the given path.
     /// It will return an error if the database doesn't exist.
-    pub fn load_db(database_name: String) -> Result<Database, String> {
+    pub fn load_db(db_name: String) -> Result<Database, String> {
         let db_base_path = Database::get_database_base_path()?;
 
         // Create the database directory if needed './databases/<database_name>'
         let mut db_path = db_base_path.clone();
         db_path.push(std::path::MAIN_SEPARATOR);
-        db_path.push_str(database_name.as_str());
+        db_path.push_str(db_name.as_str());
         // If the database doesn't already exist, return an error
         if !Path::new(&db_path.clone()).exists() {
             return Err("Database::load_db() Error: Database does not exist".to_owned());
@@ -182,29 +209,59 @@ impl Database {
         // Create the commit file object
         let commit_file: CommitFile = CommitFile::new(&db_path.clone(), false)?;
 
+        // Create the merged branches file object
+        let merged_branches: MergedBranchesFile = MergedBranchesFile::new(&db_path.clone(), false)?;
+
+        // Create the user credentials file object
+        let user_creds: UserCREDs = UserCREDs::new(&db_path.clone(), false)?;
+
         Ok(Database {
-            db_path: db_path,
-            db_name: database_name,
-            branch_heads: branch_heads,
-            branches: branches,
-            commit_file: commit_file,
+            db_path,
+            db_name,
+            branch_heads,
+            branches,
+            commit_file,
+            merged_branches,
+            user_creds,
             mutex: ReentrantMutex::new(()),
         })
     }
 
     /// Creates a commit and a branch node in the appropriate files.
     /// It uses the diffs from the user to create the commit.
-    pub fn create_commit_and_node(
+    pub fn create_commit_on_head(
         &mut self,
         commit_msg: &String,
         command: &String,
         user: &mut User,
         new_branch_name: Option<String>, // If this is Some, then a new branch is created
     ) -> Result<(BranchNode, Commit), String> {
+        self.create_commit_node(commit_msg, command, user, new_branch_name, None)
+    }
+
+    /// Creates a commit and a branch node in the appropriate files.
+    /// This can be also used to create a branch from a commit.
+    pub fn create_commit_node(
+        &mut self,
+        commit_msg: &String,
+        command: &String,
+        user: &mut User,
+        new_branch_name: Option<String>, // If this is Some, then a new branch is created
+        prev_node: Option<String>, // If this is Some, then a new branch is created from this commit hash, otherwise it is created from the HEAD
+    ) -> Result<(BranchNode, Commit), String> {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
+        let (_, is_behind) = user.get_status();
+        if is_behind {
+            return Err(format!(
+                "You are currently behind {}.\n\nRun `gql pull` to bring the latest changes to your instance.",
+                user.get_current_branch_name()
+            ));
+        }
+
         let commit: Commit = self.commit_file.create_commit(
+            user.get_user_id(),
             commit_msg.to_string(),
             command.to_string(),
             user.get_diffs(),
@@ -236,9 +293,20 @@ impl Database {
         }
         // There is a previous branch node to create a new branch node off of
         else {
-            let prev_node = self
+            let branch_head = self
                 .branch_heads
                 .get_branch_node_from_head(&user.get_current_branch_name(), &self.branches)?;
+            let prev_node: BranchNode = match prev_node {
+                Some(hash) => self
+                    .branches
+                    .traverse_for_commit(&branch_head, &hash)?
+                    .ok_or(format!(
+                        "Could not find the commit hash {} in branch {}",
+                        hash,
+                        user.get_current_branch_name()
+                    ))?,
+                None => branch_head,
+            };
             node = self.branches.create_branch_node(
                 &mut self.branch_heads,
                 Some(&prev_node),
@@ -393,12 +461,35 @@ impl Database {
         &mut self.branches
     }
 
+    /// Returns the database's users
+    pub fn get_user_creds_file(&self) -> &UserCREDs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &self.user_creds
+    }
+
+    pub fn get_user_creds_file_mut(&mut self) -> &mut UserCREDs {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &mut self.user_creds
+    }
+
     /// returns the database's commit file
     pub fn get_commit_file_mut(&mut self) -> &mut CommitFile {
         // Make sure to lock the database before doing anything
         let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
 
         &mut self.commit_file
+    }
+
+    /// Returns the database's merged_branches file
+    pub fn get_merged_branches_file_mut(&mut self) -> &mut MergedBranchesFile {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        &mut self.merged_branches
     }
 
     /// Returns the file path to the table if it exists on the current working branch
@@ -475,6 +566,14 @@ impl Database {
         Ok(self.branch_heads.get_all_branch_names()?)
     }
 
+    // Returns a list of all users on the database
+    pub fn get_all_usernames(&mut self) -> Result<Vec<String>, String> {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        Ok(self.user_creds.get_all_usernames()?)
+    }
+
     /// Deletes the database at the given path.
     /// It also deletes the database object.
     pub fn delete_database(self) -> Result<(), String> {
@@ -493,9 +592,14 @@ impl Database {
     }
 
     /// Creates a new branch for the database.
-    /// The branch name must not exist exist already.
+    /// The branch name must not exist exist already. The user is switched to the new branch.
     /// It returns true on success, and false on failure.
-    pub fn create_branch(&mut self, branch_name: &String, user: &mut User) -> Result<(), String> {
+    pub fn create_branch(
+        &mut self,
+        branch_name: &String,
+        branch_commit: &Option<String>,
+        user: &mut User,
+    ) -> Result<(), String> {
         // Make sure to lock the database before doing anything
         {
             let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
@@ -513,13 +617,28 @@ impl Database {
         let uncommitted_changes: Vec<Diff> = user.get_diffs().clone();
         user.set_diffs(&Vec::new());
 
-        // Create a commit for the new branch
-        self.create_commit_and_node(
-            &format!("Created Branch {}", branch_name),
-            &format!("GQL branch {}", branch_name),
-            user,
-            Some(branch_name.clone()),
-        )?;
+        match branch_commit {
+            Some(commit_hash) => {
+                // If we specified a branch commit, then we need to find the node for that commit instead of using the HEAD
+                // Create a new node for the branch, from the specified commit
+                self.create_commit_node(
+                    &format!("Branch {} created on commit {}", branch_name, commit_hash),
+                    &format!("gql branch {} -c {}", branch_name, commit_hash),
+                    user,
+                    Some(branch_name.clone()),
+                    Some(commit_hash.clone()),
+                )?;
+            }
+            None => {
+                // Create a commit for the new branch
+                self.create_commit_on_head(
+                    &format!("Created Branch {}", branch_name),
+                    &format!("GQL branch {}", branch_name),
+                    user,
+                    Some(branch_name.clone()),
+                )?;
+            }
+        }
 
         // Set the user on the new branch
         user.set_current_branch_name(&branch_name);
@@ -554,6 +673,7 @@ impl Database {
         let node2: BranchNode = self
             .branch_heads
             .get_branch_node_from_head(&branch_name, &self.branches)?;
+
         // Get the node for the main branch's HEAD
         let node1: BranchNode = match self
             .branch_heads
@@ -776,6 +896,7 @@ impl Database {
     ) -> Result<Commit, String> {
         let dest_branch_name: String = user.get_current_branch_name();
         let merged_diffs: Vec<Diff>;
+        let branched_commit: String;
 
         {
             // Make sure to lock the database before doing anything
@@ -829,8 +950,17 @@ impl Database {
             let src_diffs: Vec<Diff>;
             if src_commits.len() > 0 {
                 let src_squashed_cmt: Commit =
-                    self.commit_file.squash_commits(&src_commits, false)?;
+                    self.commit_file
+                        .squash_commits(user.get_user_id(), &src_commits, false)?;
                 src_diffs = src_squashed_cmt.diffs;
+
+                // If we're deleting the branch, we need the branching_commit to be the common_ancestor's hash,
+                // otherwise it's the last src_commits's hash
+                branched_commit = if do_delete_src_branch {
+                    common_ancestor.commit_hash.clone()
+                } else {
+                    src_commits.clone().last().unwrap().hash.clone()
+                };
             } else {
                 return Err(
                     "Merge Branches Error: Must have at least one source commit to merge."
@@ -847,7 +977,8 @@ impl Database {
             let mut dest_diffs: Vec<Diff> = Vec::new();
             if dest_commits.len() > 0 {
                 let dest_squashed_cmt: Commit =
-                    self.commit_file.squash_commits(&dest_commits, false)?;
+                    self.commit_file
+                        .squash_commits(user.get_user_id(), &dest_commits, false)?;
                 dest_diffs = dest_squashed_cmt.diffs;
             }
 
@@ -862,6 +993,7 @@ impl Database {
             // If we aren't committing the merge, we can just return here
             if !do_commit_merge {
                 return Ok(Commit::new(
+                    user.get_user_id(),
                     Commit::create_hash(),
                     src_commits.last().unwrap().timestamp.clone(),
                     merge_cmt_msg.clone(),
@@ -879,7 +1011,7 @@ impl Database {
         )?;
 
         // 7. Create a new commit on destination branch with the diffs from the merge.
-        let (_, commit) = self.create_commit_and_node(
+        let (_, commit) = self.create_commit_on_head(
             merge_cmt_msg,
             &format!("Merged {} into {}", src_branch_name, dest_branch_name),
             user,
@@ -890,6 +1022,13 @@ impl Database {
         if do_delete_src_branch {
             del_branch(user, &src_branch_name, false, vec![user.clone()])?;
         }
+
+        // We need to store the last commit in the source branch and the merged commit as a link
+        self.merged_branches.insert_merged_branch(
+            &src_branch_name,
+            &branched_commit,
+            &commit.hash,
+        )?;
 
         Ok(commit)
     }
@@ -1329,6 +1468,16 @@ impl Database {
         Database::append_branch_heads_file_path(db_dir_path.clone())
     }
 
+    /// Return the path to the database's user CREDs file: <path>/<db_name>/user_creds.gql
+    pub fn get_user_creds_file_path(&self) -> String {
+        // Make sure to lock the database before doing anything
+        let _lock: ReentrantMutexGuard<()> = self.mutex.lock();
+
+        let db_dir_path = self.get_database_path();
+        // Return the user creds file path appended to the database path
+        Database::append_user_creds_file_path(db_dir_path.clone())
+    }
+
     /// Private static method that appends the deltas file path to the database_path
     fn append_deltas_file_path(database_path: String) -> String {
         let mut deltas_file_path = database_path;
@@ -1363,6 +1512,15 @@ impl Database {
         branch_heads_file_path.push_str(BRANCH_HEADS_FILE_NAME);
         branch_heads_file_path.push_str(BRANCH_HEADS_FILE_EXTENSION);
         branch_heads_file_path
+    }
+
+    // Private static method that appends the user creds file path to the database_path
+    fn append_user_creds_file_path(database_path: String) -> String {
+        let mut user_creds_file_path = database_path;
+        user_creds_file_path.push(std::path::MAIN_SEPARATOR);
+        user_creds_file_path.push_str(USER_CREDS_FILE_NAME);
+        user_creds_file_path.push_str(USER_CREDS_FILE_EXTENSION);
+        user_creds_file_path
     }
 }
 
@@ -1655,7 +1813,7 @@ mod tests {
 
         let results = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"commit_msg".to_string(),
                 &"create table; insert rows".to_string(),
                 &mut user,
@@ -1798,6 +1956,8 @@ mod tests {
                 "T.age".to_string(),
             ]),
             None,
+            vec![],
+            vec![],
             &vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
@@ -1932,6 +2092,8 @@ mod tests {
                 "T.age".to_string(),
             ]),
             None,
+            vec![],
+            vec![],
             &vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
@@ -1983,6 +2145,8 @@ mod tests {
                 "T.age".to_string(),
             ]),
             None,
+            vec![],
+            vec![],
             &vec![("test_table".to_string(), "T".to_string())],
             &get_db_instance().unwrap(),
             &user,
@@ -2065,7 +2229,7 @@ mod tests {
 
         get_db_instance()
             .unwrap()
-            .create_branch(&"new branch".to_string(), &mut user)
+            .create_branch(&"new branch".to_string(), &None, &mut user)
             .unwrap();
         // Read the branch heads file and make sure the new branch is there
         let branch_heads_file = get_db_instance().unwrap().get_branch_heads_file_mut();
@@ -2129,7 +2293,7 @@ mod tests {
 
         let first_node_results = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"test message".to_string(),
                 &"command".to_string(),
                 &mut user,
@@ -2138,7 +2302,7 @@ mod tests {
             .unwrap();
         get_db_instance()
             .unwrap()
-            .create_branch(&"new branch".to_string(), &mut user)
+            .create_branch(&"new branch".to_string(), &None, &mut user)
             .unwrap();
 
         // Read the branch heads file and make sure the new branch is there
@@ -2202,7 +2366,7 @@ mod tests {
         // Create the first commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2222,7 +2386,7 @@ mod tests {
         // Create the second commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2233,7 +2397,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Make sure the new branch has the same tables as the main branch
@@ -2269,7 +2433,7 @@ mod tests {
         // Create a commit on the new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Third Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2309,7 +2473,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Fourth Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2349,13 +2513,13 @@ mod tests {
         // Create a new branch immediately
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Create a second branch off that branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Delete the database instance
@@ -2403,7 +2567,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2414,7 +2578,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch1_name, &mut user)
+            .create_branch(&branch1_name, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on branch1
@@ -2431,7 +2595,7 @@ mod tests {
         // Create a new commit on branch1
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2442,7 +2606,7 @@ mod tests {
         // Create a new branch off of branch1
         get_db_instance()
             .unwrap()
-            .create_branch(&branch2_name, &mut user)
+            .create_branch(&branch2_name, &None, &mut user)
             .unwrap();
 
         // Get the tables for all the branches
@@ -2492,7 +2656,7 @@ mod tests {
         // Create a commit on branch1
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Third Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2663,6 +2827,367 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_creating_branch_off_commit() {
+        // This will test creating a branch off of three separate commits
+        let db_name: String = "test_creating_branch_off_commit".to_string();
+        let branch1_name: String = "new_branch1".to_string();
+        let branch2_name: String = "new_branch2".to_string();
+        let branch3_name: String = "new_branch3".to_string();
+
+        // Create the database
+        fcreate_db_instance(&db_name);
+
+        // Get the directories for all the branches
+        let main_branch_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&MAIN_BRANCH_NAME.to_string());
+        let branch1_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&branch1_name);
+        let branch2_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&branch2_name);
+        let branch3_table_dir: String = get_db_instance()
+            .unwrap()
+            .get_branch_path_from_name(&branch3_name);
+
+        // Create a user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Create a new table in the database
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+        ];
+        create_table(
+            &"test_table".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        let (_, commit_1) = get_db_instance()
+            .unwrap()
+            .create_commit_on_head(
+                &"First Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Insert rows into the table on main
+        let rows1: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("John".to_string())],
+            vec![Value::I32(2), Value::String("Jane".to_string())],
+            vec![Value::I32(3), Value::String("Joe".to_string())],
+        ];
+        let mut table_main: Table =
+            Table::new(&main_branch_table_dir, &"test_table".to_string(), None).unwrap();
+        let insert_diff: InsertDiff = table_main.insert_rows(rows1.clone()).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Create a new commit on main
+        let (_, commit_2) = get_db_instance()
+            .unwrap()
+            .create_commit_on_head(
+                &"Second Commit".to_string(),
+                &"Insert;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Insert rows into the table on main
+        let rows2: Vec<Row> = vec![
+            vec![Value::I32(1), Value::String("Albert".to_string())],
+            vec![Value::I32(2), Value::String("Alvin".to_string())],
+            vec![Value::I32(3), Value::String("Alkaline".to_string())],
+        ];
+        let insert_diff: InsertDiff = table_main.insert_rows(rows2.clone()).unwrap();
+        user.append_diff(&Diff::Insert(insert_diff));
+
+        // Create a new commit on main
+        let (_, commit_3) = get_db_instance()
+            .unwrap()
+            .create_commit_on_head(
+                &"Third Commit".to_string(),
+                &"Insert;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Create branches off the three commits (this needs to be done in reverse order, to ensure the shared commits are still accessible)
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch3_name, &Some(commit_3.hash.clone()), &mut user)
+            .unwrap();
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch2_name, &Some(commit_2.hash.clone()), &mut user)
+            .unwrap();
+        get_db_instance()
+            .unwrap()
+            .create_branch(&branch1_name, &Some(commit_1.hash.clone()), &mut user)
+            .unwrap();
+
+        // Get the tables for all the branches
+        let table_main: Table =
+            Table::new(&main_branch_table_dir, &"test_table".to_string(), None).unwrap();
+        let table_branch1: Table =
+            Table::new(&branch1_table_dir, &"test_table".to_string(), None).unwrap();
+        let table_branch2: Table =
+            Table::new(&branch2_table_dir, &"test_table".to_string(), None).unwrap();
+        let table_branch3: Table =
+            Table::new(&branch3_table_dir, &"test_table".to_string(), None).unwrap();
+
+        // Make sure branch3 has the same rows as main
+        assert!(compare_tables(
+            &table_main,
+            &table_branch3,
+            &main_branch_table_dir,
+            &branch3_table_dir
+        ));
+
+        // Ensure ther rows in branch main are all 6 rows and their values are correct
+        let full_rows = vec![rows1.clone(), rows2.clone()].concat();
+        let rows: Vec<Row> = table_main.into_iter().map(|rowinfo| rowinfo.row).collect();
+        assert_eq!(rows.len(), 6);
+        assert_eq!(&rows, &full_rows);
+
+        let rows: Vec<Row> = table_branch1
+            .into_iter()
+            .map(|rowinfo| rowinfo.row)
+            .collect();
+        assert_eq!(rows.len(), 0);
+
+        let rows: Vec<Row> = table_branch2
+            .into_iter()
+            .map(|rowinfo| rowinfo.row)
+            .collect();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(&rows, &rows1);
+
+        let rows: Vec<Row> = table_branch3
+            .into_iter()
+            .map(|rowinfo| rowinfo.row)
+            .collect();
+        assert_eq!(rows.len(), 6);
+        assert_eq!(&rows, &full_rows);
+
+        // Swap user to branch1
+        user.set_current_branch_name(&branch1_name);
+
+        // Add a new table to branch1
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+            ("address".to_string(), Column::String(50)),
+        ];
+        create_table(
+            &"test_table2".to_string(),
+            &schema,
+            get_db_instance().unwrap(),
+            &mut user,
+        )
+        .unwrap();
+
+        // Create a commit on branch1
+        get_db_instance()
+            .unwrap()
+            .create_commit_on_head(
+                &"Third Commit".to_string(),
+                &"Create Table;".to_string(),
+                &mut user,
+                None,
+            )
+            .unwrap();
+
+        // Swap user to branch2
+        user.set_current_branch_name(&branch2_name);
+
+        // Make sure that branch2 does not have the new table and branch1 does
+        assert_eq!(
+            std::path::Path::new(&format!("{}/test_table2.db", branch2_table_dir)).exists(),
+            false
+        );
+        assert_eq!(
+            std::path::Path::new(&format!("{}/test_table2.db", branch1_table_dir)).exists(),
+            true
+        );
+
+        // Make sure branch3's branch nodes trace back to origin
+        let branch3_node4: BranchNode = get_db_instance()
+            .unwrap()
+            .branch_heads
+            .get_branch_node_from_head(&branch3_name, &get_db_instance().unwrap().branches)
+            .unwrap();
+        let branch3_node3: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch3_node4)
+            .unwrap()
+            .unwrap();
+        let branch3_node2: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch3_node3)
+            .unwrap()
+            .unwrap();
+        let branch3_node1: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch3_node2)
+            .unwrap()
+            .unwrap();
+        let branch3_node0: Option<BranchNode> = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch3_node1)
+            .unwrap();
+        assert!(branch3_node0.is_none()); // Ensure branch3_node1 is the origin node
+
+        // Get the commits for each of the branch3 branch nodes
+        let branch3_commit4: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch3_node4.commit_hash)
+            .unwrap();
+        let branch3_commit3: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch3_node3.commit_hash)
+            .unwrap();
+        let branch3_commit2: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch3_node2.commit_hash)
+            .unwrap();
+        let branch3_commit1: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch3_node1.commit_hash)
+            .unwrap();
+
+        // Make sure the branch3 nodes are correct
+        assert_eq!(
+            branch3_commit4.message,
+            format!("Branch new_branch3 created on commit {}", commit_3.hash)
+        );
+        assert_eq!(branch3_commit3.message, "Third Commit");
+        assert_eq!(branch3_commit2.message, "Second Commit");
+        assert_eq!(branch3_commit1.message, "First Commit");
+
+        // Make sure branch2's branch nodes trace back to origin
+        let branch2_node3: BranchNode = get_db_instance()
+            .unwrap()
+            .branch_heads
+            .get_branch_node_from_head(&branch2_name, &get_db_instance().unwrap().branches)
+            .unwrap();
+        let branch2_node2: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch2_node3)
+            .unwrap()
+            .unwrap();
+        let branch2_node1: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch2_node2)
+            .unwrap()
+            .unwrap();
+        let branch2_node0: Option<BranchNode> = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch2_node1)
+            .unwrap();
+        assert!(branch2_node0.is_none()); // Ensure branch2_node1 is the origin node
+
+        // Get the commits for each of the branch2 branch nodes
+        let branch2_commit3: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch2_node3.commit_hash)
+            .unwrap();
+        let branch2_commit2: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch2_node2.commit_hash)
+            .unwrap();
+        let branch2_commit1: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch2_node1.commit_hash)
+            .unwrap();
+
+        // Make sure the branch2 nodes are correct
+        assert_eq!(
+            branch2_commit3.message,
+            format!("Branch new_branch2 created on commit {}", commit_2.hash)
+        );
+        assert_eq!(branch2_commit2.message, "Second Commit");
+        assert_eq!(branch2_commit1.message, "First Commit");
+
+        // Make sure branch1's branch nodes trace back to origin
+        let branch1_node3: BranchNode = get_db_instance()
+            .unwrap()
+            .branch_heads
+            .get_branch_node_from_head(&branch1_name, &get_db_instance().unwrap().branches)
+            .unwrap();
+        let branch1_node2: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch1_node3)
+            .unwrap()
+            .unwrap();
+        let branch1_node1: BranchNode = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch1_node2)
+            .unwrap()
+            .unwrap();
+        let branch1_node0: Option<BranchNode> = get_db_instance()
+            .unwrap()
+            .branches
+            .get_prev_branch_node(&branch1_node1)
+            .unwrap();
+        assert!(branch1_node0.is_none()); // Ensure branch1_node1 is the origin node
+
+        // Get the commits for each of the branch1 branch nodes
+
+        let branch1_commit3: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch1_node3.commit_hash)
+            .unwrap();
+        let branch1_commit2: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch1_node2.commit_hash)
+            .unwrap();
+        let branch1_commit1: Commit = get_db_instance()
+            .unwrap()
+            .commit_file
+            .fetch_commit(&branch1_node1.commit_hash)
+            .unwrap();
+
+        // Make sure the branch1 nodes are correct
+        assert_eq!(branch1_commit3.message, "Third Commit");
+        assert_eq!(
+            branch1_commit2.message,
+            format!("Branch new_branch1 created on commit {}", commit_1.hash)
+        );
+        assert_eq!(branch1_commit1.message, "First Commit");
+
+        // Delete the database
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
     fn test_switch_branch() {
         // This will test creating a branch off of main then switching to it
         let db_name: String = "test_creating_and_switch_branch".to_string();
@@ -2699,7 +3224,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2710,7 +3235,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -2727,7 +3252,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2828,7 +3353,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -2839,7 +3364,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_1, &mut user)
+            .create_branch(&branch_name_1, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -2856,7 +3381,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -2925,7 +3450,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_2, &mut user)
+            .create_branch(&branch_name_2, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -2942,7 +3467,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Branch 2 - Added Kent family".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3053,7 +3578,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -3064,7 +3589,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_1, &mut user)
+            .create_branch(&branch_name_1, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -3081,7 +3606,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3152,7 +3677,7 @@ mod tests {
         // Create a new branch off of the main branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name_2, &mut user)
+            .create_branch(&branch_name_2, &None, &mut user)
             .unwrap();
 
         // Insert rows into the table on new branch
@@ -3169,7 +3694,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Branch 2 - Added Kent family".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3282,7 +3807,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main - Created test_table".to_string(),
                 &"Create;".to_string(),
                 &mut user,
@@ -3316,7 +3841,7 @@ mod tests {
         // Create a commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Insert;".to_string(),
                 &mut user,
@@ -3327,7 +3852,7 @@ mod tests {
         // Create a new branch
         get_db_instance()
             .unwrap()
-            .create_branch(&branch_name, &mut user)
+            .create_branch(&branch_name, &None, &mut user)
             .unwrap();
 
         // Create a new table on the new branch
@@ -3340,7 +3865,7 @@ mod tests {
         // Create commit on new branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -3360,7 +3885,7 @@ mod tests {
         // Create commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -3388,7 +3913,7 @@ mod tests {
         // Create commit on main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main Branch".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,

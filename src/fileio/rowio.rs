@@ -34,19 +34,30 @@ pub fn is_row_present(schema: &Schema, page: &Page, rownum: u16) -> Result<bool,
     Ok(true)
 }
 
-// This needs to have an error if the row is too big to fit in the page.
+/// This needs to have an error if the row is too big to fit in the page.
 pub fn write_row(schema: &Schema, page: &mut Page, row: &Row, rownum: u16) -> Result<(), String> {
-    let mut offset = (rownum as usize) * schema_size(schema);
-    write_type::<u8>(page, offset, 1)?;
-    offset += 1;
+    let offset = (rownum as usize) * schema_size(schema);
+    write_row_at_offset(schema, page, row, offset)
+}
+
+/// This function writes a row to the page at the given offset
+pub fn write_row_at_offset(
+    schema: &Schema,
+    page: &mut Page,
+    row: &Row,
+    offset: usize,
+) -> Result<(), String> {
+    let mut temp_offset: usize = offset;
+    write_type::<u8>(page, temp_offset, 1)?;
+    temp_offset += 1;
     // This looks complicated, but all it's doing is just zipping
     // the schema with the row, and then writing each cell.
     schema
         .iter()
         .zip(row.iter())
         .try_for_each(|((_, celltype), cell)| {
-            celltype.write(cell, page, offset)?;
-            offset += celltype.size();
+            celltype.write(cell, page, temp_offset)?;
+            temp_offset += celltype.size();
             Ok(())
         })
 }

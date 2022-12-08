@@ -1,4 +1,5 @@
 use colored::Colorize;
+use rpassword::read_password;
 use std::io::{self, Write};
 use std::string::String;
 use tonic::transport::Channel;
@@ -6,18 +7,36 @@ use tonic::Request;
 
 use crate::client::result_parse;
 use crate::server::server::db_connection::database_connection_client::DatabaseConnectionClient;
-use crate::server::server::db_connection::{ConnectResult, QueryRequest};
+use crate::server::server::db_connection::{ConnectResult, LoginRequest, QueryRequest};
 
 const GQL_PROMPT: &str = "GQL> ";
 const DEFAULT_IP: &str = "[::1]";
 const DEFAULT_PORT: &str = "50051";
+const DEFAULT_USERNAME: &str = "admin";
+const DEFAULT_PASSWORD: &str = "admin";
+const DEFAULT_REGISTER: bool = false;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query for IP address and port of server
-    let mut client: DatabaseConnectionClient<Channel> = query_for_ip_port().await?;
+    let mut connection = attempt_connection().await?;
+    let mut copy = connection.clone();
 
-    let request: Request<()> = tonic::Request::new(());
-    let response: ConnectResult = client.connect_db(request).await?.into_inner();
+    // Ctrl-C handler, using the copy of the connection
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        copy.0
+            .disconnect_db(Request::new(copy.1.clone()))
+            .await
+            .unwrap();
+        println!(
+            "{}",
+            format!("\nSuccessfully disconnected from database").green()
+        );
+        std::process::exit(0);
+    });
+
+    let client: &mut DatabaseConnectionClient<Channel> = &mut connection.0;
+    let response: &mut ConnectResult = &mut connection.1;
 
     loop {
         print!("{}", &GQL_PROMPT.to_string());
@@ -83,7 +102,11 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!("{}{}", error, result.unwrap_err().message());
             }
-        } else if command.to_lowercase().starts_with("select ") {
+        } else if command
+            .to_lowercase()
+            .replace("(", "") // Ignore parenthesis while checking for keywords
+            .starts_with("select ")
+        {
             let result = client.run_query(Request::new(request)).await;
             if result.is_ok() {
                 // parses through the result and prints the table
@@ -104,10 +127,14 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Wrapper, to automatically handle disconnecting from the server when the program exits
+#[derive(Clone)]
+struct Connection(DatabaseConnectionClient<Channel>, ConnectResult);
+
 // Indefinitely loops until a successful connection is made
-async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dyn std::error::Error>>
-{
-    let client: DatabaseConnectionClient<Channel>;
+async fn attempt_connection() -> Result<Connection, Box<dyn std::error::Error>> {
+    let mut client: DatabaseConnectionClient<Channel>;
+    let mut request: LoginRequest;
 
     // Loop until we successfully connect
     loop {
@@ -135,20 +162,83 @@ async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dy
             port = DEFAULT_PORT.to_string();
         }
 
+        /* Query for register */
+        print!("{}", "Register? (y/n)> ");
+        let create;
+        loop {
+            io::stdout().flush()?;
+            let mut register: String = String::new();
+            // store user input
+            io::stdin().read_line(&mut register)?;
+            register = register.replace("\n", "").trim().to_string();
+            if register.is_empty() {
+                create = DEFAULT_REGISTER;
+                break;
+            } else if register.to_lowercase() == "y" {
+                create = true;
+                break;
+            } else if register.to_lowercase() == "n" {
+                create = false;
+                break;
+            } else {
+                println!("Invalid input. Please enter 'y' or 'n'.");
+            }
+        }
+
+        /* Query for username */
+        print!("{}", "Enter Username> ");
+        io::stdout().flush()?;
+        let mut username: String = String::new();
+        // store user input
+        io::stdin().read_line(&mut username)?;
+        username = username.replace("\n", "").trim().to_string();
+        if username.is_empty() {
+            username = DEFAULT_USERNAME.to_string();
+        }
+
+        /* Query for password */
+        print!("{}", "Enter Password> ");
+        io::stdout().flush()?;
+        // store user input
+        let mut password: String = read_password().unwrap();
+        password = password.replace("\n", "").trim().to_string();
+        if password.is_empty() {
+            password = DEFAULT_PASSWORD.to_string();
+        }
+
+        request = LoginRequest {
+            username,
+            password,
+            create,
+        };
+
         // Attempt to connect to server
         let conn_str: String = format!("http://{}:{}", ip_address, port);
         match DatabaseConnectionClient::connect(conn_str.clone()).await {
             Ok(db_client) => {
                 client = db_client;
-                // Print a success msg
-                print!(
-                    "{}",
-                    format!("Successfully Connected to Database at {}\n", conn_str)
-                        .green()
-                        .to_string()
-                );
-                io::stdout().flush()?;
-                break;
+                let response = client.connect_db(request).await;
+                if response.is_ok() {
+                    // Print a success msg
+                    print!(
+                        "{}",
+                        format!("Successfully Connected to Database at {}\n", conn_str)
+                            .green()
+                            .to_string()
+                    );
+                    io::stdout().flush()?;
+                    return Ok(Connection {
+                        0: client,
+                        1: response?.into_inner(),
+                    });
+                } else {
+                    println!(
+                        "{}",
+                        format!("Error logging in: {}", response.unwrap_err().message())
+                            .red()
+                            .to_string()
+                    );
+                }
             }
             Err(_) => {
                 // Start over if connection fails
@@ -165,5 +255,4 @@ async fn query_for_ip_port() -> Result<DatabaseConnectionClient<Channel>, Box<dy
             }
         }
     }
-    Ok(client)
 }

@@ -1,3 +1,4 @@
+use crate::fileio::pageio::PageType;
 use crate::{fileio::databaseio::*, user::userdata::User};
 
 use crate::{
@@ -8,11 +9,19 @@ use crate::{
     util::dbtype::Column,
 };
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use serde_json::json;
 use tabled::{builder::Builder, Style};
 
+
 use super::diff::*;
+use std::collections::HashMap;
+use std::fs;
+use super::branch_heads::BranchHEADs;
+//use super::diff::{reverse_diffs, revert_tables_from_diffs};
+use super::merged_branches::MergedBranch;
 use super::{
     branches::{BranchNode, Branches},
     commit::Commit,
@@ -22,9 +31,32 @@ use std::fs;
 
 #[derive(Serialize, Deserialize)]
 pub struct Log {
+    user_id: String,
     hash: String,
     timestamp: String,
     message: String,
+}
+
+#[derive(Serialize)]
+pub struct CommitGraphNode {
+    pub commit_hash: String,
+    pub branch_name: String,
+    pub column: u32,
+    pub row: u32,
+    pub first_branch_commit: bool,
+    pub is_merged_branch: bool,
+}
+
+#[derive(Serialize)]
+pub struct CommitGraphEdge {
+    pub src_commit_hash: String,
+    pub dest_commit_hash: String,
+}
+
+#[derive(Serialize)]
+pub struct CommitGraph {
+    pub nodes: Vec<CommitGraphNode>,
+    pub edges: Vec<CommitGraphEdge>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -66,14 +98,24 @@ pub fn log(user: &User) -> Result<(String, Vec<Vec<String>>, String), String> {
 
         let commit_clone = commit.clone();
 
+        log_string = format!(
+            "{}\n---------- {}'s Commit ----------",
+            log_string, commit.user_id
+        );
         log_string = format!("{}\nCommit: {}", log_string, commit.hash);
         log_string = format!("{}\nMessage: {}", log_string, commit.message);
         log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
-        log_string = format!("{}\n-----------------------\n", log_string);
+        log_string = format!("{}\n", log_string);
 
-        let printed_vals: Vec<String> = vec![commit.hash, commit.timestamp, commit.message];
+        let printed_vals: Vec<String> = vec![
+            commit.user_id,
+            commit.hash,
+            commit.timestamp,
+            commit.message,
+        ];
 
         let log_object = Log {
+            user_id: commit_clone.user_id,
             hash: commit_clone.hash,
             timestamp: commit_clone.timestamp,
             message: commit_clone.message,
@@ -180,6 +222,12 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
     let branch_name: String = user.get_current_branch_name();
     let branches: &mut Branches = get_db_instance()?.get_branch_file_mut();
     let head_mngr = get_db_instance()?.get_branch_heads_file_mut();
+    let hash1 = get_db_instance()?
+        .get_commit_file_mut()
+        .resolve_commit(hash1)?;
+    let hash2 = get_db_instance()?
+        .get_commit_file_mut()
+        .resolve_commit(hash2)?;
 
     if head_mngr.get_all_branch_heads()?.len() == 0 {
         return Err("No Commits in Current Branch!".to_string());
@@ -230,9 +278,11 @@ pub fn squash(hash1: &String, hash2: &String, user: &User) -> Result<Commit, Str
         .rev()
         .collect::<Result<Vec<Commit>, String>>()?;
 
-    let squash_commit = get_db_instance()?
-        .get_commit_file_mut()
-        .squash_commits(&commits, true)?;
+    let squash_commit = get_db_instance()?.get_commit_file_mut().squash_commits(
+        user.get_user_id(),
+        &commits,
+        true,
+    )?;
 
     // Use the new commit hash, and make the current hash2 point to the commit before hash1.
     let squash_node = BranchNode {
@@ -286,6 +336,13 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
     // If the commit hash is not in the current branch, return an error
     let mut match_node = None;
     //Looking for the commit hash in the branch nodes
+
+    //TODO Modify this to work with an abbreviated hash - this does not look too hard to implement
+
+    let commit_hash = get_db_instance()?
+        .get_commit_file_mut()
+        .resolve_commit(commit_hash)?;
+
     for node in branch_nodes {
         if node.commit_hash == *commit_hash {
             if match_node.is_some() {
@@ -314,9 +371,10 @@ pub fn revert(user: &mut User, commit_hash: &String) -> Result<Commit, String> {
             user.append_diff(&curr_diff);
         }
         // Creating a revert commit
+        // not sure what is going wrong here
         let revert_message = format!("Reverted to commit {}", commit_hash);
         let revert_command = format!("gql revert {}", commit_hash);
-        let revert_commit_and_node = get_db_instance()?.create_commit_and_node(
+        let revert_commit_and_node = get_db_instance()?.create_commit_on_head(
             &revert_message,
             &revert_command,
             user,
@@ -356,7 +414,10 @@ pub fn info(hash: &String) -> Result<String, String> {
 
     let mut log_string: String = String::new();
 
-    log_string = format!("{}\n-----------------------", log_string);
+    log_string = format!(
+        "{}\n---------- {}'s Commit ----------",
+        log_string, commit.user_id
+    );
     log_string = format!("{}\nCommit: {}", log_string, commit.hash);
     log_string = format!("{}\nMessage: {}", log_string, commit.message);
     log_string = format!("{}\nTimestamp: {}", log_string, commit.timestamp);
@@ -364,7 +425,7 @@ pub fn info(hash: &String) -> Result<String, String> {
     for diffs in commit.diffs {
         log_string = format!("{}\n{}", log_string, diffs.to_string());
     }
-    log_string = format!("{}\n-----------------------\n", log_string);
+    log_string = format!("{}\n----------------------------------------\n", log_string);
 
     return Ok(log_string.to_string());
 }
@@ -377,8 +438,12 @@ pub fn schema_table(user: &User) -> Result<(String, String), String> {
 
     let mut page_read: Vec<Box<Page>> = Vec::new();
     for path in all_table_paths.clone().unwrap() {
-        let page = read_page(0, &path)?;
-        page_read.push(page);
+        let (page, page_type) = read_page(0, &path)?;
+        if page_type == PageType::Header {
+            page_read.push(page);
+        } else {
+            return Err(format!("Page 0 in {} is not a header page", path));
+        }
     }
 
     if page_read.clone().len() == 0 {
@@ -521,6 +586,164 @@ pub fn pull(user: &mut User,
     Ok("Your branch is now up-to-date!".to_string())
 }
 
+/// Lists all the commits for all branches
+pub fn list_all_commits() -> Result<String, String> {
+    let branch_heads_file: &mut BranchHEADs = get_db_instance()?.get_branch_heads_file_mut();
+    let branches_file: &Branches = &mut get_db_instance()?.get_branch_file();
+    let branch_names: Vec<String> = branch_heads_file.get_all_branch_names()?;
+
+    // Get all the branch nodes for each branch HEAD
+    let mut branch_head_nodes: Vec<BranchNode> = Vec::new();
+    for branch_name in branch_names {
+        let branch_head_node: BranchNode =
+            branch_heads_file.get_branch_node_from_head(&branch_name, branches_file)?;
+        branch_head_nodes.push(branch_head_node);
+    }
+
+    // Collect all the branch nodes for each branch.
+    // Store it in a vector of tuples where each tuple is (branch_name, branch_nodes)
+    // The branch_nodes are in chronological order (origin is first, head is last)
+    let mut all_branch_nodes: Vec<(String, Vec<BranchNode>)> = Vec::new();
+    let mut max_branch_len: usize = 0;
+    for head_node in branch_head_nodes {
+        let branch_name: String = head_node.branch_name.clone();
+        let mut branch_nodes: Vec<BranchNode> = Vec::new();
+        let mut this_branch_len: usize = 1;
+
+        let mut current_node: BranchNode = head_node;
+        branch_nodes.push(current_node.clone());
+        while let Some(prev_node) = branches_file.get_prev_branch_node(&current_node)? {
+            branch_nodes.push(prev_node.clone());
+            current_node = prev_node;
+            this_branch_len += 1;
+        }
+        branch_nodes.reverse();
+        all_branch_nodes.push((branch_name, branch_nodes));
+
+        if this_branch_len > max_branch_len {
+            max_branch_len = this_branch_len;
+        }
+    }
+
+    // Get all the past merged branches
+    let past_merged_branches: Vec<MergedBranch> = get_db_instance()?
+        .get_merged_branches_file_mut()
+        .get_merged_branches()?;
+
+    // Turn all branch nodes into a json table thingy
+    let mut graph: CommitGraph = CommitGraph {
+        nodes: Vec::new(),
+        edges: Vec::new(),
+    };
+
+    // Maps the branch_name to the column number
+    let mut used_cols: HashMap<String, u32> = HashMap::new();
+    for i in 0..max_branch_len {
+        // Get the unique branch nodes at this row level
+        let mut unique_branch_nodes: Vec<BranchNode> = Vec::new();
+        for (branch_name, branch_nodes) in &all_branch_nodes {
+            if branch_nodes.len() > i && *branch_name == branch_nodes[i].branch_name {
+                unique_branch_nodes.push(branch_nodes[i].clone());
+            }
+        }
+
+        // Add the unique branch nodes to the graph
+        for unique_node in unique_branch_nodes {
+            let branch_name: String = unique_node.branch_name.clone();
+            let commit_hash: String = unique_node.commit_hash.clone();
+
+            // If this is the first time we've seen this branch, add it to the used_cols map
+            let mut is_first_branch_commit: bool = false;
+            if !used_cols.contains_key(&branch_name) {
+                let mut new_col: u32 = 0;
+                loop {
+                    if !used_cols.values().contains(&new_col) {
+                        break;
+                    }
+                    new_col += 1;
+                }
+                used_cols.insert(branch_name.clone(), new_col);
+                is_first_branch_commit = true;
+            }
+
+            // If one of the past merged_branches has its source branch as this branch and it has a different branch name,
+            // then we need to add a node and edges
+            // In this case, the branch was deleted after the merge
+            if let Some(merged_branch) = past_merged_branches
+                .iter()
+                .find(|x| x.source_commit == commit_hash && x.branch_name != branch_name)
+            {
+                let merged_branch_name: String = merged_branch.branch_name.clone();
+                let dest_branch_col: u32 = match used_cols.get(&merged_branch_name) {
+                    Some(col) => *col,
+                    None => {
+                        let mut new_col: u32 = 0;
+                        loop {
+                            if !used_cols.values().contains(&new_col) {
+                                break;
+                            }
+                            new_col += 1;
+                        }
+                        used_cols.insert(merged_branch_name.clone(), new_col);
+                        new_col
+                    }
+                };
+                let branch_node_hash: String = commit_hash.to_string() + "_";
+                let dest_branch_node: CommitGraphNode = CommitGraphNode {
+                    commit_hash: branch_node_hash.clone(),
+                    branch_name: merged_branch_name.clone(),
+                    column: dest_branch_col,
+                    row: i as u32,
+                    first_branch_commit: true,
+                    is_merged_branch: true,
+                };
+                graph.nodes.push(dest_branch_node);
+
+                let edge: CommitGraphEdge = CommitGraphEdge {
+                    src_commit_hash: commit_hash.clone(),
+                    dest_commit_hash: branch_node_hash.clone(),
+                };
+                graph.edges.push(edge);
+                let edge: CommitGraphEdge = CommitGraphEdge {
+                    src_commit_hash: branch_node_hash.clone(),
+                    dest_commit_hash: merged_branch.destination_commit.clone(),
+                };
+                graph.edges.push(edge);
+            } else if let Some(merged_branch) = past_merged_branches
+                .iter()
+                .find(|x| x.source_commit == commit_hash && x.branch_name == branch_name)
+            {
+                let edge: CommitGraphEdge = CommitGraphEdge {
+                    src_commit_hash: merged_branch.source_commit.clone(),
+                    dest_commit_hash: merged_branch.destination_commit.clone(),
+                };
+                graph.edges.push(edge);
+            }
+
+            // Add the node to the graph
+            graph.nodes.push(CommitGraphNode {
+                commit_hash: commit_hash.clone(),
+                column: used_cols[&branch_name],
+                branch_name,
+                row: i as u32,
+                first_branch_commit: is_first_branch_commit,
+                is_merged_branch: false,
+            });
+
+            // Add the edge to the graph if it exists
+            if let Some(prev_node) = branches_file.get_prev_branch_node(&unique_node)? {
+                let edge = CommitGraphEdge {
+                    src_commit_hash: prev_node.commit_hash.clone(),
+                    dest_commit_hash: commit_hash.clone(),
+                };
+                graph.edges.push(edge);
+            }
+        }
+    }
+
+    return Ok(serde_json::to_string(&graph).map_err(|e| e.to_string())?);
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -588,7 +811,7 @@ mod tests {
         // Commit the changes
         let commit_result = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &mut user,
@@ -600,11 +823,14 @@ mod tests {
         // Log the commits
         let result: Vec<Vec<String>> = log(&user).unwrap().1;
 
+        println!("result {:?}", result);
+
         // Assert that the result is correct
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0][0], commit.hash);
-        assert_eq!(result[0][1], commit.timestamp);
-        assert_eq!(result[0][2], commit.message);
+        assert_eq!(result[0][0], commit.user_id);
+        assert_eq!(result[0][1], commit.hash);
+        assert_eq!(result[0][2], commit.timestamp);
+        assert_eq!(result[0][3], commit.message);
 
         // Delete the database
         delete_db_instance().unwrap();
@@ -663,7 +889,7 @@ mod tests {
         // Commit the changes
         let mut commit_result = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First commit".to_string(),
                 &"Create table1; Insert 1 Row;".to_string(),
                 &mut user,
@@ -674,7 +900,7 @@ mod tests {
 
         commit_result = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second commit".to_string(),
                 &"Create table2; Insert 2 Row;".to_string(),
                 &mut user,
@@ -688,12 +914,14 @@ mod tests {
 
         // Assert that the result is correct
         assert_eq!(result.len(), 2);
-        assert_eq!(result[1][0], commit.hash);
-        assert_eq!(result[1][1], commit.timestamp);
-        assert_eq!(result[1][2], commit.message);
-        assert_eq!(result[0][0], second_commit.hash);
-        assert_eq!(result[0][1], second_commit.timestamp);
-        assert_eq!(result[0][2], second_commit.message);
+        assert_eq!(result[1][0], commit.user_id);
+        assert_eq!(result[1][1], commit.hash);
+        assert_eq!(result[1][2], commit.timestamp);
+        assert_eq!(result[1][3], commit.message);
+        assert_eq!(result[0][0], second_commit.user_id);
+        assert_eq!(result[0][1], second_commit.hash);
+        assert_eq!(result[0][2], second_commit.timestamp);
+        assert_eq!(result[0][3], second_commit.message);
 
         // Delete the database
         delete_db_instance().unwrap();
@@ -961,12 +1189,24 @@ mod tests {
 
         let commit_file = load_db.get_commit_file_mut();
         let commit = commit_file.read_commit(1);
-        let query1 = format!("GQL info {}", commit.unwrap().hash);
+        let query1 = format!("GQL info {}", commit.clone().unwrap().hash);
 
         let result = parse_vc_cmd(&query1, &mut user, all_users.clone());
-
-        delete_db_instance().unwrap();
         assert!(result.is_ok());
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&"--------- test_user's Commit ---------".to_string()));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&commit.clone().unwrap().hash));
+        assert!(result
+            .clone()
+            .unwrap()
+            .contains(&commit.clone().unwrap().message));
+        assert!(result.clone().unwrap().contains(&commit.unwrap().timestamp));
+        delete_db_instance().unwrap();
     }
 
     // Checks that discard deletes the -temp dir
@@ -1066,7 +1306,7 @@ mod tests {
         // Create a commit on the main branch
         get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table & Added Rows;".to_string(),
                 &mut user,
@@ -1135,7 +1375,7 @@ mod tests {
         // Create a commit on the main branch
         let node_commit1 = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"First Commit".to_string(),
                 &"Create Table;".to_string(),
                 &mut user,
@@ -1177,7 +1417,7 @@ mod tests {
         // Create commit on main branch
         let _node_commit2 = get_db_instance()
             .unwrap()
-            .create_commit_and_node(
+            .create_commit_on_head(
                 &"Second Commit on Main - Added Wayne family".to_string(),
                 &"Insert;".to_string(),
                 &mut user,

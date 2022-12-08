@@ -5,6 +5,7 @@ use tonic::transport::Server;
 
 use crate::util::bench;
 
+mod btree;
 mod client;
 mod executor;
 mod fileio;
@@ -32,6 +33,14 @@ struct Args {
     /// Use Demo Database
     #[clap(short, long)]
     demo: bool,
+
+    // Use benchmark Database with specified number of rows
+    #[clap(short, long)]
+    bench: Option<usize>,
+
+    // Use benchmark Database with 2 tables with specified number of rows in each table
+    #[clap(long)]
+    bench2: Option<usize>,
 }
 
 #[tokio::main]
@@ -45,6 +54,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("GQL Server Started on address: {}", addr);
         if args.demo {
             bench::create_demo_db("demo");
+        } else if let Some(num_rows) = args.bench {
+            bench::create_huge_bench_db(num_rows, true);
+        } else if let Some(num_rows) = args.bench2 {
+            println!("Creating bench2");
+            bench::create_huge_bench_db_2_tables(num_rows, true);
         }
         Server::builder()
             .add_service(DatabaseConnectionServer::new(db_service))

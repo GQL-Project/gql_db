@@ -1,10 +1,13 @@
+use rand::rngs::ThreadRng;
+use rand::Rng;
+
 use crate::fileio::header::Schema;
 use crate::fileio::tableio::{delete_table_in_dir, Table};
 use crate::util::{
     dbtype::{Column, Value},
     row::{Row, RowInfo},
 };
-use crate::version_control::diff::Diff;
+use crate::version_control::diff::{Diff, InsertDiff};
 use crate::{
     executor::query::create_table,
     fileio::databaseio::{create_db_instance, get_db_instance, Database},
@@ -61,15 +64,13 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 1 on Main Branch".to_string(),
-            &"Create Table and Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 1 on Main Branch".to_string(),
+        &"Create Table and Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -104,15 +105,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Update(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 2 on Main Branch".to_string(),
-            &"Insert Rows and Update Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 2 on Main Branch".to_string(),
+        &"Insert Rows and Update Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .remove_rows(vec![
@@ -135,15 +134,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 3 on Main Branch".to_string(),
-            &"Create Table and Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 3 on Main Branch".to_string(),
+        &"Create Table and Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table2
         .insert_rows(vec![
@@ -172,17 +169,15 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 4 on Main Branch".to_string(),
-            &"Insert Rows and Update Rows and Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 4 on Main Branch".to_string(),
+        &"Insert Rows and Update Rows and Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
-    db.create_branch(&"test_branch1".to_string(), &mut user)
+    db.create_branch(&"test_branch1".to_string(), &None, &mut user)
         .unwrap();
     db.switch_branch(&"test_branch1".to_string(), &mut user)
         .unwrap();
@@ -238,15 +233,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 5 on Test Branch 1 1".to_string(),
-            &"Insert Rows and Update Rows and Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 5 on Test Branch 1 1".to_string(),
+        &"Insert Rows and Update Rows and Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table2
         .rewrite_rows(vec![
@@ -265,15 +258,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 6 on Test Branch 1".to_string(),
-            &"Update Rows and Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 6 on Test Branch 1".to_string(),
+        &"Update Rows and Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -303,15 +294,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 7 on Test Branch 1".to_string(),
-            &"Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 7 on Test Branch 1".to_string(),
+        &"Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .remove_rows(vec![
@@ -331,15 +320,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Remove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 8 on Test Branch 1".to_string(),
-            &"Remove Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 8 on Test Branch 1".to_string(),
+        &"Remove Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     db.switch_branch(&"main".to_string(), &mut user).unwrap();
     table1 = Table::from_user(&user, &db, &"personal_info".to_string(), None).unwrap();
@@ -367,15 +354,13 @@ pub fn create_demo_db(name: &str) -> User {
         ])
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 9 on Main Branch".to_string(),
-            &"Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 9 on Main Branch".to_string(),
+        &"Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
     let diff = table1
         .insert_rows(vec![
@@ -403,17 +388,15 @@ pub fn create_demo_db(name: &str) -> User {
         .unwrap();
     user.append_diff(&Diff::Insert(diff));
 
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 10 on Main Branch".to_string(),
-            &"Insert Rows".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 10 on Main Branch".to_string(),
+        &"Insert Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
 
-    db.create_branch(&"test_branch2".to_string(), &mut user)
+    db.create_branch(&"test_branch2".to_string(), &None, &mut user)
         .unwrap();
     db.switch_branch(&"test_branch2".to_string(), &mut user)
         .unwrap();
@@ -422,15 +405,13 @@ pub fn create_demo_db(name: &str) -> User {
     let diff =
         delete_table_in_dir(&table2.name, &db.get_current_working_branch_path(&user)).unwrap();
     user.append_diff(&Diff::TableRemove(diff));
-    let _ = get_db_instance()
-        .unwrap()
-        .create_commit_and_node(
-            &"Create Commit 11 on Test Branch 2".to_string(),
-            &"Delete Table".to_string(),
-            &mut user,
-            None,
-        )
-        .unwrap();
+    db.create_commit_on_head(
+        &"Create Commit 11 on Test Branch 2".to_string(),
+        &"Delete Table".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
     user
 }
 
@@ -441,7 +422,7 @@ fn create_row1(id: i32, fname: &str, lname: &str, age: i64, height: f32, date: &
     row.push(Value::String(lname.to_string()));
     row.push(Value::I64(age));
     row.push(if height < 0.0 {
-        Value::Null
+        Value::Null(Column::Float)
     } else {
         Value::Float(height)
     });
@@ -465,18 +446,170 @@ fn create_row2(id: i32, location: &str, is_open: bool) -> Row {
     row
 }
 
+/// Creates a huge bench database with <num_rows> rows in a table
+pub fn create_huge_bench_db(num_rows: usize, random_values: bool) -> User {
+    let name: String = format!("benchmark_db_huge");
+    fcreate_db_instance(&name);
+    let db: &mut Database = get_db_instance().unwrap();
+    let mut user: User = User::new("test_user".to_string());
+    let schema: Schema = vec![
+        ("id1".to_string(), Column::I32),
+        ("id2".to_string(), Column::I32),
+        ("age".to_string(), Column::I32),
+        ("random".to_string(), Column::String(512)),
+    ];
+
+    let (mut table, diff) =
+        create_table(&"huge_table".to_string(), &schema, db, &mut user).unwrap();
+    user.append_diff(&Diff::TableCreate(diff));
+
+    fn gen_age() -> i32 {
+        let mut rng: ThreadRng = rand::thread_rng();
+        rng.gen_range(1..100)
+    }
+
+    fn gen_random() -> String {
+        let mut rng: ThreadRng = rand::thread_rng();
+        let mut s: String = String::new();
+        for _ in 0..20 {
+            s.push(rng.gen_range('a'..='z'));
+        }
+        s
+    }
+
+    // Create <num_rows> rows
+    let mut rows: Vec<Row> = Vec::with_capacity(num_rows);
+    if random_values {
+        for i in 0..num_rows {
+            rows.push(vec![
+                Value::I32(i as i32),
+                Value::I32((i % 52) as i32),
+                Value::I32(gen_age()),
+                Value::String(gen_random()),
+            ]);
+        }
+    } else {
+        for i in 0..num_rows {
+            rows.push(vec![
+                Value::I32(i as i32),
+                Value::I32(i as i32),
+                Value::I32(20),
+                Value::String("random text".to_string()),
+            ]);
+        }
+    }
+
+    let diff: InsertDiff = table.insert_rows(rows).unwrap();
+    user.append_diff(&Diff::Insert(diff));
+
+    db.create_commit_on_head(
+        &"Created huge test database".to_string(),
+        &"Create huge_table and Inserted Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
+
+    user
+}
+
+/// Creates a huge bench database with 2 tables that each have <num_rows> rows
+pub fn create_huge_bench_db_2_tables(
+    num_rows: usize,
+    random_values: bool,
+) -> (User, String, String) {
+    let mut user: User = create_huge_bench_db(num_rows, true);
+    let db: &mut Database = get_db_instance().unwrap();
+    let schema: Schema = vec![
+        ("name".to_string(), Column::String(32)),
+        ("value".to_string(), Column::Double),
+        ("id1".to_string(), Column::I32),
+        ("id2".to_string(), Column::I32),
+        ("random".to_string(), Column::String(512)),
+    ];
+
+    let (mut table, diff) =
+        create_table(&"huge_table2".to_string(), &schema, db, &mut user).unwrap();
+    user.append_diff(&Diff::TableCreate(diff));
+
+    fn gen_value() -> f64 {
+        let mut rng: ThreadRng = rand::thread_rng();
+        rng.gen_range(1..100) as f64
+    }
+
+    fn gen_random() -> String {
+        let mut rng: ThreadRng = rand::thread_rng();
+        let mut s: String = String::new();
+        for _ in 0..20 {
+            s.push(rng.gen_range('a'..='z'));
+        }
+        s
+    }
+
+    // Create <num_rows> rows
+    let mut rows: Vec<Row> = Vec::with_capacity(num_rows);
+    if random_values {
+        for i in 0..num_rows {
+            rows.push(vec![
+                Value::String(gen_random()),
+                Value::Double(gen_value()),
+                Value::I32(i as i32),
+                Value::I32((i % 52) as i32),
+                Value::String(gen_random()),
+            ]);
+        }
+    } else {
+        for i in 0..num_rows {
+            rows.push(vec![
+                Value::String("random_name".to_string()),
+                Value::Double(i as f64),
+                Value::I32(i as i32),
+                Value::I32(i as i32),
+                Value::String("random text".to_string()),
+            ]);
+        }
+    }
+
+    let diff: InsertDiff = table.insert_rows(rows).unwrap();
+    user.append_diff(&Diff::Insert(diff));
+
+    db.create_commit_on_head(
+        &"Created huge test database".to_string(),
+        &"Create huge_table and Inserted Rows".to_string(),
+        &mut user,
+        None,
+    )
+    .unwrap();
+
+    (user, "huge_table".to_string(), "huge_table2".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
 
     use crate::fileio::databaseio::delete_db_instance;
 
-    use super::create_demo_db;
+    use super::*;
 
     #[test]
     #[serial]
     fn test_bench() {
         create_demo_db("test_bench");
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_bench_huge() {
+        create_huge_bench_db(100, false);
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_bench_huge2() {
+        create_huge_bench_db_2_tables(100, false);
         delete_db_instance().unwrap();
     }
 }

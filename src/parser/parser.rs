@@ -41,7 +41,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                         return Err("No changes to commit".to_string());
                     }
 
-                    let (res_node, res_commit) = get_db_instance()?.create_commit_and_node(
+                    let (res_node, res_commit) = get_db_instance()?.create_commit_on_head(
                         &message.to_string(),
                         &user.get_commands().join(":"),
                         user,
@@ -62,9 +62,12 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                 }
                 VersionControlSubCommand::Info { commit: hash } => command::info(&hash),
                 VersionControlSubCommand::Status => Ok(user.get_status().0),
-                VersionControlSubCommand::CreateBranch { branch_name } => {
+                VersionControlSubCommand::CreateBranch {
+                    branch_name,
+                    commit,
+                } => {
                     get_db_instance()?
-                        .create_branch(&branch_name, user)
+                        .create_branch(&branch_name, &commit, user)
                         .map_err(|e| e.to_string())?;
                     Ok(format!("Branch {} created!", branch_name))
                 }
@@ -138,6 +141,10 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                         command::del_branch(user, &branch_name.clone(), force, all_users)?;
                     Ok(del_results)
                 }
+                VersionControlSubCommand::BranchView => {
+                    let results: String = command::list_all_commits()?;
+                    Ok(results)
+                }
                 VersionControlSubCommand::SquashCommit {
                     src_commit,
                     dest_commit,
@@ -180,6 +187,14 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     
                     command::pull(user, merge_strategy.clone())?;
                     Ok("Pull changes".to_string())
+                }
+                VersionControlSubCommand::User => {
+                    let user_creds_instance = get_db_instance()?.get_user_creds_file_mut();
+                    Ok(format!(
+                        "\nCurrent user: {} \nAll users: {:?}",
+                        user.get_user_id(),
+                        user_creds_instance.get_all_usernames()
+                    ))
                 }
             }
         }

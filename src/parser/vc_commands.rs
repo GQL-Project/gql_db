@@ -56,6 +56,11 @@ pub enum VersionControlSubCommand {
     CreateBranch {
         /// The name of the new branch
         branch_name: String,
+        /// The commit to create the branch from
+        /// If the commit is not specified, the new branch will be created from the current branch HEAD
+        /// If the commit is specified, the new branch will be created from the given commit, if the commit exists in the current branch
+        #[arg(long, short)]
+        commit: Option<String>,
     },
     /// Lists all branches, with the current branch marked with an asterisk
     #[clap(aliases = &["list"])]
@@ -95,6 +100,8 @@ pub enum VersionControlSubCommand {
         #[arg(long, short, default_value = "false")]
         force: bool,
     },
+    #[clap(aliases = &["view_branch"])]
+    BranchView,
     /// Returns all of tables in the current branch
     #[clap(aliases = &["table", "schema"])]
     SchemaTable {
@@ -110,4 +117,6 @@ pub enum VersionControlSubCommand {
         #[arg(long, short, default_value = "clean")]
         merge_strat: String,
     },
+    /// Returns the current user and all users
+    User,
 }

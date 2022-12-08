@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use pwhash::bcrypt;
+
 use crate::fileio::databaseio::{get_db_instance, load_db_instance};
+use crate::user::usercreds::UserCred;
 use crate::user::userdata::*;
 
 #[derive(Debug, Default)]
@@ -30,15 +33,50 @@ impl Connection {
         Ok(client)
     }
 
-    pub fn new_client(&self) -> Result<String, String> {
+    pub fn new_client(
+        &self,
+        username: String,
+        password: String,
+        create: bool,
+    ) -> Result<String, String> {
         // Generate and add a new unique client ID.
-        let id = rand::random::<i64>().to_string();
         if get_db_instance().is_err() {
             load_db_instance(&"realdb.db".to_string())?;
         }
-        let user: User = User::new(id.clone());
+        let user_creds_instance = get_db_instance()?.get_user_creds_file_mut();
+        if !user_creds_instance.does_user_exist("admin".to_string())? {
+            user_creds_instance.create_user(&UserCred {
+                username: "admin".to_string(),
+                password: bcrypt::hash("admin".to_string()).unwrap(),
+            })?;
+        }
+        if create {
+            if user_creds_instance.does_user_exist(username.clone())? {
+                return Err("User already exists".to_string());
+            } else {
+                user_creds_instance.create_user(&UserCred {
+                    username: username.clone(),
+                    password: bcrypt::hash(password.clone()).unwrap(),
+                })?;
+            }
+        } else {
+            if !user_creds_instance.does_user_exist(username.clone())? {
+                return Err("User does not exist".to_string());
+            } else {
+                if !bcrypt::verify(password, &user_creds_instance.get_user(&username)?.password) {
+                    return Err("Incorrect password".to_string());
+                }
+            }
+        }
+
+        for client in self.clients.lock().unwrap().iter() {
+            if client.get_user_id() == username {
+                return Err(format!("User {} already logged in", username));
+            }
+        }
+        let user: User = User::new(username.clone());
         self.clients.lock().unwrap().push(user.clone());
-        Ok(id)
+        Ok(username)
     }
 
     pub fn remove_client(&self, id: String) -> Result<(), String> {
@@ -99,7 +137,9 @@ mod tests {
         // Create a new database instance
         fcreate_db_instance(&"test_new_client");
 
-        let id = connection.new_client().unwrap();
+        let id = connection
+            .new_client("admin".to_string(), "admin".to_string(), false)
+            .unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
 
@@ -114,8 +154,12 @@ mod tests {
         // Create a new database instance
         fcreate_db_instance(&"test_new_clients");
 
-        let id1 = connection.new_client().unwrap();
-        let id2 = connection.new_client().unwrap();
+        let id1 = connection
+            .new_client("admin1".to_string(), "admin1".to_string(), true)
+            .unwrap();
+        let id2 = connection
+            .new_client("admin2".to_string(), "admin2".to_string(), true)
+            .unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 2);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id1);
         assert_eq!(connection.get_clients_readonly()[1].get_user_id(), id2);
@@ -131,7 +175,9 @@ mod tests {
         // Create a new database instance
         fcreate_db_instance(&"test_new_clients");
 
-        let id = connection.new_client().unwrap();
+        let id = connection
+            .new_client("admin".to_string(), "admin".to_string(), false)
+            .unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
         connection.remove_client(id.clone()).unwrap();
@@ -149,7 +195,9 @@ mod tests {
         // Create a new database instance
         fcreate_db_instance(&"test_new_clients");
 
-        let id = connection.new_client().unwrap();
+        let id = connection
+            .new_client("admin".to_string(), "admin".to_string(), false)
+            .unwrap();
         assert_eq!(connection.get_clients_readonly().len(), 1);
         assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
         connection.remove_client("12345".to_string()).unwrap();
@@ -170,7 +218,9 @@ mod tests {
         // Create a scope for appending the diff
         {
             // Create then retrieve the client
-            let id: String = connection.new_client().unwrap();
+            let id: String = connection
+                .new_client("admin".to_string(), "admin".to_string(), false)
+                .unwrap();
             let client: &mut User = connection.get_client(&id).unwrap();
 
             let schema: Schema = vec![
@@ -219,5 +269,116 @@ mod tests {
             }
         }
         does_contain_id
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_user() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_register_user");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("test".to_string(), "test".to_string(), false);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_duplicate_user_1() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_register_duplicate_user_1");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_duplicate_user_2() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_register_duplicate_user_2");
+
+        let result = connection.new_client("admin".to_string(), "admin".to_string(), true);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_login_user_incorrect() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_login_user_incorrect");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("tset".to_string(), "test".to_string(), false);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_login_password_incorrect() {
+        let connection = Connection::default();
+        // Create a new database instance
+        fcreate_db_instance(&"test_login_password_incorrect");
+
+        let mut result = connection.new_client("test".to_string(), "test".to_string(), true);
+        assert!(result.is_ok());
+        let id = result.unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 1);
+        assert_eq!(connection.get_clients_readonly()[0].get_user_id(), id);
+        connection.remove_client(id).unwrap();
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        result = connection.new_client("test".to_string(), "tset".to_string(), false);
+        assert!(result.is_err());
+        assert_eq!(connection.get_clients_readonly().len(), 0);
+
+        // Delete new database instance
+        delete_db_instance().unwrap();
     }
 }

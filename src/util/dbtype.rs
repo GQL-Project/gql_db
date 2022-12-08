@@ -1,13 +1,15 @@
 use chrono::NaiveDateTime;
 use core::mem::size_of;
 use prost_types::Timestamp;
+use serde::Serialize;
 use sqlparser::ast::Value as SqlValue;
 use sqlparser::ast::{ColumnDef, ColumnOption, DataType};
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 use crate::fileio::pageio::{read_string, read_type, write_string, write_type, Page};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     String(String),
     I32(i32),
@@ -16,10 +18,10 @@ pub enum Value {
     I64(i64),
     Double(f64),
     Bool(bool),
-    Null,
+    Null(Column),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Column {
     // Strings have a given length value (in bytes).
     String(u16),
@@ -59,6 +61,24 @@ impl Column {
         }
     }
 
+    pub fn from_datatype_def(data_type: &DataType) -> Result<Column, String> {
+        // No Nullable
+        let data_col = match data_type {
+            DataType::SmallInt(_) => Column::I32,
+            DataType::Int(_) => Column::I64,
+            DataType::Float(_) => Column::Float,
+            DataType::Double => Column::Double,
+            DataType::Boolean => Column::Bool,
+            DataType::Timestamp => Column::Timestamp,
+            DataType::Char(Some(size)) => Column::String(*size as u16),
+            DataType::Varchar(Some(size)) => Column::String(*size as u16),
+            DataType::Char(None) => Column::String(1),
+            DataType::Varchar(None) => Column::String(1),
+            _ => Err(format!("Unsupported data type: {}", data_type))?,
+        };
+        Ok(data_col)
+    }
+
     pub fn decode_type(val: u16) -> Column {
         if val & (1 << 15) != 0 {
             // This is a nullable type, find it's base type.
@@ -88,6 +108,13 @@ impl Column {
             Column::Timestamp => 5,
             Column::String(x) => (1 << 14) | (*x as u16),
             Column::Nullable(x) => (1 << 15) | x.encode_type(),
+        }
+    }
+
+    pub fn is_nullable(&self) -> bool {
+        match self {
+            Column::Nullable(_) => true,
+            _ => false,
         }
     }
 
@@ -125,7 +152,7 @@ impl Column {
                 // Check if the value is null.
                 let val: u8 = read_type(page, offset)?;
                 if val == 0 {
-                    Ok(Value::Null)
+                    Ok(Value::Null(*x.clone()))
                 } else {
                     x.read(page, offset + size_of::<u8>())
                 }
@@ -145,7 +172,7 @@ impl Column {
                 write_string(page, offset, &x, *size as usize)
             }
             // Null cases
-            (Column::Nullable(_), Value::Null) => write_type(page, offset, 0u8),
+            (Column::Nullable(_), Value::Null(_)) => write_type(page, offset, 0u8),
             (Column::Nullable(x), y) => {
                 // Attempt to write the value, and only if it succeeds, write the null byte.
                 x.write(y, page, offset + size_of::<u8>())?;
@@ -189,7 +216,7 @@ impl Column {
             // Time stamps
             (Column::Timestamp, Value::String(x)) => Ok(Value::Timestamp(parse_time(x)?)),
             // Null cases
-            (Column::Nullable(_), Value::Null) => Ok(Value::Null),
+            (Column::Nullable(x), Value::Null(_)) => Ok(Value::Null(*x.clone())),
             (Column::Nullable(x), _) => x.coerce_type(value),
             _ => Err(format!(
                 "Unexpected Type, could not promote value {:?} to type {:?}",
@@ -238,7 +265,7 @@ impl Column {
             ),
             Column::Nullable(x) => {
                 if str == "" {
-                    Value::Null
+                    Value::Null(*x.clone())
                 } else {
                     x.parse(str)?
                 }
@@ -253,8 +280,35 @@ impl Column {
             SqlValue::SingleQuotedString(x) => self.parse(&x.to_string()),
             SqlValue::DoubleQuotedString(x) => self.parse(&x.to_string()),
             SqlValue::Boolean(x) => Ok(Value::Bool(*x)),
-            SqlValue::Null => Ok(Value::Null),
+            SqlValue::Null => Ok(Value::Null(Column::I32)),
             _ => Err(format!("Unsupported value type: {:?}", parse)),
+        }
+    }
+
+    /// Gets a default value for this column type.
+    pub fn get_default_value(&self) -> Value {
+        match self {
+            Column::I32 => Value::I32(0),
+            Column::I64 => Value::I64(0),
+            Column::Float => Value::Float(0.0),
+            Column::Double => Value::Double(0.0),
+            Column::Bool => Value::Bool(false),
+            Column::Timestamp => {
+                Value::Timestamp(parse_time(&"1970-01-01 00:00:00".to_string()).unwrap())
+            }
+            Column::String(_) => Value::String(String::new()),
+            Column::Nullable(x) => Value::Null(*x.clone()),
+        }
+    }
+
+    pub fn match_type(&self, other: &Column) -> bool {
+        self.coerce_type(other.get_default_value()).is_ok()
+    }
+
+    pub fn as_nullable(self) -> Column {
+        match self {
+            Column::Nullable(_) => self,
+            _ => Column::Nullable(Box::new(self)),
         }
     }
 }
@@ -266,7 +320,7 @@ impl Value {
             SqlValue::SingleQuotedString(x) => Ok(Value::String(x.clone())),
             SqlValue::DoubleQuotedString(x) => Ok(Value::String(x.clone())),
             SqlValue::Boolean(x) => Ok(Value::Bool(*x)),
-            SqlValue::Null => Ok(Value::Null),
+            SqlValue::Null => Ok(Value::Null(Column::I32)),
             _ => Err(format!("Unsupported value type: {:?}", parse)),
         }
     }
@@ -280,8 +334,12 @@ impl Value {
             Value::Bool(_) => Column::Bool,
             Value::Timestamp(_) => Column::Timestamp,
             Value::String(_) => Column::String(0),
-            Value::Null => Column::Nullable(Box::new(Column::I32)),
+            Value::Null(x) => Column::Nullable(Box::new(x.clone())),
         }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Value::Null(_))
     }
 }
 
@@ -310,7 +368,7 @@ impl ToString for Value {
             Value::Bool(x) => format!("Bool({})", x),
             Value::Timestamp(x) => format!("Timestamp({})", x),
             Value::String(x) => format!("String({})", x),
-            Value::Null => "Null()".to_string(),
+            Value::Null(_) => "Null()".to_string(),
         }
     }
 }
@@ -350,11 +408,67 @@ impl PartialOrd for Value {
             (Value::Double(x), Value::I64(y)) => x.partial_cmp(&(*y as f64)),
             (Value::Double(x), Value::Float(y)) => x.partial_cmp(&(*y as f64)),
             // Null cases
-            (Value::Null, Value::Null) => Some(Ordering::Equal),
-            (Value::Null, _) => Some(Ordering::Less),
-            (_, Value::Null) => Some(Ordering::Greater),
+            (Value::Null(_), Value::Null(_)) => Some(Ordering::Equal),
+            (Value::Null(_), _) => Some(Ordering::Less),
+            (_, Value::Null(_)) => Some(Ordering::Greater),
             _ => None,
         }
+    }
+}
+
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::I32(x) => {
+                state.write_u8(0);
+                x.hash(state);
+            }
+            Value::I64(x) => {
+                state.write_u8(1);
+                x.hash(state);
+            }
+            Value::Float(x) => {
+                state.write_u8(2);
+                x.to_bits().hash(state);
+            }
+            Value::Double(x) => {
+                state.write_u8(3);
+                x.to_bits().hash(state);
+            }
+            Value::Bool(x) => {
+                state.write_u8(4);
+                x.hash(state);
+            }
+            Value::Timestamp(x) => {
+                state.write_u8(5);
+                x.seconds.hash(state);
+                x.nanos.hash(state);
+            }
+            Value::String(x) => {
+                state.write_u8(6);
+                x.hash(state);
+            }
+            Value::Null(_) => {
+                state.write_u8(7);
+            }
+        }
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.partial_cmp(other) {
+            Some(x) => x,
+            None => Ordering::Less,
+        }
+    }
+}
+
+impl Eq for Value {}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.partial_cmp(other) == Some(Ordering::Equal)
     }
 }
 

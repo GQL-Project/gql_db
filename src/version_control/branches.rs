@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::{branch_heads::*, diff::*};
 use crate::fileio::{
     databaseio::{self},
@@ -125,12 +127,13 @@ impl Branches {
             let header = Header {
                 num_pages: 2,
                 schema,
+                index_top_level_pages: HashMap::new(),
             };
             write_header(&filepath, &header)?;
 
             // Write a blank page to the table
             let page = [0u8; PAGE_SIZE];
-            write_page(1, &filepath, &page)?;
+            write_page(1, &filepath, &page, PageType::Data)?;
         }
 
         Ok(Branches {
@@ -187,6 +190,27 @@ impl Branches {
             };
         }
         Ok(branch_nodes)
+    }
+
+    /// Find the branch node with the given commit hash.
+    /// Returns None if the commit hash is not found.
+    /// Returns the branch node if the commit hash is found.
+    pub fn traverse_for_commit(
+        &self,
+        branch_start: &BranchNode,
+        commit_hash: &String,
+    ) -> Result<Option<BranchNode>, String> {
+        let mut current_node: BranchNode = branch_start.clone();
+        loop {
+            if current_node.commit_hash == *commit_hash {
+                return Ok(Some(current_node));
+            }
+            current_node = match self.get_prev_branch_node(&current_node)? {
+                Some(bn) => bn, // If Some, we have a previous node
+                None => break,  // If None, that means we are trying to go before the original node
+            };
+        }
+        Ok(None)
     }
 
     /// Creates a new branch node and adds it to the branches table with the given branch name and commit hash.
