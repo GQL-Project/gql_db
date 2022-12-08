@@ -91,20 +91,100 @@ fn parse_select(
         columns.push(c.clone());
     }
     let mut table_names = Vec::new();
+    let mut where_clause: Option<Expr> = None;
+    // This will be the new 'where' clause resulting from the joins
+    let mut join_clause: Vec<Expr> = Vec::new();
+
     for t in s.from.iter() {
-        let table_name = t.to_string();
-        let table_name: Vec<&str> = table_name.split(" ").collect();
-        if table_name.len() == 3 {
-            table_names.push((table_name[0].to_string(), table_name[2].to_string()));
-        } else {
-            table_names.push((table_name[0].to_string(), "".to_string()));
+        println!("{:?}", t);
+        if t.joins.len() > 0 {
+            // Get the table name and alias if present
+            let table_name = t.relation.to_string();
+            let table_name: Vec<&str> = table_name.split(" ").collect();
+            if table_name.len() == 3 {
+                table_names.push((table_name[0].to_string(), table_name[2].to_string()));
+            } else {
+                table_names.push((table_name[0].to_string(), "".to_string()));
+            }
+
+            for j in t.joins.iter() {
+                // Get the table name and alias if present
+                let table_name = j.relation.to_string();
+                let table_name: Vec<&str> = table_name.split(" ").collect();
+                if table_name.len() == 3 {
+                    table_names.push((table_name[0].to_string(), table_name[2].to_string()));
+                } else {
+                    table_names.push((table_name[0].to_string(), "".to_string()));
+                }
+
+                // Get the join condition
+                let join_condition: Expr = match &j.join_operator {
+                    sqlparser::ast::JoinOperator::Inner(inner) => {
+                        match inner {
+                            sqlparser::ast::JoinConstraint::On(on) => on.clone(),
+                            _ => Err("Unsupported join type".to_string())?,
+                        }
+                    },
+                    sqlparser::ast::JoinOperator::LeftOuter(l_outer) => {
+                        match l_outer {
+                            sqlparser::ast::JoinConstraint::On(on) => on.clone(),
+                            _ => Err("Unsupported join type".to_string())?,
+                        }
+                    },
+                    _ => Err("Unsupported join type".to_string())?,
+                };
+                join_clause.push(join_condition);
+            }
+        }
+        else {
+            let table_name = t.to_string();
+            let table_name: Vec<&str> = table_name.split(" ").collect();
+            if table_name.len() == 3 {
+                table_names.push((table_name[0].to_string(), table_name[2].to_string()));
+            } else {
+                table_names.push((table_name[0].to_string(), "".to_string()));
+            }
         }
     }
+
+    // If we don't have any joins, just use the existing WHERE clause
+    if join_clause.len() == 0 {
+        where_clause = s.selection.clone();
+    }
+    // If we do have joins
+    else {
+        // Assemble the join_clause into a single expression
+        let mut join_expr: Expr = join_clause[0].clone();
+        for i in 1..join_clause.len() {
+            join_expr = Expr::BinaryOp {
+                left: Box::new(join_expr),
+                op: sqlparser::ast::BinaryOperator::And,
+                right: Box::new(join_clause[i].clone()),
+            };
+        }
+
+        // If we have an existing WHERE clause, add the join clause to it
+        let where_clause_joins: Expr = match &s.selection {
+            Some(clause) => Expr::BinaryOp {
+                left: Box::new(clause.clone()),
+                op: sqlparser::ast::BinaryOperator::And,
+                right: Box::new(join_expr),
+            },
+            None => join_expr,
+        };
+
+        where_clause = Some(where_clause_joins);
+    }
+
+    println!("");
+    println!("Columns: {:?}", columns);
+    println!("Tables: {:?}", table_names);
+    println!("Where clause: {:?}", where_clause);
 
     // Execute the select statement
     let (res_columns, mut res_rows) = select(
         columns.clone(),
-        s.selection.clone(),
+        where_clause,
         s.group_by.clone(),
         query.map_or(vec![], |q| q.order_by.clone()),
         &table_names,
