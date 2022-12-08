@@ -459,7 +459,6 @@ pub fn execute_update(
                                 _ => {}
                             }
                         }
-                        println!("colummn {:?}", column.is_nullable());
 
                         if !schemas.iter().any(|x| x.0 == old_name) {
                             return Err(format!("Column name {} does not exist", old_name));
