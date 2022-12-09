@@ -97,6 +97,20 @@ impl User {
         self.user_permissions = permissions.clone();
     }
 
+    /// Returns the id of the commit that was head when the user was last updated
+    pub fn get_user_branch_head(&self) -> Option<BranchNode> {
+        self.branch_head.clone()
+    }
+
+    /// Sets the user's branch head to the latest branch_head
+    pub fn set_user_branch_head(&mut self, branch_head: Option<&BranchNode>) {
+        //self.branch_head = Some(branch_head);
+        match branch_head {
+            Some(node) => self.branch_head = Some(node.clone()),
+            None => self.branch_head = None,
+        };
+    }
+
     /// Whether the user is currently on a temporary commit
     pub fn is_on_temp_commit(&self) -> bool {
         self.is_on_temp_commit
