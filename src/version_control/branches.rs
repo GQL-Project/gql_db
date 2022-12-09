@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{branch_heads::*, diff::*};
 use crate::fileio::{
-    databaseio::{self},
+    databaseio::{self, get_db_instance},
     header::*,
     pageio::*,
     tableio::*,
@@ -201,6 +201,9 @@ impl Branches {
         commit_hash: &String,
     ) -> Result<Option<BranchNode>, String> {
         let mut current_node: BranchNode = branch_start.clone();
+        let commit_hash = get_db_instance()?
+            .get_commit_file_mut()
+            .resolve_commit(commit_hash)?; // Resolve the commit hash to the actual commit hash (in case it is a branch name
         loop {
             if current_node.commit_hash == *commit_hash {
                 return Ok(Some(current_node));

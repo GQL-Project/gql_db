@@ -6,7 +6,6 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
-use crate::fileio::pageio::{read_page, Page, PageType};
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -24,7 +23,7 @@ use crate::{
 use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
-    AlterTableOperation, BinaryOperator, ColumnOption, ColumnOptionDef, Expr, Ident, OrderByExpr,
+    AlterTableOperation, BinaryOperator, ColumnOption, Expr, Ident, OrderByExpr,
     Query, Select, SelectItem, SetExpr, SetOperator, Statement,
 };
 
@@ -91,7 +90,7 @@ fn parse_select(
         columns.push(c.clone());
     }
     let mut table_names = Vec::new();
-    let mut where_clause: Option<Expr> = None;
+    let where_clause: Option<Expr>;
     // This will be the new 'where' clause resulting from the joins
     let mut join_clause: Vec<Expr> = Vec::new();
     let mut unioned_rows: Vec<Row> = Vec::new();
