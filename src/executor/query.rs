@@ -23,8 +23,8 @@ use crate::{
 use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
-    AlterTableOperation, BinaryOperator, ColumnOption, Expr, Ident, OrderByExpr,
-    Query, Select, SelectItem, SetExpr, SetOperator, Statement,
+    AlterTableOperation, BinaryOperator, ColumnOption, Expr, Ident, OrderByExpr, Query, Select,
+    SelectItem, SetExpr, SetOperator, Statement,
 };
 
 pub type Tables = Vec<(Table, String)>;
