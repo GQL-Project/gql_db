@@ -6,8 +6,8 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
-use crate::user::usercreds::UserPermissions::*;
 use crate::user::usercreds::UserCREDs;
+use crate::user::usercreds::UserPermissions::*;
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -2315,7 +2315,7 @@ pub mod tests {
 
         // Setting user permissions to Read
         user.set_permissions(&Read);
-     
+
         let rows = vec![
             vec![
                 Value::I32(100), // Can only insert I32

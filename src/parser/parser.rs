@@ -182,9 +182,7 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                         user_creds_instance.get_all_usernames(),
                     ))
                 }
-                VersionControlSubCommand::PullChanges {
-                    merge_algo,
-                } => {
+                VersionControlSubCommand::PullChanges { merge_algo } => {
                     let merge_strategy = match merge_algo.as_str() {
                         "ours" => MergeConflictResolutionAlgo::UseSource,
                         "theirs" => MergeConflictResolutionAlgo::UseTarget,
