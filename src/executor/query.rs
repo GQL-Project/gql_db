@@ -23,8 +23,8 @@ use crate::{
 use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
-    AlterTableOperation, BinaryOperator, ColumnOption, Expr, Ident, OrderByExpr,
-    Query, Select, SelectItem, SetExpr, SetOperator, Statement,
+    AlterTableOperation, BinaryOperator, ColumnOption, Expr, Ident, OrderByExpr, Query, Select,
+    SelectItem, SetExpr, SetOperator, Statement,
 };
 
 pub type Tables = Vec<(Table, String)>;
@@ -97,7 +97,6 @@ fn parse_select(
     //let mut join_union_clauses: Vec<Expr> = Vec::new();
 
     for t in s.from.iter() {
-        println!("{:?}", t);
         if t.joins.len() > 0 {
             // Get the table name and alias if present
             let table_name = t.relation.to_string();
@@ -128,7 +127,7 @@ fn parse_select(
                     sqlparser::ast::JoinOperator::LeftOuter(l_outer) => {
                         match l_outer {
                             sqlparser::ast::JoinConstraint::On(on) => {
-                                let (left_col, right_col) = match on {
+                                let (_, right_col) = match on {
                                     Expr::BinaryOp { left, op, right } => match op {
                                         sqlparser::ast::BinaryOperator::Eq => {
                                             let left_col = match &**left {
@@ -230,13 +229,8 @@ fn parse_select(
                                     )));
                                 }
 
-                                println!("Not in clause: {:?}", not_in_clause);
-                                println!("Columns: {:?}", columns);
-                                println!("Cols: {:?}", cols);
-                                println!("table_names: {:?}", table_names);
-
                                 // Run the query
-                                let (col_names, mut rows) = select(
+                                let (_, rows) = select(
                                     cols,
                                     Some(not_in_clause),
                                     Vec::new(),
@@ -312,13 +306,6 @@ fn parse_select(
 
         where_clause = Some(where_clause_joins);
     }
-
-    println!("");
-    println!("Columns: {:?}", columns);
-    println!("Tables: {:?}", table_names);
-    println!("Where clause: {:?}", where_clause);
-    println!("Unioned Rows: {:?}", unioned_rows);
-    //println!("Join union clauses: {:?}", join_union_clauses);
 
     // Execute the select statement
     let (res_columns, mut res_rows) = select(
@@ -629,8 +616,8 @@ pub fn execute_update(
                     }
                     AlterTableOperation::DropColumn {
                         column_name,
-                        if_exists,
-                        cascade,
+                        if_exists: _,
+                        cascade: _,
                     } => {
                         let column_name = column_name.to_string();
 

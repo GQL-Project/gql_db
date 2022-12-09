@@ -12,7 +12,6 @@ use crate::{
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use serde_json::json;
 use tabled::{builder::Builder, Style};
 
 use std::collections::HashMap;
