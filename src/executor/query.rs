@@ -6,7 +6,6 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
-use crate::user::usercreds::UserCREDs;
 use crate::user::usercreds::UserPermissions::*;
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
