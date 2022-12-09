@@ -5,6 +5,7 @@ use pwhash::bcrypt;
 use crate::fileio::databaseio::{get_db_instance, load_db_instance};
 use crate::user::usercreds::UserCred;
 use crate::user::userdata::*;
+use crate::user::usercreds::UserPermissions::*;
 
 #[derive(Debug, Default)]
 pub struct Connection {
@@ -48,6 +49,7 @@ impl Connection {
             user_creds_instance.create_user(&UserCred {
                 username: "admin".to_string(),
                 password: bcrypt::hash("admin".to_string()).unwrap(),
+                permissions: Admin,
             })?;
         }
         if create {
@@ -57,6 +59,7 @@ impl Connection {
                 user_creds_instance.create_user(&UserCred {
                     username: username.clone(),
                     password: bcrypt::hash(password.clone()).unwrap(),
+                    permissions: ReadAndWrite,
                 })?;
             }
         } else {
@@ -74,7 +77,20 @@ impl Connection {
                 return Err(format!("User {} already logged in", username));
             }
         }
-        let user: User = User::new(username.clone());
+        let mut user: User = User::new(username.clone());
+        
+        if username == "admin" {
+            user.set_permissions(&Admin);
+        }
+
+        if username == "testWrite" {
+            user.set_permissions(&Write);
+        }
+
+        if username == "testRead" {
+            user.set_permissions(&Read);
+        }
+
         self.clients.lock().unwrap().push(user.clone());
         Ok(username)
     }

@@ -8,6 +8,7 @@ use super::predicate::{
 use super::table_iterator::{RowIterator, TableIterator};
 use crate::fileio::pageio::{read_page, Page, PageType};
 use crate::user::userdata::*;
+use crate::user::usercreds::UserPermissions::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
 use crate::version_control::diff::*;
@@ -527,6 +528,11 @@ pub fn create_table(
     database: &Database,
     user: &mut User,
 ) -> Result<(Table, TableCreateDiff), String> {
+
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to create a table".to_string());
+    }
+
     let table_dir: String = database.get_current_working_branch_path(&user);
 
     // Create a table file and return it
@@ -542,6 +548,11 @@ pub fn drop_table(
     database: &Database,
     user: &mut User,
 ) -> Result<TableRemoveDiff, String> {
+
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to drop a table".to_string());
+    }
+
     let table_dir: String = database.get_current_working_branch_path(user);
 
     // Delete the table file and return it
@@ -562,8 +573,13 @@ pub fn select(
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
 ) -> Result<(Vec<String>, Vec<Row>), String> {
+    
     if table_names.len() == 0 || columns.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
+    }
+
+    if user.get_permissions() == Write {
+        return Err("You do not have the permission to read tables".to_string());
     }
 
     // The schema that would be returned from the select statement
@@ -719,6 +735,11 @@ pub fn update(
     database: &Database,
     user: &mut User,
 ) -> Result<(String, UpdateDiff), String> {
+
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to write to this table".to_string());
+    }
+
     database.get_table_path(&table_name, user)?;
     let table: Table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowInfo> = Vec::new();
@@ -814,6 +835,11 @@ pub fn delete(
     database: &Database,
     user: &mut User,
 ) -> Result<(String, RemoveDiff), String> {
+
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to write to this table".to_string());
+    }
+
     let table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowLocation> = Vec::new();
     let tables: Tables =
@@ -901,6 +927,11 @@ pub fn insert(
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
     let mut table = Table::from_user(user, database, &table_name, None)?;
+
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to write to this table.".to_string());
+    }
+
     // Ensure that the number of values to be inserted matches the number of columns in the table
     let values = values
         .into_iter()
@@ -1218,6 +1249,7 @@ pub mod tests {
             .collect()
     }
 
+    
     #[test]
     #[serial]
     fn test_select_single_table_star() {
