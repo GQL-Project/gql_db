@@ -4,8 +4,8 @@ use pwhash::bcrypt;
 
 use crate::fileio::databaseio::{get_db_instance, load_db_instance};
 use crate::user::usercreds::UserCred;
-use crate::user::userdata::*;
 use crate::user::usercreds::UserPermissions::*;
+use crate::user::userdata::*;
 
 #[derive(Debug, Default)]
 pub struct Connection {
@@ -78,7 +78,7 @@ impl Connection {
             }
         }
         let mut user: User = User::new(username.clone());
-        
+
         if username == "admin" {
             user.set_permissions(&Admin);
         }

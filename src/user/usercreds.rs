@@ -33,7 +33,6 @@ pub struct UserCREDs {
 }
 
 impl UserCREDs {
-
     /// Converts the written integer from the database to a UserPermissions enum
     /// Returns an error if the string is not a valid UserPermissions
     pub fn str_to_perm(perm_string: &String) -> Result<UserPermissions, String> {
@@ -55,7 +54,7 @@ impl UserCREDs {
             UserPermissions::Admin => "Admin".to_string(),
         }
     }
-    
+
     /// Creates a new UserCREDs object to store the user creds for the database.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
