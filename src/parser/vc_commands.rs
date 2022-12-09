@@ -111,4 +111,11 @@ pub enum VersionControlSubCommand {
     },
     /// Returns the current user and all users
     User,
+    /// Updates the user's copy of the database
+    /// (i.e. fetches the latest changes from the remote)
+    PullChanges {
+        /// The algorithm to use for resolving merge conflicts (options: "ours", "theirs", "clean")
+        #[arg(long, short, default_value = "clean")]
+        merge_strat: String,
+    },
 }

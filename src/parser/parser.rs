@@ -1,4 +1,5 @@
 use crate::fileio::databaseio::get_db_instance;
+use crate::user::usercreds::UserCREDs;
 use crate::user::userdata::User;
 use crate::version_control::command;
 use crate::version_control::commit::Commit;
@@ -175,10 +176,27 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                 VersionControlSubCommand::User => {
                     let user_creds_instance = get_db_instance()?.get_user_creds_file_mut();
                     Ok(format!(
-                        "\nCurrent user: {} \nAll users: {:?}",
+                        "\nCurrent user: {}\nUser Permissions: {} \nAll users: {:?}",
                         user.get_user_id(),
-                        user_creds_instance.get_all_usernames()
+                        UserCREDs::perm_to_str(&(user.get_permissions())),
+                        user_creds_instance.get_all_usernames(),
                     ))
+                }
+                VersionControlSubCommand::PullChanges {
+                    merge_strat
+                } => {
+                    let merge_strategy = match merge_strat.as_str() {
+                        "ours" => MergeConflictResolutionAlgo::UseSource,
+                        "theirs" => MergeConflictResolutionAlgo::UseTarget,
+                        "clean" => MergeConflictResolutionAlgo::NoConflicts,
+                        _ => Err(
+                            "Invalid strategy: Must be one of 'ours', 'theirs', or 'clean'"
+                                .to_string(),
+                        )?,
+                    };
+
+                    command::pull(user, merge_strategy.clone())?;
+                    Ok("Pull changes".to_string())
                 }
             }
         }
