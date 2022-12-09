@@ -6,9 +6,9 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
-use crate::user::userdata::*;
 use crate::user::usercreds::UserPermissions::*;
 use crate::user::usercreds::UserCREDs;
+use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
 use crate::version_control::diff::*;
@@ -751,7 +751,6 @@ pub fn create_table(
     database: &Database,
     user: &mut User,
 ) -> Result<(Table, TableCreateDiff), String> {
-
     if user.get_permissions() == Read {
         return Err("You do not have permission to create a table".to_string());
     }
@@ -771,7 +770,6 @@ pub fn drop_table(
     database: &Database,
     user: &mut User,
 ) -> Result<TableRemoveDiff, String> {
-
     if user.get_permissions() == Read {
         return Err("You do not have permission to drop a table".to_string());
     }
@@ -796,7 +794,6 @@ pub fn select(
     database: &Database,
     user: &User, // If a user is present, query that user's branch. Otherwise, query main branch
 ) -> Result<(Vec<String>, Vec<Row>), String> {
-    
     if table_names.len() == 0 || columns.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
     }
@@ -958,7 +955,6 @@ pub fn update(
     database: &Database,
     user: &mut User,
 ) -> Result<(String, UpdateDiff), String> {
-
     if user.get_permissions() == Read {
         return Err("You do not have permission to write to this table".to_string());
     }
@@ -1058,7 +1054,6 @@ pub fn delete(
     database: &Database,
     user: &mut User,
 ) -> Result<(String, RemoveDiff), String> {
-
     if user.get_permissions() == Read {
         return Err("You do not have permission to write to this table".to_string());
     }
@@ -1472,7 +1467,6 @@ pub mod tests {
             .collect()
     }
 
-    
     #[test]
     #[serial]
     fn test_select_single_table_star() {
