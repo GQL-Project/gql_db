@@ -25,7 +25,7 @@ use crate::util::dbtype::Value;
 use itertools::{Itertools, MultiProduct};
 use sqlparser::ast::{
     AlterTableOperation, Expr, Ident, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
-    Statement,
+    Statement, BinaryOperator,
 };
 
 pub type Tables = Vec<(Table, String)>;
@@ -94,6 +94,8 @@ fn parse_select(
     let mut where_clause: Option<Expr> = None;
     // This will be the new 'where' clause resulting from the joins
     let mut join_clause: Vec<Expr> = Vec::new();
+    let mut unioned_rows: Vec<Row> = Vec::new();
+    //let mut join_union_clauses: Vec<Expr> = Vec::new();
 
     for t in s.from.iter() {
         println!("{:?}", t);
@@ -125,9 +127,130 @@ fn parse_select(
                             _ => Err("Unsupported join type".to_string())?,
                         }
                     },
+                    // Hacky solution for left outer joins
                     sqlparser::ast::JoinOperator::LeftOuter(l_outer) => {
                         match l_outer {
-                            sqlparser::ast::JoinConstraint::On(on) => on.clone(),
+                            sqlparser::ast::JoinConstraint::On(on) => {
+                                let (left_col, right_col) = match on {
+                                    Expr::BinaryOp {left, op, right} => {
+                                        match op {
+                                            sqlparser::ast::BinaryOperator::Eq => {
+                                                let left_col = match &**left {
+                                                    Expr::CompoundIdentifier(ident) => {
+                                                        ident[0].value.clone() + "." + &ident[1].value.clone()
+                                                    },
+                                                    _ => Err("Unsupported Left Ident type".to_string())?,
+                                                };
+                                                let right_col = match &**right {
+                                                    Expr::CompoundIdentifier(ident) => {
+                                                        ident[0].value.clone() + "." + &ident[1].value.clone()
+                                                    },
+                                                    _ => Err("Unsupported Right Ident type".to_string())?,
+                                                };
+                                                (left_col, right_col)
+                                            }
+                                            _ => Err("Unsupported Binary Op type".to_string())?,
+                                        }
+                                    }
+                                    _ => Err("Unsupported left/right col type".to_string())?,
+                                };
+                                // Construct the following query:
+                                // SELECT T1.id, T1.name, NULL, NULL
+                                // FROM table1 T1, table2 T2
+                                // WHERE <left_col> NOT IN (
+                                //     SELECT <right_col> FROM table2 T2
+                                // );
+
+                                // Run the subquery: SELECT <right_col> FROM <table2>
+                                let cols: Vec<SelectItem> = vec![
+                                    SelectItem::UnnamedExpr(
+                                        Expr::Identifier(
+                                            Ident {
+                                                value: right_col.clone(),
+                                                quote_style: None,
+                                            }
+                                        )
+                                    ),
+                                ];
+                                let (_, inner_query_rows) = select(
+                                    cols,
+                                    None,
+                                    Vec::new(),
+                                    Vec::new(),
+                                    &vec![table_names[table_names.len() - 1].clone()],
+                                    get_db_instance()?,
+                                    user
+                                )?;
+                                
+                                // Construct the NOT IN clause
+                                let mut not_in_clause = Expr::BinaryOp {
+                                    left: Box::new(Expr::Value(sqlparser::ast::Value::Number("1".to_string(), true))),
+                                    op: BinaryOperator::Eq,
+                                    right: Box::new(Expr::Value(sqlparser::ast::Value::Number("1".to_string(), true))),
+                                };
+                                for inner_query_val in inner_query_rows.clone() {
+                                    not_in_clause = Expr::BinaryOp {
+                                        left: Box::new(not_in_clause),
+                                        op: BinaryOperator::NotEq,
+                                        right: Box::new(Expr::Value(sqlparser::ast::Value::Number(inner_query_val[0].to_string(), true))),
+                                    }
+                                }
+
+                                //join_union_clauses.push(not_in_clause.clone());
+
+                                // Construct the rest of the query
+                                // Get all the columns from the first table
+                                let mut cols: Vec<SelectItem> = Vec::new();
+                                for col in &columns {
+                                    let is_from_first_table: bool = match col {
+                                        SelectItem::UnnamedExpr(Expr::CompoundIdentifier(ident)) => {
+                                            ident[0].value == table_names[0].1
+                                        },
+                                        _ => false,
+                                    };
+                                    if is_from_first_table {
+                                        cols.push(col.clone());
+                                    }
+                                }
+
+                                // Add the NULL columns from the second table
+                                let num_nulls = columns.len() - cols.len();
+                                for _ in 0..num_nulls {
+                                    cols.push(SelectItem::UnnamedExpr(Expr::Value(sqlparser::ast::Value::Null)));
+                                }
+
+                                println!("Not in clause: {:?}", not_in_clause);
+                                println!("Columns: {:?}", columns);
+                                println!("Cols: {:?}", cols);
+                                println!("table_names: {:?}", table_names);
+
+                                // Run the query
+                                let (col_names, mut rows) = select(
+                                    cols,
+                                    Some(not_in_clause),
+                                    Vec::new(),
+                                    Vec::new(),
+                                    &table_names,
+                                    get_db_instance()?,
+                                    user
+                                )?;
+
+                                let mut new_rows = rows.iter().filter(|row: &&Row| {
+                                    let mut is_good = true;
+                                    for iqr in &inner_query_rows {
+                                        if row[0] == iqr[0] {
+                                            is_good = false;
+                                            break;
+                                        }
+                                    }
+                                    is_good
+                                }).map(|row| row.clone()).unique().collect::<Vec<Row>>();
+
+
+                                unioned_rows.append(&mut new_rows);
+
+                                on.clone()
+                            },
                             _ => Err("Unsupported join type".to_string())?,
                         }
                     },
@@ -180,6 +303,8 @@ fn parse_select(
     println!("Columns: {:?}", columns);
     println!("Tables: {:?}", table_names);
     println!("Where clause: {:?}", where_clause);
+    println!("Unioned Rows: {:?}", unioned_rows); 
+    //println!("Join union clauses: {:?}", join_union_clauses);
 
     // Execute the select statement
     let (res_columns, mut res_rows) = select(
@@ -191,6 +316,10 @@ fn parse_select(
         get_db_instance()?,
         user,
     )?;
+
+    if unioned_rows.len() > 0 {
+        res_rows.append(&mut unioned_rows);
+    }
 
     // Limit and Offset
     if let Some(query) = query {
