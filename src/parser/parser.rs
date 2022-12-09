@@ -183,9 +183,9 @@ pub fn parse_vc_cmd(query: &str, user: &mut User, all_users: Vec<User>) -> Resul
                     ))
                 }
                 VersionControlSubCommand::PullChanges {
-                    merge_strat
+                    merge_algo,
                 } => {
-                    let merge_strategy = match merge_strat.as_str() {
+                    let merge_strategy = match merge_algo.as_str() {
                         "ours" => MergeConflictResolutionAlgo::UseSource,
                         "theirs" => MergeConflictResolutionAlgo::UseTarget,
                         "clean" => MergeConflictResolutionAlgo::NoConflicts,

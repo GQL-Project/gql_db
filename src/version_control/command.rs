@@ -582,7 +582,8 @@ pub fn pull(
     // Applying diffs to user's branch
     construct_tables_from_diffs(&user_branch_path, &diffs_to_pull)?;
     // Updating user's branch head
-    user.set_user_branch_head(&current_node);
+    user.set_user_branch_head(None);
+    //user.set_user_branch_head(&current_node);
     Ok("Your branch is now up-to-date!".to_string())
 }
 
@@ -1617,7 +1618,7 @@ mod tests {
         ).unwrap();
 
         // Setting the user's branch head to the first commit
-        user2.set_user_branch_head(&node_commit1.0);
+        user2.set_user_branch_head(Some(&node_commit1.0));
 
         // Calling pull
         let pull_result = pull(&mut user2, 
@@ -1864,7 +1865,7 @@ mod tests {
         std::fs::remove_file(&table2.path).unwrap(); // Removing table2 from main as user2 missed it
 
         // Setting the user's branch head to the first commit
-        user2.set_user_branch_head(&node_commit1.0);
+        user2.set_user_branch_head(Some(&node_commit1.0));
         
         // Calling pull
         let pull_result = pull(&mut user2, 
@@ -1905,7 +1906,6 @@ mod tests {
         std::fs::remove_dir_all(user2_dir).unwrap();
         std::fs::remove_dir_all(compare_dir).unwrap(); 
     }
-
 
     /// Helper that compares two tables to make sure that they are identical, but in separate directories
     fn compare_tables(

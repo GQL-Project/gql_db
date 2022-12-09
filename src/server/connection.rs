@@ -83,14 +83,6 @@ impl Connection {
             user.set_permissions(&Admin);
         }
 
-        if username == "testWrite" {
-            user.set_permissions(&Write);
-        }
-
-        if username == "testRead" {
-            user.set_permissions(&Read);
-        }
-
         self.clients.lock().unwrap().push(user.clone());
         Ok(username)
     }

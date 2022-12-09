@@ -8,6 +8,7 @@ use super::predicate::{
 use super::table_iterator::{RowIterator, TableIterator};
 use crate::user::userdata::*;
 use crate::user::usercreds::UserPermissions::*;
+use crate::user::usercreds::UserCREDs;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
 use crate::version_control::diff::*;
@@ -2299,6 +2300,126 @@ pub mod tests {
         ];
 
         assert!(insert(newrows, "test_table1".to_string(), &new_db, &mut user).is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_read_permissions() {
+        let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        // Setting user permissions to Read
+        user.set_permissions(&Read);
+     
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_permission() {
+        let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+        let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Setting user permissions to Read
+        user.set_permissions(&Write);
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        );
+
+        assert!(result.is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_readAndWrite_permissions() {
+        let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+        let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        // Setting user permissions to Read
+        user.set_permissions(&ReadAndWrite);
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        );
+
+        assert!(result.is_ok());
+
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_ok());
         // Delete the test database
         new_db.delete_database().unwrap();
     }
