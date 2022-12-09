@@ -2377,7 +2377,7 @@ pub mod tests {
 
     #[test]
     #[serial]
-    fn test_readAndWrite_permissions() {
+    fn test_read_and_write_permissions() {
         let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
         let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
         let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
