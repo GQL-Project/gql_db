@@ -13,10 +13,19 @@ use crate::{
     },
 };
 
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub enum UserPermissions {
+    Read,
+    Write,
+    ReadAndWrite,
+    Admin,
+}
+
 #[derive(Debug, Clone)]
 pub struct UserCred {
     pub username: String,
     pub password: String,
+    pub permissions: UserPermissions,
 }
 
 pub struct UserCREDs {
@@ -24,6 +33,28 @@ pub struct UserCREDs {
 }
 
 impl UserCREDs {
+    /// Converts the written integer from the database to a UserPermissions enum
+    /// Returns an error if the string is not a valid UserPermissions
+    pub fn str_to_perm(perm_string: &String) -> Result<UserPermissions, String> {
+        match perm_string.as_str() {
+            "Read" => Ok(UserPermissions::Read),
+            "Write" => Ok(UserPermissions::Write),
+            "ReadAndWrite" => Ok(UserPermissions::ReadAndWrite),
+            "Admin" => Ok(UserPermissions::Admin),
+            _ => Err(format!("Invalid user permission: {}", perm_string)),
+        }
+    }
+
+    /// Converts the user's permission to string
+    pub fn perm_to_str(perm: &UserPermissions) -> String {
+        match perm {
+            UserPermissions::Read => "Read".to_string(),
+            UserPermissions::Write => "Write".to_string(),
+            UserPermissions::ReadAndWrite => "ReadAndWrite".to_string(),
+            UserPermissions::Admin => "Admin".to_string(),
+        }
+    }
+
     /// Creates a new UserCREDs object to store the user creds for the database.
     /// If create_file is true, the file and table will be created with a header.
     /// If create_file is false, the file and table will be opened.
@@ -51,6 +82,7 @@ impl UserCREDs {
             let schema = vec![
                 ("username".to_string(), Column::String(32)),
                 ("password".to_string(), Column::String(225)),
+                ("permissions".to_string(), Column::String(32)),
             ];
             // TODO: With some more work, we could possibly add some indexes to find the user from the username index
             let header = Header {
@@ -124,6 +156,7 @@ impl UserCREDs {
 
             let username: String;
             let password: String;
+            let perm_string: String;
 
             // Get the username
             match row.get(0) {
@@ -137,9 +170,15 @@ impl UserCREDs {
                 _ => return Err("Error: Password not found".to_string()),
             }
 
+            match row.get(2) {
+                Some(Value::String(permissions_f)) => perm_string = permissions_f.to_string(),
+                _ => return Err("Error: Permissions not found".to_string()),
+            }
+
             let usercred: UserCred = UserCred {
                 username: username,
                 password: password,
+                permissions: Self::str_to_perm(&perm_string).unwrap(),
             };
 
             user_creds.push(usercred);
@@ -164,6 +203,7 @@ impl UserCREDs {
             vec![
                 Value::String(user_cred.username.clone()),
                 Value::String(user_cred.password.clone()),
+                Value::String(Self::perm_to_str(&user_cred.permissions)),
             ],
         ];
         self.user_creds_table.insert_rows(rows)?;

@@ -6,6 +6,8 @@ use super::predicate::{
     solve_predicate, solve_value, PredicateSolver, ValueSolver,
 };
 use super::table_iterator::{RowIterator, TableIterator};
+use crate::user::usercreds::UserCREDs;
+use crate::user::usercreds::UserPermissions::*;
 use crate::user::userdata::*;
 use crate::util::dbtype::Column;
 use crate::util::row::{Row, RowInfo};
@@ -736,6 +738,10 @@ pub fn create_table(
     database: &Database,
     user: &mut User,
 ) -> Result<(Table, TableCreateDiff), String> {
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to create a table".to_string());
+    }
+
     let table_dir: String = database.get_current_working_branch_path(&user);
 
     // Create a table file and return it
@@ -751,6 +757,10 @@ pub fn drop_table(
     database: &Database,
     user: &mut User,
 ) -> Result<TableRemoveDiff, String> {
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to drop a table".to_string());
+    }
+
     let table_dir: String = database.get_current_working_branch_path(user);
 
     // Delete the table file and return it
@@ -773,6 +783,10 @@ pub fn select(
 ) -> Result<(Vec<String>, Vec<Row>), String> {
     if table_names.len() == 0 || columns.len() == 0 {
         return Err("Malformed SELECT Command".to_string());
+    }
+
+    if user.get_permissions() == Write {
+        return Err("You do not have the permission to read tables".to_string());
     }
 
     // The schema that would be returned from the select statement
@@ -928,6 +942,10 @@ pub fn update(
     database: &Database,
     user: &mut User,
 ) -> Result<(String, UpdateDiff), String> {
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to write to this table".to_string());
+    }
+
     database.get_table_path(&table_name, user)?;
     let table: Table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowInfo> = Vec::new();
@@ -1023,6 +1041,10 @@ pub fn delete(
     database: &Database,
     user: &mut User,
 ) -> Result<(String, RemoveDiff), String> {
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to write to this table".to_string());
+    }
+
     let table = Table::from_user(user, database, &table_name, None)?;
     let mut selected_rows: Vec<RowLocation> = Vec::new();
     let tables: Tables =
@@ -1110,6 +1132,11 @@ pub fn insert(
 ) -> Result<(String, InsertDiff), String> {
     database.get_table_path(&table_name, user)?;
     let mut table = Table::from_user(user, database, &table_name, None)?;
+
+    if user.get_permissions() == Read {
+        return Err("You do not have permission to write to this table.".to_string());
+    }
+
     // Ensure that the number of values to be inserted matches the number of columns in the table
     let values = values
         .into_iter()
@@ -2254,6 +2281,126 @@ pub mod tests {
         ];
 
         assert!(insert(newrows, "test_table1".to_string(), &new_db, &mut user).is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_read_permissions() {
+        let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        // Setting user permissions to Read
+        user.set_permissions(&Read);
+
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_permission() {
+        let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+        let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+
+        // Setting user permissions to Read
+        user.set_permissions(&Write);
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        );
+
+        assert!(result.is_err());
+        // Delete the test database
+        new_db.delete_database().unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_read_and_write_permissions() {
+        let columns = to_selectitems(vec!["T.id".to_string(), "T.name".to_string()]);
+        let tables = vec![("test_table1".to_string(), "T".to_string())]; // [(table_name, alias)]
+        let new_db: Database = Database::new("read_perm_test_db".to_string()).unwrap();
+        let schema: Schema = vec![
+            ("id".to_string(), Column::I32),
+            ("name".to_string(), Column::String(50)),
+            ("age".to_string(), Column::I32),
+        ];
+
+        // Create a new user on the main branch
+        let mut user: User = User::new("test_user".to_string());
+        // Setting user permissions to Read
+        user.set_permissions(&ReadAndWrite);
+
+        create_table(&"test_table1".to_string(), &schema, &new_db, &mut user).unwrap();
+
+        let result = select(
+            columns.to_owned(),
+            None,
+            vec![],
+            vec![],
+            &tables,
+            &new_db,
+            &user,
+        );
+
+        assert!(result.is_ok());
+
+        let rows = vec![
+            vec![
+                Value::I32(100), // Can only insert I32
+                Value::String("Iron Man".to_string()),
+                Value::Double(3.456),
+            ],
+            vec![
+                Value::I32(2),
+                Value::String("Spiderman".to_string()),
+                Value::Double(3.43456),
+            ],
+        ];
+
+        assert!(insert(rows, "test_table1".to_string(), &new_db, &mut user).is_ok());
         // Delete the test database
         new_db.delete_database().unwrap();
     }

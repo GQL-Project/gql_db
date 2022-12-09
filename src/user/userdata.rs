@@ -6,6 +6,16 @@ use crate::{
     },
 };
 
+use super::usercreds::UserPermissions;
+
+/*#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub enum UserPermissions {
+    Read,
+    Write,
+    ReadAndWrite,
+    Admin,
+}*/
+
 #[derive(Debug, Clone)]
 pub struct User {
     user_id: String,         // The id of the user
@@ -15,6 +25,7 @@ pub struct User {
     diffs: Vec<Diff>, // The changes that the user has made that are in an uncommitted state
     commands: Vec<String>, // The commands that the user has executed that are in an uncommitted state
     branch_head: Option<BranchNode>, // The commit id of the head of the branch that the user is currently on
+    user_permissions: UserPermissions, // The user's abiltiy to read / write to a database
 }
 
 impl User {
@@ -27,6 +38,7 @@ impl User {
             diffs: Vec::new(),
             commands: Vec::new(),
             branch_head: None,
+            user_permissions: UserPermissions::ReadAndWrite,
         }
     }
 
@@ -48,6 +60,11 @@ impl User {
     /// Get the list of diffs that the user has made
     pub fn get_diffs(&self) -> Vec<Diff> {
         self.diffs.clone()
+    }
+
+    /// Get the permissions that the user has
+    pub fn get_permissions(&self) -> UserPermissions {
+        self.user_permissions.clone()
     }
 
     /// Append a diff to the user's changes
@@ -73,6 +90,25 @@ impl User {
     /// Replaces the user's commands with the given list of commands
     pub fn set_commands(&mut self, commands: &Vec<String>) {
         self.commands = commands.clone();
+    }
+
+    /// Replaces the user's permissions with the given permission
+    pub fn set_permissions(&mut self, permissions: &UserPermissions) {
+        self.user_permissions = permissions.clone();
+    }
+
+    /// Returns the id of the commit that was head when the user was last updated
+    pub fn get_user_branch_head(&self) -> Option<BranchNode> {
+        self.branch_head.clone()
+    }
+
+    /// Sets the user's branch head to the latest branch_head
+    pub fn set_user_branch_head(&mut self, branch_head: Option<&BranchNode>) {
+        //self.branch_head = Some(branch_head);
+        match branch_head {
+            Some(node) => self.branch_head = Some(node.clone()),
+            None => self.branch_head = None,
+        };
     }
 
     /// Whether the user is currently on a temporary commit

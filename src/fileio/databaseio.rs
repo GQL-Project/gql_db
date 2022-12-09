@@ -1269,7 +1269,7 @@ impl Database {
     /// Finds the commits between node1 and node2 where node1 is the older node (closer to the origin).
     /// If node1 is None, it returns all commits between the origin and node2.
     /// Returns a vector of commits where the older commits are first
-    fn get_commits_between_nodes(
+    pub fn get_commits_between_nodes(
         &self,
         node1: Option<&BranchNode>,
         node2: &BranchNode,
